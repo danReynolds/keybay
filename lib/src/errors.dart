@@ -1,4 +1,4 @@
-/// Typed error taxonomy (RFC 0005 §5, §7 failure matrix).
+/// Typed error taxonomy (see doc/design.md).
 ///
 /// Every error carries a stable [code] and, where relevant, the *name* of the
 /// secret involved — **never a secret value**, and never raw subprocess output.

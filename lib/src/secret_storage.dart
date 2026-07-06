@@ -1,4 +1,4 @@
-/// The front API (RFC 0005 §4): a bytes-first async key-value store over a
+/// The front API (see doc/design.md): a bytes-first async key-value store over a
 /// [SecretBackend]. Platform options live on backend constructors; these verbs
 /// take only key/value.
 library;

@@ -2,7 +2,7 @@
 
 ## 0.1.0 (unreleased)
 
-Initial implementation (RFC 0005). Not yet published.
+Initial implementation (see [doc/design.md](doc/design.md)). Not yet published.
 
 - **Front API** — `SecretStorage`: bytes-first async key/value with String
   conveniences, identifier/label validation, capability-guarded enumeration.
@@ -19,6 +19,6 @@ Initial implementation (RFC 0005). Not yet published.
 - **Key sources**: `KeystoreKeySource` (model B — key in the OS keystore,
   container encrypted on disk; dune's default), `FileKeySource` (explicit
   insecure fallback), `InMemoryKeySource`.
-- **Security**: `Random.secure()` only; RFC 8439 / RFC 5869 / vendored vectors
-  run against the pinned `cryptography`; one third-party runtime dependency,
-  enforced by a dependency-closure test.
+- **Security**: `Random.secure()` only; RFC 8439 / RFC 5869 / draft-arciszewski
+  vectors run against the pinned `cryptography`; one third-party runtime
+  dependency, enforced by a dependency-closure test.

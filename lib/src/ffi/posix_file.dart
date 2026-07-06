@@ -1,4 +1,4 @@
-/// A minimal POSIX file shim (RFC 0005 §7).
+/// A minimal POSIX file shim (see doc/design.md).
 ///
 /// `dart:io` cannot create a file with restrictive permissions from birth (no
 /// umask/chmod/fchmod), cannot `fsync`, and cannot exclusive-create — verified:

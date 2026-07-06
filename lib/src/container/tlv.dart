@@ -1,4 +1,4 @@
-/// Binary TLV payload codec for the encrypted container (RFC 0005 §7).
+/// Binary TLV payload codec for the encrypted container (see doc/design.md).
 ///
 /// This replaces JSON specifically so secret *values* never become Dart
 /// `String`s (which are interned and cannot be overwritten) and so no

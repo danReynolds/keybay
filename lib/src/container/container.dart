@@ -1,4 +1,4 @@
-/// The authenticated encrypted container (RFC 0005 §7).
+/// The authenticated encrypted container (see doc/design.md).
 ///
 /// On-disk layout:
 /// ```

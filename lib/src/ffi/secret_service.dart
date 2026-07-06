@@ -1,4 +1,4 @@
-/// Linux Secret Service via `secret-tool` (RFC 0005 §5).
+/// Linux Secret Service via `secret-tool` (see doc/design.md).
 ///
 /// libsecret's own CLI, so no D-Bus protocol of our own (that's a recorded
 /// follow-up). The secret always crosses on **stdin** (never argv — argv is

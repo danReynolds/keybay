@@ -1,4 +1,4 @@
-/// macOS Keychain via the `SecItem` C API (RFC 0005 §5, rev.4).
+/// macOS Keychain via the `SecItem` C API (see doc/design.md).
 ///
 /// Direct Security.framework FFI — no subprocess, no text protocol; secrets
 /// move as `CFData`. This is the package's most delicate FFI: CoreFoundation is

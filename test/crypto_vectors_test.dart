@@ -6,7 +6,7 @@ import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
 import 'package:test/test.dart';
 
-/// Vector firewall (RFC 0005 §4a): the pinned `cryptography` implementation is
+/// Vector firewall (see doc/design.md): the pinned `cryptography` implementation is
 /// checked against published standard test vectors *in our own suite*, so a
 /// silently-buggy or compromised dependency update cannot pass unnoticed. These
 /// also confirm the primitives run in a pure-Dart CLI (no Flutter, no native

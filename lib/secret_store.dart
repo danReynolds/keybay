@@ -1,8 +1,8 @@
 /// Platform-keystore secret storage for Dart without Flutter.
 ///
-/// See the README for the threat model and `dune_cli/doc/rfcs/0005` for the
-/// full design. Public surface is deliberately small (RFC §4a): every symbol
-/// here is attack surface and compatibility surface.
+/// See the README for the threat model and doc/design.md for the
+/// full design. The public surface is deliberately small: every symbol here is
+/// attack surface and compatibility surface.
 library;
 
 export 'src/backend.dart' show BackendCapabilities, BackendInfo, SecretBackend;

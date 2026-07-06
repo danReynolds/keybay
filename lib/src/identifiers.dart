@@ -1,4 +1,4 @@
-/// Identifier and label validation (RFC 0005 §4).
+/// Identifier and label validation (see doc/design.md).
 ///
 /// A single grammar across every backend beats per-backend escaping rules.
 /// Service and key names are constrained to a conservative charset (they become

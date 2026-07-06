@@ -6,7 +6,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
-/// Supply-chain firewall (RFC 0005 §4a): the *runtime* dependency closure must
+/// Supply-chain firewall (see doc/design.md): the *runtime* dependency closure must
 /// stay exactly one third-party package (`cryptography`) whose own closure is
 /// entirely dart-lang official. This test fails CI the moment a dependency is
 /// added or the tree shifts — a deliberate speed bump on that decision.
@@ -45,7 +45,7 @@ void main() {
         'collection', 'crypto', 'meta', 'typed_data', // dart-lang official
       }),
       reason: 'runtime dependency closure changed — review the supply chain '
-          'before updating this expectation (RFC 0005 §4a).',
+          'before updating this expectation (see doc/design.md).',
     );
   });
 

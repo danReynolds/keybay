@@ -1,4 +1,4 @@
-/// The backend seam (RFC 0005 §5).
+/// The backend seam (see doc/design.md).
 ///
 /// A [SecretBackend] is bound to a single service at construction; its methods
 /// take only a key. Adding a platform is one implementation + one line of

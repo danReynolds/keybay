@@ -1,10 +1,9 @@
-/// Store-key providers for the wrapped-key composition (RFC 0005 §6, model B).
+/// Store-key providers for the wrapped-key composition (see doc/design.md).
 ///
 /// A [KeySource] holds the single 32-byte key that seals the encrypted
-/// container. In dune's default it is the OS keystore ([KeystoreKeySource],
-/// added in P2); the [FileKeySource] here is the explicit `--insecure` fallback
-/// (key on disk beside the ciphertext); [InMemoryKeySource] is for tests and
-/// callers that manage the key themselves.
+/// container. The recommended one is the OS keystore ([KeystoreKeySource]);
+/// [FileKeySource] is the explicit fallback (key on disk beside the ciphertext);
+/// [InMemoryKeySource] is for tests and callers that manage the key themselves.
 library;
 
 import 'dart:math';

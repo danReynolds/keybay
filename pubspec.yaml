@@ -2,7 +2,7 @@ name: secret_store
 description: >-
   Platform-keystore secret storage for Dart without Flutter. macOS Keychain and
   Linux Secret Service backends, plus an authenticated encrypted-file container,
-  behind one small async API. See doc/rfcs/0005 in dune_cli for the design.
+  behind one small async API. See doc/design.md for the design.
 version: 0.1.0
 # Not yet published. publish_to keeps `dart pub publish` from firing by accident.
 publish_to: none
@@ -10,7 +10,7 @@ publish_to: none
 environment:
   sdk: ^3.6.0
 
-# Dependency policy (RFC 0005 §4a): exactly one third-party runtime dependency,
+# Dependency policy (doc/design.md §10): exactly one third-party runtime dependency,
 # exact-pinned, its transitive closure entirely dart-lang official. A
 # dart pub deps snapshot test (test/dependency_closure_test.dart) fails CI if
 # this tree changes. Do not widen a pin or add a dependency without the RFC's

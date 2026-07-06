@@ -1,4 +1,4 @@
-/// Direct OS-keystore backend (RFC 0005 §5/§6 model A): each secret is its own
+/// Direct OS-keystore backend (see doc/design.md): each secret is its own
 /// keystore item. Thin over the [KeystoreApi] seam — `MacKeychainApi` on macOS,
 /// `SecretToolApi` on Linux. The platform-resolving `SecretStorage({service})`
 /// constructor wires the right one; pass [api] explicitly (or a fake) otherwise.

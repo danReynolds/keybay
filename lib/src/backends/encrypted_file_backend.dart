@@ -1,5 +1,5 @@
 /// Encrypted-file backend: an authenticated container sealed by a store key
-/// from a [KeySource] (RFC 0005 §6 model B, §7).
+/// from a [KeySource] (see doc/design.md).
 ///
 /// Implements the §7 failure matrix precisely, so a diagnostics UI can tell a
 /// fresh install from a lost container, a lost key, or tampering.
