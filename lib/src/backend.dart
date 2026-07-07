@@ -2,8 +2,9 @@
 ///
 /// A [SecretBackend] is bound to a single service at construction; its methods
 /// take only a key. Adding a platform is one implementation + one line of
-/// default resolution. Capabilities are reported honestly — the macOS
-/// direct-items backend genuinely cannot enumerate, and says so.
+/// default resolution. Capabilities are reported honestly, so a future backend
+/// that cannot enumerate stays honest at the seam instead of throwing after
+/// the fact.
 library;
 
 import 'dart:typed_data';
@@ -56,8 +57,8 @@ abstract interface class SecretBackend {
   /// The value for [key], or null if absent.
   Future<Uint8List?> read(String key);
 
-  /// Whether [key] exists, without materializing its value where the backend
-  /// can avoid it.
+  /// Whether [key] exists. (Backends may implement this as a read; an
+  /// attributes-only existence query is a recorded follow-up.)
   Future<bool> contains(String key);
 
   /// Stores [value] under [key], replacing any existing value. [label] is

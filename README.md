@@ -19,53 +19,77 @@ await store.delete('api_token');
 ```
 
 `read`/`write` are bytes-first (`Uint8List`); `readString`/`writeString` are the
-convenience tier. Values never become `String`s internally (a `String` interns
-and can't be overwritten).
+convenience tier. The core keeps values as `Uint8List` rather than routing them
+through interned `String`s — though note Dart's GC can't zero heap memory, so
+this is copy-minimisation, not a zeroing guarantee (see the threat model).
 
-## Backends
+## How storage is chosen
 
-`SecretStorage(service:)` resolves the platform OS keystore and stores each
-secret as its own item — the `flutter_secure_storage` model. Resolution is
-**fail-closed**: on a platform without a supported keystore it throws rather than
-silently falling back to weaker storage.
+You express intent; the library picks the strongest backing the platform
+offers. `SecretStorage(service:)` uses the OS keystore, and resolution is
+**fail-closed** — on a platform with no usable keystore it throws rather than
+silently degrading. You never choose between "keystore items" and "encrypted
+file"; that's the library's per-platform decision. `describe()` reports what you
+got.
 
 | Platform | Backing | Notes |
 |---|---|---|
-| macOS | Keychain via `SecItem` FFI | classic login keychain; never synchronized to iCloud; secrets move as `CFData`. |
+| macOS | Keychain via `SecItem` FFI | classic login keychain by default; never synchronized to iCloud; secrets move as `CFData`. |
 | Linux | Secret Service via `secret-tool` | secret crosses on stdin (never argv); every call has a hard timeout so a locked keyring can't hang an SSH session. |
 
-### Encrypted-file container (many secrets, or headless)
+**macOS top security (opt-in).** A signed app that carries the Keychain Sharing
+entitlement can opt up to the Data Protection keychain + Secure Enclave — one
+line, no access group needed (the default group is implicit):
+`SecretStorage(service: 'com.example.app', api: MacKeychainApi.dataProtection())`.
+It fails loudly if the entitlement isn't present, never silently falls back.
+*(The −34018 refusal path is CI-tested on the unsigned runner; the entitled-app
+success path is verified manually — CI can't sign an app bundle.)*
 
-For an app with many secrets, one backup unit, or a **headless** deployment (a
-server has no unlocked keyring), wrap a single keystore-held key around an
-encrypted container: the key lives in the keystore, the AEAD-encrypted secrets
-live in a file.
+### Encrypted file (headless, one backup unit, or many secrets)
+
+Where there's no unlocked keyring (a headless server), or you want a single
+encrypted file, store everything in one authenticated container sealed by a key
+you place explicitly — the one genuine decision, since the key needs a home:
 
 ```dart
-final store = SecretStorage.withBackend(
-  EncryptedFileBackend(
-    path: '$stateDir/secrets.enc',
-    keySource: KeystoreKeySource(service: 'myapp/$profileId', api: platformKeystore()),
-    contextSalt: utf8.encode(profileId),   // binds the container to this profile
-  ),
+final store = SecretStorage.encryptedFile(
+  path: '$stateDir/secrets.enc',
+  keySource: KeystoreKeySource(service: 'myapp/$profileId', api: platformKeystore()),
+  contextSalt: utf8.encode(profileId),   // binds the container to this profile
 );
 ```
 
-`FileKeySource` is available as an explicit fallback (the key on disk beside the
-container, `0600`) for environments with no keystore at all — gate it behind a
-deliberate opt-in in your app.
+The key source is the security-relevant choice: `KeystoreKeySource` (key in the
+OS keystore), a TPM source for headless nodes *(planned)*, or `FileKeySource`
+(key on disk beside the container, `0600`) — the **explicit insecure fallback**
+for environments with no keystore at all, which you have to name to get.
 
 ## Threat model
 
 **Protects against** plaintext key material on disk (backup / Time-Machine /
 dotfile-sync leaks), offline disk theft without full-disk encryption, other local
-users, and casual disclosure (scrollback, `ps` argv).
+users, casual disclosure (scrollback, `ps` argv), and a wrong or swapped store key
+(key-committing container — fails closed before decryption).
 
 **Does not protect against** same-user malware while the keystore is unlocked;
-process-memory disclosure (including swap and core dumps — Dart cannot zero
-buffers); rollback to an older genuine container; timing side-channels in
-pure-Dart crypto; root. There is **no key escrow** — losing the keystore item
-loses the store.
+process-memory disclosure, including swap and core dumps (Dart-heap buffers
+cannot be zeroed; the package's own native staging buffers *are* zeroed, but
+decrypted copies in the GC heap remain); rollback to an older genuine container
+(out of scope — AEAD is not anti-rollback; closing it would need a
+keystore-anchored counter, a possible v2); concurrent writes from multiple
+processes (a container is single-writer — bring your own lock); timing
+side-channels in pure-Dart crypto; root. There is **no key escrow** — losing
+the keystore item loses the store.
+
+**macOS: know your trust unit.** Keychain ACLs bind to the *acting binary*.
+Under `dart run` that binary is the shared Dart VM, so one "Always Allow"
+authorizes every Dart script you ever run to read the item silently. For
+production, `dart compile exe` and sign with a stable Developer ID — the ACL
+then binds to your app and survives upgrades. (Login-keychain items are also
+3DES-encrypted at rest; the AES-256-GCM Data Protection keychain requires a
+provisioned, entitlement-carrying app and is unavailable to plain CLIs.)
+Headless/CI consumers: construct `MacKeychainApi(nonInteractive: true)` to get
+a typed `KeystoreLocked` instead of a GUI unlock prompt.
 
 The bar is ssh-agent / aws-vault, not an HSM. Full derivation and the crypto/FFI
 engineering practices are in [doc/design.md](doc/design.md).
@@ -82,28 +106,48 @@ engineering practices are in [doc/design.md](doc/design.md).
 
 ## Cryptography
 
-XChaCha20-Poly1305 (AEAD) container, HKDF-SHA256 key derivation, `Random.secure()`
-only — all via `package:cryptography`, exercised against RFC 8439 / RFC 5869 /
-draft-arciszewski vectors in this package's own suite so a buggy or compromised
-dependency update cannot pass silently.
+XChaCha20-Poly1305 (AEAD) container with an HKDF-derived **key-commitment**
+header (wrong key ≠ tamper, and multi-key ciphertext games fail closed);
+HKDF-SHA256 key derivation; `Random.secure()`
+only. All via `package:cryptography` (exact-pinned, concrete `Dart*`
+implementations constructed directly so the global `Cryptography.instance`
+locator cannot swap them), exercised against RFC 8439 / RFC 5869 /
+draft-arciszewski vectors plus empty-AAD and block-boundary edge cases in this
+package's own suite, so a buggy or compromised dependency update cannot pass
+silently. A CI canary fails when a newer `cryptography` release appears, so
+the pin moves only by reviewed decision.
 
 ## Testing
 
+Three tiers, all run in CI on every push; each is re-runnable locally:
+
 ```sh
-dart test                                             # hermetic unit tier
-SECRET_STORE_INTEGRATION=1 dart test -t integration   # hits the real OS keystore
+./tool/test.sh          # format + analyze + unit + this-platform keystore integration
+./tool/test_linux.sh    # Linux Secret Service tier, against real gnome-keyring in Docker
 ```
+
+`tool/test.sh` is the one-command pre-push suite (it wraps
+`dart test` and `SECRET_STORE_INTEGRATION=1 dart test -t integration`).
 
 The unit tier (crypto vectors, container/fuzz, POSIX permissions on the real
 filesystem, backend logic over fakes, dependency-closure firewall) needs no
 keystore. Integration tests exercise the real macOS Keychain / Linux Secret
-Service and are opt-in.
+Service, are opt-in (`SECRET_STORE_INTEGRATION=1`), and are platform-gated
+(`@TestOn`), so `-t integration` runs whichever applies to the machine you're
+on. `tool/test_linux.sh` runs the Linux tier against a real gnome-keyring in an
+ubuntu container, so you can regression-test the Linux backend from a Mac. The
+macOS Data Protection keychain **success** path can't be automated (it needs a
+signed, provisioned app bundle); [tool/dp_keychain_verification.md](tool/dp_keychain_verification.md)
+is the manual procedure.
 
 ## Status
 
 Pre-1.0 and not yet published to pub.dev; the API and on-disk container format
 may still change before 1.0. Report vulnerabilities per [SECURITY.md](SECURITY.md);
-the design rationale is in [doc/design.md](doc/design.md).
+the design rationale is in [doc/design.md](doc/design.md), and a benchmark against
+best-in-class secret storage across ecosystems (native iOS/Android,
+`flutter_secure_storage`, React Native, and the Rust/Python/Go keyring peers) is
+in [doc/ecosystem-comparison.md](doc/ecosystem-comparison.md).
 
 ## License
 

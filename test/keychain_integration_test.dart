@@ -5,6 +5,7 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:secret_store/src/errors.dart';
 import 'package:secret_store/src/ffi/keychain.dart';
 import 'package:test/test.dart';
 
@@ -66,4 +67,41 @@ void main() {
     final p = await api.probe(service);
     expect(p.available, isTrue);
   }, skip: skip);
+
+  test('nonInteractive mode round-trips on an unlocked keychain', () async {
+    // With the keychain unlocked, kSecUseAuthenticationUIFail must be inert;
+    // its effect (fail-fast KeystoreLocked instead of a GUI prompt) only
+    // kicks in when interaction would be required.
+    final ni = MacKeychainApi(nonInteractive: true);
+    await ni.set(service, 'k', bytes([4, 2]), label: 'itest ni');
+    expect(await ni.get(service, 'k'), [4, 2]);
+    await ni.delete(service, 'k');
+    expect(await ni.get(service, 'k'), isNull);
+  }, skip: skip);
+
+  group('Data Protection keychain', () {
+    // The SUCCESS path needs a signed, entitled app bundle, which CI can't
+    // produce — that is verified manually (see doc/design.md). What IS testable
+    // here, including on the unsigned CI runner, is (a) the binding constructs,
+    // and (b) an unentitled process is refused with the −34018 → typed error,
+    // never silently falling back to the login keychain.
+    test('binding constructs', () {
+      expect(MacKeychainApi.dataProtection(), isNotNull);
+    }, skip: skip);
+
+    test('an unentitled process is refused, not silently downgraded', () async {
+      final dp = MacKeychainApi.dataProtection();
+      // errSecMissingEntitlement (−34018) → KeystoreUnreachable with guidance.
+      // (An entitled app would instead store successfully.)
+      await expectLater(
+        dp.set(service, 'dp', bytes([1, 2, 3])),
+        throwsA(
+          isA<KeystoreUnreachable>()
+              .having((e) => e.toString(), 'toString', contains('entitlement')),
+        ),
+      );
+      // And nothing was written to the login keychain as a fallback.
+      expect(await api.get(service, 'dp'), isNull);
+    }, skip: skip);
+  });
 }

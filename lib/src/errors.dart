@@ -42,15 +42,30 @@ final class StoreKeyMissing extends SecretStoreException {
                 'the data cannot be decrypted without a backup of the key.');
 }
 
-/// Decryption failed authentication: wrong key, tampering, or a container from
-/// a different profile (the AAD binds profile identity). The data is not
-/// returned — a failed tag never yields partial or empty plaintext.
+/// The store key (or context salt) does not match this container: the
+/// header's key-commitment value disagrees with the one derived from the
+/// supplied key. Wrong key, wrong `contextSalt`, or a container sealed under a
+/// different key. Detected in constant time *before* decryption, so it is
+/// reliably distinguishable from tampering ([AuthenticationFailed]).
+final class WrongStoreKey extends SecretStoreException {
+  const WrongStoreKey()
+      : super(
+            'wrong_store_key',
+            'The store key or context does not match this container (key '
+                'commitment check failed).');
+}
+
+/// Decryption failed authentication under a key that passed the commitment
+/// check: the ciphertext or authenticated header was modified after sealing —
+/// tamper or corruption. (A wrong key or context surfaces as [WrongStoreKey]
+/// before decryption is attempted.) The data is not returned — a failed tag
+/// never yields partial or empty plaintext.
 final class AuthenticationFailed extends SecretStoreException {
   const AuthenticationFailed()
       : super(
             'authentication_failed',
-            'Container failed authentication (wrong key, tamper, or a '
-                'container from a different profile).');
+            'Container failed AEAD authentication under a matching key: the '
+                'ciphertext or header was modified after sealing.');
 }
 
 /// The container bytes are structurally malformed (bad magic/version, or a
@@ -88,7 +103,8 @@ final class KeystoreOperationFailed extends SecretStoreException {
 }
 
 /// The backend does not support the requested capability (e.g. enumeration on
-/// the macOS direct-items backend). Guard with `backend.capabilities` first.
+/// a backend that cannot list its items). Guard with `backend.capabilities`
+/// first.
 final class UnsupportedCapability extends SecretStoreException {
   const UnsupportedCapability(String capability)
       : super('unsupported_capability',

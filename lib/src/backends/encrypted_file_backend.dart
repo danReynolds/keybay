@@ -2,9 +2,20 @@
 /// from a [KeySource] (see doc/design.md).
 ///
 /// Implements the §7 failure matrix precisely, so a diagnostics UI can tell a
-/// fresh install from a lost container, a lost key, or tampering.
+/// fresh install from a lost container, a lost key, a wrong key, or tampering.
+///
+/// **Concurrency.** Operations on one backend instance are serialized by an
+/// in-process FIFO mutex, so concurrent calls within a process never interleave
+/// their whole-file read-modify-write (which would drop updates). Coordination
+/// *across processes* is out of scope: a container has a **single writer**.
+/// Two processes writing the same container concurrently can lose an update or,
+/// on first write, both create a store key and leave the container sealed under
+/// a discarded one — bring your own lock, or don't share a container between
+/// writers. (An advisory `flock` was prototyped and cut as surface the common
+/// single-writer deployment doesn't need.)
 library;
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import '../backend.dart';
@@ -34,6 +45,7 @@ final class EncryptedFileBackend implements SecretBackend {
   final KeySource _keySource;
   final SecureFileSystem _fs;
   final Container _container;
+  final _TurnLock _mutex = _TurnLock();
 
   @override
   BackendCapabilities get capabilities =>
@@ -44,32 +56,50 @@ final class EncryptedFileBackend implements SecretBackend {
     return i <= 0 ? '.' : path.substring(0, i);
   }
 
+  /// Serializes [body] against in-process siblings (FIFO mutex). Mutations
+  /// create + verify the private store directory first; reads only verify it.
+  Future<T> _serialized<T>(
+      {required bool exclusive, required Future<T> Function() body}) {
+    return _mutex.run(() async {
+      if (exclusive) {
+        _fs.ensurePrivateDirSync(_parentDir);
+      } else {
+        _fs.verifyPrivateDirSync(_parentDir);
+      }
+      return body();
+    });
+  }
+
   /// Loads and decrypts the whole store, applying the §7 failure matrix.
+  /// Call only under [_serialized].
   Future<Map<String, ContainerEntry>> _load() async {
-    final bytes = _fs.readCappedSync(path, maxBytes: maxContainerBytes);
+    final bytes = _fs.readCappedSync(path,
+        maxBytes: maxContainerBytes, requirePrivate: true);
     final key = await _keySource.read();
     if (bytes == null) {
-      if (key == null) return {}; // fresh install
+      if (key == null) {
+        return {}; // fresh install
+      }
       throw ContainerMissing(path); // key orphaned by a lost container
     }
     if (key == null) {
       throw const StoreKeyMissing(); // ciphertext exists but key is gone
     }
-    return _container.open(
-        bytes, key); // AuthenticationFailed / ContainerCorrupt
+    // WrongStoreKey / AuthenticationFailed / ContainerCorrupt from here.
+    return _container.open(bytes, key);
   }
 
   /// Encrypts and atomically writes [entries], creating the store key on first
   /// write. If the write fails right after a *fresh* key was created, the key
   /// is rolled back so the store returns to a clean uninitialized state rather
-  /// than a key-without-container orphan.
+  /// than a key-without-container orphan. Call only under an exclusive
+  /// [_serialized].
   Future<void> _save(Map<String, ContainerEntry> entries) async {
     var key = await _keySource.read();
     final createdFreshKey = key == null;
     key ??= await _keySource.create();
     try {
       final sealed = await _container.seal(entries, key);
-      _fs.ensurePrivateDirSync(_parentDir);
       _fs.writeAtomicSync(path, sealed);
     } catch (_) {
       if (createdFreshKey) {
@@ -84,37 +114,46 @@ final class EncryptedFileBackend implements SecretBackend {
   }
 
   @override
-  Future<Uint8List?> read(String key) async => (await _load())[key]?.value;
+  Future<Uint8List?> read(String key) => _serialized(
+      exclusive: false, body: () async => (await _load())[key]?.value);
 
   @override
-  Future<bool> contains(String key) async => (await _load()).containsKey(key);
+  Future<bool> contains(String key) => _serialized(
+      exclusive: false, body: () async => (await _load()).containsKey(key));
 
   @override
-  Future<void> write(String key, Uint8List value, {String? label}) async {
-    final entries = await _load();
-    entries[key] = ContainerEntry(Uint8List.fromList(value), label: label);
-    await _save(entries);
-  }
+  Future<void> write(String key, Uint8List value, {String? label}) =>
+      _serialized(
+          exclusive: true,
+          body: () async {
+            final entries = await _load();
+            entries[key] =
+                ContainerEntry(Uint8List.fromList(value), label: label);
+            await _save(entries);
+          });
 
   @override
-  Future<void> delete(String key) async {
-    final entries = await _load();
-    if (entries.remove(key) != null) {
-      await _save(entries);
-    }
-  }
+  Future<void> delete(String key) => _serialized(
+      exclusive: true,
+      body: () async {
+        final entries = await _load();
+        if (entries.remove(key) != null) {
+          await _save(entries);
+        }
+      });
 
   @override
-  Future<Map<String, Uint8List>> readAll() async {
-    final entries = await _load();
-    return {for (final e in entries.entries) e.key: e.value.value};
-  }
+  Future<Map<String, Uint8List>> readAll() => _serialized(
+      exclusive: false,
+      body: () async {
+        final entries = await _load();
+        return {for (final e in entries.entries) e.key: e.value.value};
+      });
 
   @override
   Future<BackendInfo> describe() async {
     final keyStatus = await _keySource.describe();
-    final containerPresent =
-        _fs.readCappedSync(path, maxBytes: maxContainerBytes) != null;
+    final containerPresent = _fs.existsSync(path);
     return BackendInfo(
       name: 'encrypted-file',
       available: keyStatus.available,
@@ -124,5 +163,17 @@ final class EncryptedFileBackend implements SecretBackend {
           'key=${keyStatus.present ? 'present' : 'absent'} '
           'via ${keyStatus.name}',
     );
+  }
+}
+
+/// A minimal FIFO async mutex: bodies run one at a time, in call order.
+class _TurnLock {
+  Future<void> _tail = Future<void>.value();
+
+  Future<T> run<T>(Future<T> Function() body) {
+    final prev = _tail;
+    final gate = Completer<void>();
+    _tail = gate.future;
+    return prev.then((_) => body()).whenComplete(gate.complete);
   }
 }

@@ -1,0 +1,81 @@
+@Tags(['integration'])
+@TestOn('linux')
+library;
+
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:secret_store/src/ffi/secret_service.dart';
+import 'package:test/test.dart';
+
+/// Exercises the REAL Linux Secret Service via `secret-tool` against a live
+/// gnome-keyring. Opt-in and Linux-only; the scripted [ProcessRunner] test
+/// (`secret_service_test.dart`) covers command construction and error mapping
+/// without a keyring, while this proves the real round-trip.
+///
+/// CI runs it under `dbus-run-session` with a fresh, unlocked keyring
+/// (see .github/workflows/ci.yml). Locally on Linux:
+///   dbus-run-session -- bash -c '
+///     eval "$(printf pw | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
+///     SECRET_STORE_INTEGRATION=1 dart test test/secret_service_integration_test.dart'
+void main() {
+  final envEnabled = Platform.environment['SECRET_STORE_INTEGRATION'] == '1';
+  final skip = envEnabled
+      ? false
+      : 'set SECRET_STORE_INTEGRATION=1 (Linux, unlocked keyring)';
+
+  final api = SecretToolApi();
+  const service = 'ca.danreynolds.secret_store.itest';
+
+  Uint8List bytes(List<int> v) => Uint8List.fromList(v);
+
+  Future<void> cleanup() async {
+    for (final acct in ['a', 'b', 'k']) {
+      await api.delete(service, acct);
+    }
+  }
+
+  setUp(cleanup);
+  tearDown(cleanup);
+
+  test('probe reports available and unlocked', () async {
+    final p = await api.probe(service);
+    expect(p.available, isTrue);
+    expect(p.locked, isFalse);
+  }, skip: skip);
+
+  test('set / get / update / delete round-trips real bytes', () async {
+    expect(await api.get(service, 'k'), isNull);
+
+    await api.set(service, 'k', bytes([1, 2, 3, 0, 255]), label: 'itest key');
+    expect(await api.get(service, 'k'), [1, 2, 3, 0, 255]);
+
+    // upsert (store over an existing account replaces the value)
+    await api.set(service, 'k', bytes([9, 9]));
+    expect(await api.get(service, 'k'), [9, 9]);
+
+    await api.delete(service, 'k');
+    expect(await api.get(service, 'k'), isNull);
+    await api.delete(service, 'k'); // idempotent
+  }, skip: skip);
+
+  test('binary values with NULs and every byte survive the base64 transport',
+      () async {
+    final v = bytes(List.generate(256, (i) => i)); // 0x00..0xFF, incl. newline
+    await api.set(service, 'k', v);
+    expect(await api.get(service, 'k'), v);
+  }, skip: skip);
+
+  test('enumerates all accounts under a service', () async {
+    await api.set(service, 'a', bytes([1]));
+    await api.set(service, 'b', bytes([2, 2]));
+    final all = await api.getAll(service);
+    expect(all.keys.toSet(), containsAll(<String>{'a', 'b'}));
+    expect(all['a'], [1]);
+    expect(all['b'], [2, 2]);
+  }, skip: skip);
+
+  test('empty getAll on an unused service', () async {
+    expect(await api.getAll('$service.empty'), isEmpty);
+  }, skip: skip);
+}

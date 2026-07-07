@@ -78,4 +78,35 @@ void main() {
     fs.deleteSync(p);
     expect(File(p).existsSync(), isFalse);
   });
+
+  group('readCappedSync hardening', () {
+    test('requirePrivate refuses a group/world-readable file', () {
+      final p = '${tmp.path}/loose.bin';
+      fs.writeAtomicSync(p, Uint8List.fromList([1, 2]));
+      expect(fs.readCappedSync(p, maxBytes: 10, requirePrivate: true),
+          [1, 2]); // 0600 passes
+      Process.runSync('chmod', ['0644', p]);
+      expect(() => fs.readCappedSync(p, maxBytes: 10, requirePrivate: true),
+          throwsA(isA<SecureFileError>()));
+      // Without the flag the loose file is still readable (generic primitive).
+      expect(fs.readCappedSync(p, maxBytes: 10), [1, 2]);
+    });
+
+    test('refuses a non-regular file (a FIFO would block forever)', () {
+      final d = Directory('${tmp.path}/adir')..createSync();
+      expect(() => fs.readCappedSync(d.path, maxBytes: 10),
+          throwsA(isA<SecureFileError>()));
+    });
+  });
+
+  group('verifyPrivateDirSync', () {
+    test('absent -> false; 0700 -> true; loose -> throws', () {
+      final d = '${tmp.path}/v';
+      expect(fs.verifyPrivateDirSync(d), isFalse);
+      fs.ensurePrivateDirSync(d);
+      expect(fs.verifyPrivateDirSync(d), isTrue);
+      Process.runSync('chmod', ['0755', d]);
+      expect(() => fs.verifyPrivateDirSync(d), throwsA(isA<SecureFileError>()));
+    });
+  });
 }

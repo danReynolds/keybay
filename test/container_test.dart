@@ -79,12 +79,18 @@ void main() {
     });
   });
 
-  group('Container (XChaCha20-Poly1305 + HKDF)', () {
+  group('Container (XChaCha20-Poly1305 + HKDF + key commitment)', () {
     final salt = bytesOf('profile-uuid-A');
     final entries = {
       'db_key': ContainerEntry(bytesOf('the spice must flow'), label: 'DB key'),
       'device': ContainerEntry(Uint8List.fromList([9, 8, 7, 6])),
     };
+
+    // Header layout offsets (must match container.dart):
+    // magic 0-3 | version 4 | cipher 5 | commit 6-37 | nonce 38-61
+    //   | ciphertext 62.. | tag (last 16)
+    const commitOffset = 6;
+    const ciphertextOffset = 62;
 
     test('seals and opens, preserving all entries', () async {
       final c = Container(contextSalt: salt);
@@ -103,27 +109,34 @@ void main() {
           reason: 'same input must not produce identical bytes');
     });
 
-    test('wrong store key -> AuthenticationFailed', () async {
+    test('wrong store key -> WrongStoreKey (commitment, not a tag failure)',
+        () async {
       final c = Container(contextSalt: salt);
       final sealed = await c.seal(entries, key(1));
-      expect(
-          () => c.open(sealed, key(2)), throwsA(isA<AuthenticationFailed>()));
+      expect(() => c.open(sealed, key(2)), throwsA(isA<WrongStoreKey>()));
     });
 
-    test('different profile salt -> AuthenticationFailed (AAD binds identity)',
+    test('different profile salt -> WrongStoreKey (commit binds identity)',
         () async {
       final sealed = await Container(contextSalt: bytesOf('profile-A'))
           .seal(entries, key(1));
       expect(
         () => Container(contextSalt: bytesOf('profile-B')).open(sealed, key(1)),
-        throwsA(isA<AuthenticationFailed>()),
+        throwsA(isA<WrongStoreKey>()),
       );
     });
 
-    test('single-bit ciphertext flip -> AuthenticationFailed', () async {
+    test('tampered commit field -> WrongStoreKey', () async {
       final c = Container(contextSalt: salt);
       final sealed = await c.seal(entries, key(1));
-      for (final pos in [8 + 24, sealed.length - 1]) {
+      final tampered = Uint8List.fromList(sealed)..[commitOffset] ^= 0x01;
+      expect(() => c.open(tampered, key(1)), throwsA(isA<WrongStoreKey>()));
+    });
+
+    test('single-bit ciphertext/tag flip -> AuthenticationFailed', () async {
+      final c = Container(contextSalt: salt);
+      final sealed = await c.seal(entries, key(1));
+      for (final pos in [ciphertextOffset, sealed.length - 1]) {
         final tampered = Uint8List.fromList(sealed)..[pos] ^= 0x01;
         expect(() => c.open(tampered, key(1)),
             throwsA(isA<AuthenticationFailed>()),
@@ -146,6 +159,9 @@ void main() {
       final c = Container(contextSalt: salt);
       expect(
           () => c.open(Uint8List(3), key(1)), throwsA(isA<ContainerCorrupt>()));
+      // One byte short of the minimum envelope (header 38 + nonce 24 + tag 16).
+      expect(() => c.open(Uint8List(77), key(1)),
+          throwsA(isA<ContainerCorrupt>()));
     });
 
     test('fuzz: random bytes always throw a typed SecretStoreException',
@@ -153,7 +169,7 @@ void main() {
       final c = Container(contextSalt: salt);
       final r = Random(99);
       for (var i = 0; i < 800; i++) {
-        final len = r.nextInt(80);
+        final len = r.nextInt(120);
         final buf =
             Uint8List.fromList(List.generate(len, (_) => r.nextInt(256)));
         try {
@@ -161,7 +177,7 @@ void main() {
           fail(
               'random bytes decrypted successfully (impossible without the key)');
         } on SecretStoreException {
-          // expected: ContainerCorrupt or AuthenticationFailed
+          // expected: ContainerCorrupt, WrongStoreKey, or AuthenticationFailed
         } catch (e) {
           fail('random bytes produced ${e.runtimeType}, not a typed error: $e');
         }

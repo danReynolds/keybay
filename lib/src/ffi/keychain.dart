@@ -3,10 +3,20 @@
 /// Direct Security.framework FFI — no subprocess, no text protocol; secrets
 /// move as `CFData`. This is the package's most delicate FFI: CoreFoundation is
 /// manually reference-counted, so every `*Create*` is paired with `CFRelease`.
-/// Items are created in the classic login keychain
-/// (`kSecUseDataProtectionKeychain = false`) and explicitly
-/// `kSecAttrSynchronizable = false` (a synchronizable item would escrow the key
-/// to iCloud Keychain).
+///
+/// Two modes, same code path:
+/// - **Login keychain** (`MacKeychainApi()`, the default): the classic
+///   file-based keychain (`kSecUseDataProtectionKeychain = false`). Works for
+///   any process — unsigned CLIs, `dart run`, signed apps — with no entitlement.
+/// - **Data Protection keychain** (`MacKeychainApi.dataProtection()`): AES-256-GCM
+///   + Secure Enclave, for a signed app carrying the Keychain Sharing
+///   entitlement. Uses the app's implicit default access group (no group is
+///   specified), so Xcode's capability is all that's needed. An unentitled
+///   process gets `errSecMissingEntitlement` (−34018) → [KeystoreUnreachable]
+///   with guidance — it never silently falls back to the login keychain.
+///
+/// Both modes set `kSecAttrSynchronizable = false` (a synchronizable item would
+/// escrow the key to iCloud Keychain).
 ///
 /// macOS only. Behind the [KeystoreApi] seam so backends are testable with a
 /// fake; the real binding is covered by the integration test.
@@ -28,6 +38,7 @@ const int _errSecDuplicateItem = -25299;
 const int _errSecAuthFailed = -25293;
 const int _errSecInteractionNotAllowed = -25308;
 const int _errSecNotAvailable = -25291;
+const int _errSecMissingEntitlement = -34018;
 
 const int _kCFStringEncodingUTF8 = 0x08000100;
 
@@ -36,13 +47,38 @@ final _CFTypeRef _nullRef = nullptr;
 
 /// The real macOS binding.
 final class MacKeychainApi implements KeystoreApi {
-  MacKeychainApi()
-      : _cf = DynamicLibrary.open(
+  /// The classic file-based login keychain (no entitlement required).
+  MacKeychainApi({bool nonInteractive = false})
+      : this._(nonInteractive: nonInteractive, dataProtection: false);
+
+  /// The Data Protection keychain + Secure Enclave, for a signed macOS app
+  /// carrying the Keychain Sharing entitlement. Fails with [KeystoreUnreachable]
+  /// (−34018) on an unentitled process rather than degrading to the login
+  /// keychain — see the library-level doc comment.
+  MacKeychainApi.dataProtection({bool nonInteractive = false})
+      : this._(nonInteractive: nonInteractive, dataProtection: true);
+
+  MacKeychainApi._({required this.nonInteractive, required bool dataProtection})
+      : _dataProtection = dataProtection,
+        _cf = DynamicLibrary.open(
             '/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation'),
         _sec = DynamicLibrary.open(
             '/System/Library/Frameworks/Security.framework/Security') {
     _bind();
   }
+
+  /// When true, every call carries `kSecUseAuthenticationUI =
+  /// kSecUseAuthenticationUIFail`: an operation that would need user
+  /// interaction (locked keychain, ACL prompt) fails fast with
+  /// `errSecInteractionNotAllowed` → [KeystoreLocked] instead of raising a
+  /// GUI dialog. Set this for daemons/CI — the per-call, non-deprecated
+  /// equivalent of `SecKeychainSetUserInteractionAllowed(false)` without that
+  /// call's process-global blast radius.
+  final bool nonInteractive;
+
+  /// When true, target the Data Protection keychain instead of the login
+  /// keychain (see the constructors and the library doc comment).
+  final bool _dataProtection;
 
   final DynamicLibrary _cf;
   final DynamicLibrary _sec;
@@ -90,6 +126,8 @@ final class MacKeychainApi implements KeystoreApi {
       _kSecMatchLimitAll,
       _kSecAttrSynchronizable,
       _kSecUseDataProtectionKeychain,
+      _kSecUseAuthenticationUI,
+      _kSecUseAuthenticationUIFail,
       _kCFBooleanTrue,
       _kCFBooleanFalse;
 
@@ -161,7 +199,22 @@ final class MacKeychainApi implements KeystoreApi {
     _kSecAttrSynchronizable = _cfConst(_sec, 'kSecAttrSynchronizable');
     _kSecUseDataProtectionKeychain =
         _cfConst(_sec, 'kSecUseDataProtectionKeychain');
+    _kSecUseAuthenticationUI = _cfConst(_sec, 'kSecUseAuthenticationUI');
+    _kSecUseAuthenticationUIFail =
+        _cfConst(_sec, 'kSecUseAuthenticationUIFail');
   }
+
+  /// Extra pairs for every SecItem dictionary when [nonInteractive] is set.
+  List<(Pointer<Void>, Pointer<Void>)> get _uiPairs => nonInteractive
+      ? [(_kSecUseAuthenticationUI, _kSecUseAuthenticationUIFail)]
+      : const [];
+
+  /// The `kSecUseDataProtectionKeychain` value for the selected mode. Set
+  /// explicitly (never omitted) so the target keychain is deterministic —
+  /// modern macOS routes a bare query to the DP keychain by default, which
+  /// would silently diverge from our intent.
+  _CFTypeRef get _dpValue =>
+      _dataProtection ? _kCFBooleanTrue : _kCFBooleanFalse;
 
   // A CFStringRef/CFBooleanRef exported constant: read the pointer stored at the
   // symbol's address.
@@ -198,6 +251,12 @@ final class MacKeychainApi implements KeystoreApi {
       }
       return ref;
     } finally {
+      // Scrub the staging copy of the secret before returning it to the
+      // allocator — native memory, unlike the Dart heap, can be zeroed.
+      // (CFDataCreate has already taken its own copy.)
+      if (v.isNotEmpty) {
+        buf.asTypedList(v.length).fillRange(0, v.length, 0);
+      }
       malloc.free(buf);
     }
   }
@@ -240,6 +299,12 @@ final class MacKeychainApi implements KeystoreApi {
         throw KeystoreLocked('$op: keychain locked / interaction not allowed');
       case _errSecNotAvailable:
         throw KeystoreUnreachable('$op: keychain not available');
+      case _errSecMissingEntitlement:
+        throw KeystoreUnreachable(
+            '$op: the Data Protection keychain requires a keychain-access-groups '
+            'entitlement (Xcode "Keychain Sharing") authorized by a provisioning '
+            'profile; it is unavailable to unsigned or unentitled processes '
+            '(use MacKeychainApi() for the login keychain instead)');
       case _errSecAuthFailed:
         throw KeystoreOperationFailed('$op: authorization failed',
             status: status);
@@ -259,9 +324,10 @@ final class MacKeychainApi implements KeystoreApi {
         (_kSecClass, _kSecClassGenericPassword),
         (_kSecAttrService, svc),
         (_kSecAttrAccount, acct),
-        (_kSecUseDataProtectionKeychain, _kCFBooleanFalse),
+        (_kSecUseDataProtectionKeychain, _dpValue),
         (_kSecReturnData, _kCFBooleanTrue),
         (_kSecMatchLimit, _kSecMatchLimitOne),
+        ..._uiPairs,
       ]);
       refs.addAll(q.owned);
       final out = malloc<Pointer<Void>>();
@@ -293,16 +359,19 @@ final class MacKeychainApi implements KeystoreApi {
       final svc = _cfString(service)..let(refs.add);
       final acct = _cfString(account)..let(refs.add);
       final data = _cfData(value)..let(refs.add);
-      final labelRef = label == null ? null : (_cfString(label)..let(refs.add));
+      // Same default label as the Linux backend, so keystore UIs never show a
+      // bare unlabeled item and behavior matches across platforms.
+      final labelRef = _cfString(label ?? 'secret_store')..let(refs.add);
 
       final addPairs = <(Pointer<Void>, Pointer<Void>)>[
         (_kSecClass, _kSecClassGenericPassword),
         (_kSecAttrService, svc),
         (_kSecAttrAccount, acct),
         (_kSecValueData, data),
-        (_kSecUseDataProtectionKeychain, _kCFBooleanFalse),
+        (_kSecUseDataProtectionKeychain, _dpValue),
         (_kSecAttrSynchronizable, _kCFBooleanFalse),
-        if (labelRef != null) (_kSecAttrLabel, labelRef),
+        (_kSecAttrLabel, labelRef),
+        ..._uiPairs,
       ];
       final add = _dict(addPairs);
       refs.addAll(add.owned);
@@ -319,12 +388,13 @@ final class MacKeychainApi implements KeystoreApi {
         (_kSecClass, _kSecClassGenericPassword),
         (_kSecAttrService, svc),
         (_kSecAttrAccount, acct),
-        (_kSecUseDataProtectionKeychain, _kCFBooleanFalse),
+        (_kSecUseDataProtectionKeychain, _dpValue),
+        ..._uiPairs,
       ]);
       refs.addAll(query.owned);
       final update = _dict([
         (_kSecValueData, data),
-        if (labelRef != null) (_kSecAttrLabel, labelRef),
+        (_kSecAttrLabel, labelRef),
       ]);
       refs.addAll(update.owned);
       final us = _secItemUpdate(query.dict, update.dict);
@@ -346,7 +416,8 @@ final class MacKeychainApi implements KeystoreApi {
         (_kSecClass, _kSecClassGenericPassword),
         (_kSecAttrService, svc),
         (_kSecAttrAccount, acct),
-        (_kSecUseDataProtectionKeychain, _kCFBooleanFalse),
+        (_kSecUseDataProtectionKeychain, _dpValue),
+        ..._uiPairs,
       ]);
       refs.addAll(q.owned);
       final status = _secItemDelete(q.dict);
@@ -381,9 +452,10 @@ final class MacKeychainApi implements KeystoreApi {
       final q = _dict([
         (_kSecClass, _kSecClassGenericPassword),
         (_kSecAttrService, svc),
-        (_kSecUseDataProtectionKeychain, _kCFBooleanFalse),
+        (_kSecUseDataProtectionKeychain, _dpValue),
         (_kSecReturnAttributes, _kCFBooleanTrue),
         (_kSecMatchLimit, _kSecMatchLimitAll),
+        ..._uiPairs,
       ]);
       refs.addAll(q.owned);
       final out = malloc<Pointer<Void>>();

@@ -104,7 +104,11 @@ final class FileKeySource implements KeySource {
 
   @override
   Future<Uint8List?> read() async {
-    final bytes = _fs.readCappedSync(path, maxBytes: 4096);
+    // requirePrivate: a group/world-readable key file is refused outright
+    // (the OpenSSH stance) — we only ever create it 0600, so loose modes mean
+    // someone else touched it.
+    final bytes =
+        _fs.readCappedSync(path, maxBytes: 4096, requirePrivate: true);
     if (bytes == null) return null;
     if (bytes.length != storeKeyLength) {
       throw KeystoreOperationFailed(
@@ -126,7 +130,7 @@ final class FileKeySource implements KeySource {
   @override
   Future<KeySourceStatus> describe() async => KeySourceStatus(
         name: 'file',
-        present: _fs.readCappedSync(path, maxBytes: 4096) != null,
+        present: _fs.existsSync(path),
         available: true,
         detail: path,
       );

@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+# All third-party actions are pinned by commit SHA (tags are retargetable —
+# a hijacked tag is a code-execution path into CI). The trailing comment
+# records the tag the SHA corresponded to when pinned.
 jobs:
   analyze-and-test:
     strategy:
@@ -12,20 +15,20 @@ jobs:
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dart-lang/setup-dart@v1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
       - run: dart pub get
       - run: dart format --output=none --set-exit-if-changed .
       - run: dart analyze --fatal-infos
-      # Unit tier (hermetic): crypto vectors, container/fuzz, POSIX perms,
-      # backend logic over fakes, and the dependency-closure firewall.
+      # Unit tier (hermetic): crypto vectors, container/fuzz, POSIX perms +
+      # flock, backend logic over fakes, and the dependency-closure firewall.
       - run: dart test -x integration
 
   integration-macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dart-lang/setup-dart@v1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
       - run: dart pub get
       # Real login Keychain round-trip.
       - run: SECRET_STORE_INTEGRATION=1 dart test test/keychain_integration_test.dart
@@ -33,20 +36,48 @@ jobs:
   integration-linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dart-lang/setup-dart@v1
-      - run: sudo apt-get update && sudo apt-get install -y libsecret-tools gnome-keyring
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
+      - run: sudo apt-get update && sudo apt-get install -y libsecret-tools gnome-keyring dbus
       - run: dart pub get
-      # Real Secret Service round-trip under a throwaway keyring/session.
-      # (Linux integration test lands with the Linux backend hardening pass.)
-      - run: echo "linux secret-tool integration test: TODO (needs dbus-run-session harness)"
+      # Real Secret Service round-trip: a throwaway D-Bus session with a fresh
+      # gnome-keyring unlocked by a known password (secrets component only),
+      # then the opt-in integration tier. Recipe verified locally against real
+      # gnome-keyring in a Docker ubuntu container.
+      - run: |
+          dbus-run-session -- bash -c '
+            eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
+            export GNOME_KEYRING_CONTROL
+            SECRET_STORE_INTEGRATION=1 dart test test/secret_service_integration_test.dart
+          '
 
+  # osv-scanner-action ships as a REUSABLE WORKFLOW, not a step action; the
+  # old `uses: google/osv-scanner-action@v1` step was a dangling reference
+  # (the repo has no v1 tag).
   supply-chain:
+    permissions:
+      contents: read
+      actions: read
+      security-events: write # SARIF upload
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+    with:
+      scan-args: |-
+        --lockfile=./pubspec.lock
+
+  # The exact-pinned crypto dependency is deliberately frozen; this canary
+  # fails the build when pub.dev publishes anything newer so the bump is a
+  # reviewed decision (advisory check + vector firewall), never a drift.
+  # OSV/GHSA coverage of pub.dev is too sparse to rely on alone — known
+  # security issues in this package's AES paths were never assigned
+  # advisories, so "no advisory" is weak evidence.
+  crypto-pin-canary:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: OSV advisory scan
-        uses: google/osv-scanner-action@v1
-        with:
-          scan-args: |-
-            --lockfile=./pubspec.lock
+      - name: check pub.dev for a newer `cryptography` release
+        run: |
+          latest=$(curl -sS https://pub.dev/api/packages/cryptography | jq -r '.latest.version')
+          echo "pub.dev latest: $latest (pinned: 2.9.0)"
+          if [ "$latest" != "2.9.0" ]; then
+            echo "::error::cryptography $latest published (pin is 2.9.0). Review the diff and advisories, re-run the vector firewall, then bump the pin deliberately."
+            exit 1
+          fi

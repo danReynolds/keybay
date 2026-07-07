@@ -5,10 +5,12 @@
 /// attack surface and compatibility surface.
 library;
 
+// The concrete backends (`KeystoreBackend`, `EncryptedFileBackend`) are
+// deliberately NOT exported: which one to use is the library's per-platform
+// decision, not the caller's. Compose intent through `SecretStorage`'s
+// constructors instead. `SecretBackend` (the interface) is exported for the
+// test/custom escape hatch and as the `describe()` surface.
 export 'src/backend.dart' show BackendCapabilities, BackendInfo, SecretBackend;
-export 'src/backends/encrypted_file_backend.dart'
-    show EncryptedFileBackend, maxContainerBytes;
-export 'src/backends/keystore_backend.dart' show KeystoreBackend;
 export 'src/errors.dart'
     show
         AuthenticationFailed,
@@ -19,7 +21,8 @@ export 'src/errors.dart'
         KeystoreUnreachable,
         SecretStoreException,
         StoreKeyMissing,
-        UnsupportedCapability;
+        UnsupportedCapability,
+        WrongStoreKey;
 export 'src/ffi/keychain.dart' show MacKeychainApi;
 export 'src/ffi/keystore_api.dart' show KeystoreApi, KeystoreProbe;
 export 'src/ffi/posix_file.dart' show SecureFileError, SecureFileSystem;

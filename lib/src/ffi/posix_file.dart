@@ -1,12 +1,17 @@
 /// A minimal POSIX file shim (see doc/design.md).
 ///
 /// `dart:io` cannot create a file with restrictive permissions from birth (no
-/// umask/chmod/fchmod), cannot `fsync`, and cannot exclusive-create — verified:
-/// `File.writeAsBytes` yields mode 0644. For key material that is unacceptable,
-/// so writes go through libc directly: `open(O_CREAT|O_EXCL|O_WRONLY, 0600)` →
-/// write → `fsync` → `close` → atomic `rename`. This is a second, deliberately
+/// umask/chmod/fchmod), cannot `fsync`, and cannot exclusive-create —
+/// verified: `File.writeAsBytes` yields mode 0644. For key material
+/// that is unacceptable, so writes go through libc directly:
+/// `open(O_CREAT|O_EXCL|O_WRONLY, 0600)` → write → `fsync` → `close` → atomic
+/// `rename` → best-effort directory `fsync`. This is a second, deliberately
 /// tiny FFI locus (the first being the macOS Keychain binding); it is the
 /// safest category of FFI — fixed-arity libc calls over ints and byte buffers.
+///
+/// Native staging buffers that held secret bytes are zeroed before they are
+/// returned to the allocator: unlike Dart-heap memory, FFI memory *can* be
+/// scrubbed, so it is.
 ///
 /// POSIX-only. macOS and Linux share these libc symbols; the open() flag values
 /// differ by platform and are selected below.
@@ -56,9 +61,12 @@ final Pointer<Int32> Function() _errnoLocation =
 int get _errno => _errnoLocation().value;
 
 // open() flags — values differ between Linux and macOS/BSD.
+const int _oRdOnly = 0x0000;
 final int _oWrOnly = 0x0001;
 final int _oCreat = Platform.isMacOS ? 0x0200 : 0x40;
 final int _oExcl = Platform.isMacOS ? 0x0800 : 0x80;
+
+const int _eIntr = 4;
 
 /// Thrown when a low-level file operation fails. Carries the operation and the
 /// path — never file contents.
@@ -76,9 +84,10 @@ class SecureFileSystem {
   const SecureFileSystem();
 
   /// Writes [bytes] to [path] atomically and privately: an exclusive-created
-  /// `0600` temp file in the same directory, fsync'd, then renamed over [path].
-  /// A crash leaves either the previous file or the new one — never a torn
-  /// mix. The temp file is unlinked on any failure.
+  /// `0600` temp file in the same directory, fsync'd, then renamed over
+  /// [path], then a best-effort fsync of the directory so the rename itself
+  /// survives a power cut. A crash leaves either the previous file or the new
+  /// one — never a torn mix. The temp file is unlinked on any failure.
   void writeAtomicSync(String path, Uint8List bytes) {
     final dir = File(path).parent.path;
     // Random suffix so a stale/pre-placed temp can't collide, and O_EXCL means
@@ -91,7 +100,8 @@ class SecureFileSystem {
       malloc.free(tmpPtr);
       throw SecureFileError('open', tmp, e);
     }
-    final buf = malloc<Uint8>(bytes.isEmpty ? 1 : bytes.length);
+    final bufLen = bytes.isEmpty ? 1 : bytes.length;
+    final buf = malloc<Uint8>(bufLen);
     try {
       if (bytes.isNotEmpty) buf.asTypedList(bytes.length).setAll(0, bytes);
       var written = 0;
@@ -99,7 +109,7 @@ class SecureFileSystem {
         final n = _write(fd, buf + written, bytes.length - written);
         if (n < 0) {
           final e = _errno;
-          if (e == 4 /* EINTR */) continue;
+          if (e == _eIntr) continue;
           throw SecureFileError('write', tmp, e);
         }
         written += n;
@@ -112,6 +122,9 @@ class SecureFileSystem {
       _tryUnlink(tmp);
       rethrow;
     } finally {
+      // Scrub the staging copy before returning it to the allocator — for the
+      // file key source it holds raw key material.
+      buf.asTypedList(bufLen).fillRange(0, bufLen, 0);
       malloc.free(buf);
       malloc.free(tmpPtr);
     }
@@ -128,16 +141,34 @@ class SecureFileSystem {
       _tryUnlink(tmp);
       rethrow;
     }
+    _fsyncDirBestEffort(dir);
   }
 
   /// Reads [path], rejecting anything larger than [maxBytes] *before* reading
-  /// the contents. Returns null if the file does not exist.
-  Uint8List? readCappedSync(String path, {required int maxBytes}) {
+  /// the contents, and rejecting non-regular files (a FIFO at the path would
+  /// otherwise block forever). With [requirePrivate], additionally refuses a
+  /// group/other-accessible file (`mode & 0o077 != 0`) — the OpenSSH stance:
+  /// secret material with loose permissions is an error, not a warning.
+  /// Returns null if the file does not exist.
+  Uint8List? readCappedSync(
+    String path, {
+    required int maxBytes,
+    bool requirePrivate = false,
+  }) {
     final f = File(path);
-    if (!f.existsSync()) return null;
-    final len = f.lengthSync();
-    if (len > maxBytes) {
-      throw SecureFileError('read(too-large:$len>$maxBytes)', path, 0);
+    final stat = f.statSync();
+    if (stat.type == FileSystemEntityType.notFound) return null;
+    if (stat.type != FileSystemEntityType.file) {
+      throw SecureFileError('read(not-a-regular-file)', path, 0);
+    }
+    if (requirePrivate && (stat.mode & 0x3F) != 0) {
+      throw SecureFileError(
+          'read(insecure-mode:${(stat.mode & 0x1FF).toRadixString(8)})',
+          path,
+          0);
+    }
+    if (stat.size > maxBytes) {
+      throw SecureFileError('read(too-large:${stat.size}>$maxBytes)', path, 0);
     }
     return f.readAsBytesSync();
   }
@@ -146,6 +177,32 @@ class SecureFileSystem {
   void deleteSync(String path) {
     final f = File(path);
     if (f.existsSync()) f.deleteSync();
+  }
+
+  /// Whether any filesystem entity exists at [path].
+  bool existsSync(String path) =>
+      File(path).statSync().type != FileSystemEntityType.notFound;
+
+  /// Verifies that [dirPath] — if it exists — is a directory granting no
+  /// group/other access (`mode & 0o077 == 0`). Returns false when absent,
+  /// true when present and private; throws [SecureFileError] when present but
+  /// loose or not a directory. Read paths use this: verify, never create.
+  bool verifyPrivateDirSync(String dirPath) {
+    final stat = Directory(dirPath).statSync();
+    if (stat.type == FileSystemEntityType.notFound) {
+      return false;
+    }
+    if (stat.type != FileSystemEntityType.directory) {
+      throw SecureFileError('not-a-directory', dirPath, 0);
+    }
+    if ((stat.mode & 0x3F) != 0) {
+      // 0x3F = 0o77 (group+other bits). Refuse a world/group-accessible dir.
+      throw SecureFileError(
+          'insecure-dir-mode(${(stat.mode & 0x1FF).toRadixString(8)})',
+          dirPath,
+          0);
+    }
+    return true;
   }
 
   /// Ensures [dirPath] exists as a directory that grants no group/other access
@@ -180,16 +237,27 @@ class SecureFileSystem {
         malloc.free(ptr);
       }
     }
-    final stat = dir.statSync();
-    if (stat.type != FileSystemEntityType.directory) {
-      throw SecureFileError('not-a-directory', dirPath, 0);
+    if (!verifyPrivateDirSync(dirPath)) {
+      // mkdir succeeded or EEXIST'd, so absence here means it vanished under us.
+      throw SecureFileError('dir-vanished', dirPath, 0);
     }
-    if ((stat.mode & 0x3F) != 0) {
-      // 0x3F = 0o77 (group+other bits). Refuse a world/group-accessible dir.
-      throw SecureFileError(
-          'insecure-dir-mode(${(stat.mode & 0x1FF).toRadixString(8)})',
-          dirPath,
-          0);
+  }
+
+  /// Best-effort fsync of a directory so a completed rename is durable across
+  /// a power cut (POSIX leaves rename persistence to the directory metadata).
+  /// Failures are ignored: some filesystems reject fsync on a directory fd,
+  /// and the write itself is already atomic — this only narrows the crash
+  /// window, it cannot un-tear anything.
+  void _fsyncDirBestEffort(String dirPath) {
+    final ptr = dirPath.toNativeUtf8();
+    try {
+      final fd = _open(ptr, _oRdOnly, 0);
+      if (fd >= 0) {
+        _fsync(fd);
+        _close(fd);
+      }
+    } finally {
+      malloc.free(ptr);
     }
   }
 

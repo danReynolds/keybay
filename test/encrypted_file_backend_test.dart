@@ -5,6 +5,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:secret_store/secret_store.dart';
+// The concrete backend is internal (not exported); its own unit test reaches
+// it directly.
+import 'package:secret_store/src/backends/encrypted_file_backend.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -64,6 +67,20 @@ void main() {
     });
   });
 
+  group('in-process serialization', () {
+    test('concurrent writes on one instance never lose updates', () async {
+      // The FIFO mutex serializes the whole-file read-modify-write; without it
+      // interleaved writers would clobber each other. (Cross-process
+      // coordination is out of scope — a container is single-writer.)
+      final be = backend(InMemoryKeySource());
+      await Future.wait<void>([
+        for (var i = 0; i < 8; i++) be.write('k$i', b('$i')),
+      ]);
+      expect((await be.readAll()).keys.toSet(),
+          {for (var i = 0; i < 8; i++) 'k$i'});
+    });
+  });
+
   group('§7 failure matrix', () {
     test('fresh install (no container, no key) reads empty', () async {
       final be = backend(InMemoryKeySource());
@@ -88,16 +105,16 @@ void main() {
           throwsA(isA<ContainerMissing>()));
     });
 
-    test('wrong key -> AuthenticationFailed', () async {
+    test('wrong key -> WrongStoreKey (commitment check, pre-decryption)',
+        () async {
       await backend(FileKeySource(keyPath)).write('k', b('v'));
       // Replace the key file with a different valid-length key.
       await FileKeySource(keyPath).delete();
       final wrong = InMemoryKeySource(generateStoreKey());
-      expect(
-          () => backend(wrong).read('k'), throwsA(isA<AuthenticationFailed>()));
+      expect(() => backend(wrong).read('k'), throwsA(isA<WrongStoreKey>()));
     });
 
-    test('wrong profile salt -> AuthenticationFailed', () async {
+    test('wrong profile salt -> WrongStoreKey', () async {
       final ks = FileKeySource(keyPath);
       await EncryptedFileBackend(
               path: containerPath, keySource: ks, contextSalt: b('profile-A'))
@@ -106,7 +123,7 @@ void main() {
           path: containerPath,
           keySource: FileKeySource(keyPath),
           contextSalt: b('profile-B'));
-      expect(() => other.read('k'), throwsA(isA<AuthenticationFailed>()));
+      expect(() => other.read('k'), throwsA(isA<WrongStoreKey>()));
     });
 
     test('truncation is always a typed error (subtype depends on where)',
@@ -115,20 +132,25 @@ void main() {
       await backend(ks).write('k', b('value'));
       final full = File(containerPath).readAsBytesSync();
 
+      // Each expectation is awaited: the read only touches the file once its
+      // turn in the backend's serialization comes, so firing the next
+      // truncation before the previous read completes would race it.
+
       // Chopped to a stub: the envelope is structurally too short.
       File(containerPath).writeAsBytesSync(full.sublist(0, 10));
-      expect(() => backend(FileKeySource(keyPath)).read('k'),
+      await expectLater(backend(FileKeySource(keyPath)).read('k'),
           throwsA(isA<ContainerCorrupt>()));
 
-      // Chopped inside the ciphertext/tag: envelope-shaped but fails the AEAD.
+      // Chopped inside the ciphertext/tag: envelope-shaped, right key
+      // (commitment passes), but the AEAD fails.
       File(containerPath).writeAsBytesSync(full.sublist(0, full.length - 4));
-      expect(() => backend(FileKeySource(keyPath)).read('k'),
+      await expectLater(backend(FileKeySource(keyPath)).read('k'),
           throwsA(isA<AuthenticationFailed>()));
 
       // Whatever the offset, it is never anything but a SecretStoreException.
       for (var cut = 0; cut < full.length; cut += 3) {
         File(containerPath).writeAsBytesSync(full.sublist(0, cut));
-        expect(() => backend(FileKeySource(keyPath)).read('k'),
+        await expectLater(backend(FileKeySource(keyPath)).read('k'),
             throwsA(isA<SecretStoreException>()),
             reason: 'prefix length $cut');
       }
@@ -137,7 +159,7 @@ void main() {
     test('a fresh-key write that fails rolls the key back (no orphan)',
         () async {
       // Point the container at a path whose parent cannot be created (a file
-      // stands where the dir should be), so writeAtomic fails on first write.
+      // stands where the dir should be), so the write fails before sealing.
       final blocker = File('${tmp.path}/blocker')..writeAsStringSync('x');
       final ks = FileKeySource(keyPath);
       final be = EncryptedFileBackend(
@@ -146,6 +168,32 @@ void main() {
       // The store key must NOT have been left behind.
       expect(await ks.read(), isNull,
           reason: 'fresh key rolled back on failure');
+    });
+  });
+
+  group('read-side permission enforcement', () {
+    test('a group/world-readable container is refused', () async {
+      final ks = InMemoryKeySource();
+      await backend(ks).write('k', b('v'));
+      Process.runSync('chmod', ['0644', containerPath]);
+      expect(() => backend(ks).read('k'), throwsA(isA<SecureFileError>()));
+    });
+
+    test('a group/world-accessible store directory is refused on read',
+        () async {
+      final ks = InMemoryKeySource();
+      await backend(ks).write('k', b('v'));
+      Process.runSync('chmod', ['0755', tmp.path]);
+      addTearDown(() => Process.runSync('chmod', ['0700', tmp.path]));
+      expect(() => backend(ks).read('k'), throwsA(isA<SecureFileError>()));
+    });
+
+    test('a group/world-readable key file is refused', () async {
+      final ks = FileKeySource(keyPath);
+      await backend(ks).write('k', b('v'));
+      Process.runSync('chmod', ['0644', keyPath]);
+      expect(() => backend(FileKeySource(keyPath)).read('k'),
+          throwsA(isA<SecureFileError>()));
     });
   });
 

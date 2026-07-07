@@ -1,6 +1,12 @@
-/// The front API (see doc/design.md): a bytes-first async key-value store over a
-/// [SecretBackend]. Platform options live on backend constructors; these verbs
-/// take only key/value.
+/// The front API (see doc/design.md): a bytes-first async key-value store.
+///
+/// Users express *intent*, not mechanism. `SecretStorage(service:)` gives the
+/// most secure storage the platform offers, chosen by the library — the caller
+/// never picks between "keystore items" and "encrypted file". The only cases
+/// that take more than a service name are the ones that are genuinely a
+/// decision: opting up to the macOS Data Protection keychain on an entitled
+/// app (`api:`), and running headless where the encryption key needs an
+/// explicit home ([SecretStorage.encryptedFile]).
 library;
 
 import 'dart:convert';
@@ -8,12 +14,14 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'backend.dart';
+import 'backends/encrypted_file_backend.dart';
 import 'backends/keystore_backend.dart';
 import 'errors.dart';
 import 'ffi/keychain.dart';
 import 'ffi/keystore_api.dart';
 import 'ffi/secret_service.dart';
 import 'identifiers.dart';
+import 'key_source.dart';
 
 /// Returns the platform's OS keystore binding — `MacKeychainApi` on macOS,
 /// `SecretToolApi` on Linux. Throws [KeystoreUnreachable] elsewhere (fail-closed
@@ -26,25 +34,52 @@ KeystoreApi platformKeystore() {
       'no OS keystore backend for ${Platform.operatingSystem}');
 }
 
-/// Stores named byte secrets in a [SecretBackend].
-///
-/// The default constructor resolves the platform keystore and stores each
-/// secret as its own item (model A — the `flutter_secure_storage` shape). For
-/// the wrapped-key container (model B), compose explicitly with
-/// [SecretStorage.withBackend].
+/// Stores named byte secrets.
 final class SecretStorage {
+  /// Injects a [SecretBackend] directly. Escape hatch for tests (a fake) and
+  /// custom backends; normal callers use [SecretStorage.new] or
+  /// [SecretStorage.encryptedFile].
   SecretStorage.withBackend(this.backend);
 
-  /// Resolves the platform OS keystore (fail-closed off macOS/Linux) and stores
-  /// each secret as its own item under [service].
-  factory SecretStorage({required String service}) {
+  /// The secure default: stores each secret in the platform's OS keystore
+  /// (macOS Keychain, Linux Secret Service), the strongest storage available
+  /// without extra setup. Fail-closed — throws [KeystoreUnreachable] where
+  /// there is no usable keystore (e.g. a headless server), rather than falling
+  /// back to something weaker; there, reach for [SecretStorage.encryptedFile]
+  /// with a deliberate key source.
+  ///
+  /// [api] is an advanced override of the keystore binding for the platforms
+  /// that use OS items. Its one intended use today is opting an **entitled
+  /// macOS app** up to the Data Protection keychain + Secure Enclave:
+  /// `SecretStorage(service: s, api: MacKeychainApi.dataProtection())`. Leave
+  /// it null everywhere else.
+  factory SecretStorage({required String service, KeystoreApi? api}) {
     validateIdentifier(service, 'service');
     return SecretStorage.withBackend(
-        KeystoreBackend(service: service, api: platformKeystore()));
+        KeystoreBackend(service: service, api: api ?? platformKeystore()));
+  }
+
+  /// Stores all secrets in one authenticated encrypted file at [path], sealed
+  /// by a key from [keySource]. Use this when there is no OS keystore (a
+  /// headless server — pair with a TPM or, as an explicit insecure fallback,
+  /// a file key source), when you want a single backup unit, or for many
+  /// secrets. [contextSalt] optionally binds the container to a caller identity
+  /// (e.g. a profile UUID) so it can't be opened in another context.
+  factory SecretStorage.encryptedFile({
+    required String path,
+    required KeySource keySource,
+    List<int> contextSalt = const [],
+  }) {
+    return SecretStorage.withBackend(EncryptedFileBackend(
+      path: path,
+      keySource: keySource,
+      contextSalt: contextSalt,
+    ));
   }
 
   /// The underlying backend. Read [SecretBackend.capabilities] to branch on
-  /// optional operations, or `await backend.describe()` for a health snapshot.
+  /// optional operations, or `await backend.describe()` for a health snapshot
+  /// (including which mechanism the library selected).
   final SecretBackend backend;
 
   /// Reads the raw bytes for [key], or null if absent.
