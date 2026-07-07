@@ -60,9 +60,11 @@ final store = SecretStorage.encryptedFile(
 ```
 
 The key source is the security-relevant choice: `KeystoreKeySource` (key in the
-OS keystore), a TPM source for headless nodes *(planned)*, or `FileKeySource`
-(key on disk beside the container, `0600`) — the **explicit insecure fallback**
-for environments with no keystore at all, which you have to name to get.
+OS keystore), `TpmKeySource` (headless servers — wraps the key with
+`systemd-creds`, hardware-bound to the TPM so a stolen disk is useless without
+that host's chip), or `FileKeySource` (key on disk beside the container,
+`0600`) — the **explicit insecure fallback** for environments with no keystore
+at all, which you have to name to get.
 
 ## Threat model
 

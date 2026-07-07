@@ -4,6 +4,23 @@
 
 Initial implementation (see [doc/design.md](doc/design.md)). Not yet published.
 
+### Headless hardware-bound key source (pre-release)
+
+- **`TpmKeySource`** wraps the container store key with `systemd-creds` and
+  writes only the *encrypted* blob to disk — hardware-bound to the TPM on a
+  machine that has one, so a stolen disk is useless without that host's chip.
+  It's the headless analogue of `KeystoreKeySource` (drop it into
+  `SecretStorage.encryptedFile(keySource: …)`; the container is unchanged),
+  turning headless from S4 (key on disk) to S1. `TpmKeyBinding` selects
+  `host+tpm2` (default, strongest), `tpm2`, or `host` (documented as *not*
+  hardware-bound); the TPM-requiring defaults **fail closed** without a TPM
+  rather than silently degrading. Unit-tested over a fake `ProcessRunner`;
+  the real `systemd-creds` round-trip is integration-tested (Linux, `host`
+  binding) and verified in Docker.
+- **`ProcessRunner` extracted** to `src/ffi/process_runner.dart` (was in the
+  `secret-tool` file) — now shared by the Secret Service backend and the TPM
+  key source. Public export path changed accordingly.
+
 ### Security hardening pass (pre-release; container format changed while unshipped)
 
 - **Key commitment in the container format.** XChaCha20-Poly1305 is not

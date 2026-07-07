@@ -38,12 +38,14 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
-      - run: sudo apt-get update && sudo apt-get install -y libsecret-tools gnome-keyring dbus
+      - run: sudo apt-get update && sudo apt-get install -y libsecret-tools gnome-keyring dbus systemd
       - run: dart pub get
+      # TPM key source via real systemd-creds (host binding — no TPM needed;
+      # proves the wrap/unwrap plumbing). No D-Bus required.
+      - run: SECRET_STORE_INTEGRATION=1 dart test test/tpm_key_source_integration_test.dart
       # Real Secret Service round-trip: a throwaway D-Bus session with a fresh
-      # gnome-keyring unlocked by a known password (secrets component only),
-      # then the opt-in integration tier. Recipe verified locally against real
-      # gnome-keyring in a Docker ubuntu container.
+      # gnome-keyring unlocked by a known password (secrets component only).
+      # Recipe verified locally against real gnome-keyring in a Docker container.
       - run: |
           dbus-run-session -- bash -c '
             eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"

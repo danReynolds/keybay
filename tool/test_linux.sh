@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Run the Linux Secret Service integration test locally on ANY machine with
-# Docker (e.g. a macOS dev box) — the same tier CI runs, against a real
-# gnome-keyring under a throwaway D-Bus session. Recipe verified in-repo.
+# Run the Linux integration tiers locally on ANY machine with Docker (e.g. a
+# macOS dev box) — the same tiers CI runs: the Secret Service backend against a
+# real gnome-keyring under a throwaway D-Bus session, and the TPM key source
+# against real systemd-creds (host binding, so no TPM needed). Verified in-repo.
 #
 #   ./tool/test_linux.sh
 #
@@ -13,9 +14,14 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 exec docker run --rm -i -v "$REPO":/src:ro dart:stable bash -s <<'INNER'
 set -euo pipefail
 apt-get update -qq
-apt-get install -y -qq libsecret-tools gnome-keyring dbus >/dev/null
+apt-get install -y -qq libsecret-tools gnome-keyring dbus systemd >/dev/null
 cp -r /src /build && cd /build
 dart pub get >/dev/null
+
+# TPM key source via real systemd-creds (no D-Bus / no TPM required).
+SECRET_STORE_INTEGRATION=1 dart test test/tpm_key_source_integration_test.dart
+
+# Secret Service via secret-tool, under a throwaway D-Bus session + keyring.
 dbus-run-session -- bash -c '
   eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
   export GNOME_KEYRING_CONTROL

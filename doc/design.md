@@ -416,15 +416,15 @@ its own OS-keystore item) and `EncryptedFileBackend` (**Model B** — all secret
 in one XChaCha20-Poly1305 container sealed by a `KeySource` key). One
 `KeystoreApi` **binding per OS** — `MacKeychainApi`, `SecretToolApi`, an iOS
 `SecItem` binding, `WinCredApi` — and a set of `KeySource`s for Model B
-(`KeystoreKeySource`, `FileKeySource`, `InMemoryKeySource`, and the planned
-`TpmKeySource` / `AndroidKeystoreKeySource` / `DpapiKeySource`).
+(`KeystoreKeySource`, `FileKeySource`, `InMemoryKeySource`, `TpmKeySource`, and
+the planned `AndroidKeystoreKeySource` / `DpapiKeySource`).
 
 **Per-platform matrix — what we promote, and its tier:**
 
 | Platform | Promoted default | Tier | Opt-in alternatives | Status |
 |---|---|---|---|---|
 | **macOS** | A — login-keychain items | **S3** (weak integrity) | B + `KeystoreKeySource` → S3 **+ AEAD integrity + portable file**; B + `FileKeySource` → S4; A on **DP keychain** (`MacKeychainApi.dataProtection()`) → **S1** (signed, entitled apps) | A shipped; DP shipped (success path manual-verify) |
-| **Linux** | A — Secret Service items | **S3** (weak integrity) | B + `KeystoreKeySource` → S3 + integrity + portable; B + `FileKeySource` → S4; B + `TpmKeySource` → **S1** | A shipped; TPM planned |
+| **Linux** | A — Secret Service items | **S3** (weak integrity) | B + `KeystoreKeySource` → S3 + integrity + portable; B + `FileKeySource` → S4; B + `TpmKeySource` → **S1** | A + TPM shipped |
 | **iOS** | A — DP-keychain items + Secure Enclave | **S1** (per-item access control) | B + `KeystoreKeySource` → S1 key but whole-store granularity (rarely worth it) | planned |
 | **Android** | **B** + `AndroidKeystoreKeySource` (no Model A — Keystore has no general secret-item API) | **S1** key + AEAD container | B + `FileKeySource` in the app sandbox → S4 (self-test fallback) | planned |
 | **Windows** | A — Credential Manager (DPAPI) *or* B (TBD) | **S3** either way | the other of A/B; B + `FileKeySource` → S4 | planned |
@@ -647,11 +647,14 @@ memory) as the store key's canonical home · macOS dedicated-keychain mode
 exercises the DP-keychain **success** path (the −34018 refusal path is already
 CI-covered; the store-and-read path needs a signed, entitled bundle) ·
 attributes-only `contains` (avoid materializing the
-value) and keys-only enumeration · a TPM `KeySource` (`systemd-creds`) for
-headless nodes · Windows/iOS/Android backends · Linux `secret-tool`
-integration test under `dbus-run-session` (also pins the locked/headless
-exit-code matrix the probe currently can't distinguish) · pub publication
-(trusted publishing + provenance).
+value) and keys-only enumeration · Windows/iOS/Android backends · the
+`secret-tool` locked/headless exit-code matrix (the probe still can't
+distinguish a fast-failing locked collection) · pub publication (trusted
+publishing + provenance).
+
+*(Shipped this pass: the `TpmKeySource` — `systemd-creds`, TPM2/host binding,
+fail-closed without a TPM — and the Linux `secret-tool` integration test under
+`dbus-run-session`, both verified against the real binaries in Docker.)*
 
 **From the 2026-07 ecosystem benchmark** (see
 [doc/ecosystem-comparison.md](ecosystem-comparison.md) for the full analysis;

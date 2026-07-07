@@ -26,8 +26,9 @@ export 'src/errors.dart'
 export 'src/ffi/keychain.dart' show MacKeychainApi;
 export 'src/ffi/keystore_api.dart' show KeystoreApi, KeystoreProbe;
 export 'src/ffi/posix_file.dart' show SecureFileError, SecureFileSystem;
-export 'src/ffi/secret_service.dart'
-    show ProcessRunResult, ProcessRunner, SecretToolApi, SystemProcessRunner;
+export 'src/ffi/process_runner.dart'
+    show ProcessRunResult, ProcessRunner, SystemProcessRunner;
+export 'src/ffi/secret_service.dart' show SecretToolApi;
 export 'src/key_source.dart'
     show
         FileKeySource,
@@ -37,4 +38,5 @@ export 'src/key_source.dart'
         KeystoreKeySource,
         generateStoreKey,
         storeKeyLength;
+export 'src/tpm_key_source.dart' show TpmKeyBinding, TpmKeySource;
 export 'src/secret_storage.dart' show SecretStorage, platformKeystore;
