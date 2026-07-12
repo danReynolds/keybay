@@ -209,8 +209,10 @@ final class StoreTooLarge extends SecretStoreException {
 /// which the OS does even on process death, so this is not a stale lock file
 /// left by a crash — it indicates a **live** peer wedged while holding the
 /// lock (e.g. blocked on its own keystore call). Retry, or arrange for a single
-/// writer. Reads are never blocked (writes are atomic), so this only surfaces
-/// from `write`/`delete`/`deleteAll`.
+/// writer. Reads never take this lock and never raise [StoreBusy], so it
+/// surfaces only from `write`/`delete`/`deleteAll`. (A read can still queue
+/// behind a same-isolate write on the per-path mutex, but it never waits on the
+/// cross-process lock itself.)
 final class StoreBusy extends SecretStoreException {
   StoreBusy(this.lockPath, this.timeout)
       : super(
