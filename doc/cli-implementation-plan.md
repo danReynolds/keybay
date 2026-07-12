@@ -98,9 +98,12 @@ keyway       (engine: platform storage, container, typed errors — unchanged;
 - **The CLI needs zero library changes for v1.** `SecretStorage(appId:)`,
   the string verbs, `containsKey`, `readAll` (enumeration capability),
   `describe()`, and the typed error taxonomy cover every command (§17).
-  Recorded v1.x asks, both already on the core follow-up list (design.md
-  §13): keys-only enumeration (so `list`/`check` stop materializing values)
-  and attributes-only `contains`.
+  Remaining v1.x ask on the core follow-up list (design.md §13): keys-only
+  enumeration (so `list`/`check` stop materializing values).
+  Attributes-only `contains` shipped in core PR #3 — though on the CLI's v1
+  platforms (file backend) `contains` still decrypts the whole sealed
+  container, so one `readAll` per command remains the right resolution
+  pattern regardless.
 - **Dependency policy (normative):** runtime deps = `keyway` (exact pin) +
   `args` (dart-lang official). Nothing else. The core's dependency-closure
   snapshot test is replicated for the CLI package; CI fails if the tree
@@ -228,23 +231,29 @@ mirroring, with signal deaths mapped to 128+n.
 | 78 (EX_CONFIG) | manifest invalid, or references unresolved |
 | 69 (EX_UNAVAILABLE) | keystore unreachable / locked / store unusable / unsupported platform |
 | 70 (EX_SOFTWARE) | internal invariant violated (bug) |
+| 75 (EX_TEMPFAIL) | store write lock held by a live peer (`StoreBusy`) — retry |
 | 126 / 127 | command found-but-not-executable / not found |
 | 128+n | child killed by signal n (fallback path; native on the exec path) |
 
 ## 7. Concurrency
 
-The container is **single-writer by design**, and the library deliberately
-cut cross-process locking as surface the embedding deployment should own
-(design.md §7, §12). The CLI *is* the multi-writer deployment — two
-terminals running `set` is an ordinary Tuesday — so the CLI brings the lock:
-an advisory `flock(LOCK_EX)` (tiny FFI binding, same austerity class as the
-core's POSIX shim) on a lock file beside the container, held around every
-mutating command (`set`, `rm`, `fill`, `import`). Read paths (`run`, `check`,
-`list`, `get`) take no lock: the container's atomic-rename discipline
-guarantees a reader sees a complete old or complete new store (design.md §7),
-and lock-free `run` means a wedged `set` can never block launches. First-use
-race (two processes creating the store key simultaneously) is covered because
-both creations are `set`s and serialize on the lock.
+Since core PR #3, **the library itself serializes writers across isolates
+and processes**: every mutating read-modify-write takes an exclusive
+advisory `flock` on `<container>.lock` (fresh descriptor per operation;
+non-blocking acquisition with async backoff; a live peer holding it past
+the timeout surfaces as typed `StoreBusy`; a filesystem without `flock`
+fails closed — design.md §7). Both hazards the CLI cares about are closed
+in the library: two terminals running `set` cannot lose an update, and the
+first-use race (two processes each minting a store key) cannot happen.
+
+**The CLI therefore ships no locking of its own.** An earlier revision of
+this plan had the CLI carry its own `flock` because the library had cut
+cross-process locking in the austerity pass; the library's reinstatement
+supersedes that (§14). Read paths (`run`, `check`, `list`, `get`) remain
+lock-free by the library's design — atomic replace guarantees a reader sees
+a complete old or complete new store — so a wedged writer can never block
+launches. The CLI's only lock-related surface is UX: mapping `StoreBusy`
+to exit 75 with retry guidance (§17).
 
 ## 8. Security requirements (normative)
 
@@ -280,8 +289,11 @@ Each SR is a testable invariant; §12 maps them to tests.
 - **SR-9 — supply-chain parity with the core.** Runtime deps: `keyway`
   (exact pin) + `args`. Closure snapshot test in CI; OSV scanning; the same
   "a pin moves only by reviewed decision" rule (design.md §10).
-- **SR-10 — mutation locking.** Every store-mutating command holds the §7
-  lock; no mutating path exists outside it.
+- **SR-10 — mutation safety is inherited, not reimplemented.** Every store
+  mutation goes through the library's verbs, which serialize writers across
+  isolates and processes via the cross-writer `flock` (design.md §7). The
+  CLI adds no locking, no lock files, and no mutating path outside those
+  verbs; contention surfaces as `StoreBusy`, mapped per §17.
 - **SR-11 — release identity.** macOS release binaries are Developer-ID
   signed and notarized. Not (only) for Gatekeeper: the login-keychain ACL on
   the store-key item binds to the acting binary's code identity (design.md
@@ -387,8 +399,10 @@ The core's bar applies: every claim exercised for real, not mocked
 - **Integration tier:** real keystores in CI exactly like the core (macOS
   Keychain; Linux via `dbus-run-session` gnome-keyring in Docker):
   `set → run → child sees value → rm` round-trips; exec-path signal/exit
-  fidelity (child SIGTERM → 128+15; exit codes forwarded); `flock` contention
-  (two concurrent `set`s, no lost update); locked-keystore guidance path.
+  fidelity (child SIGTERM → 128+15; exit codes forwarded); cross-writer
+  serialization (two concurrent `set`s → no lost update, courtesy of the
+  library's flock; a deliberately wedged holder → `StoreBusy` surfaced as
+  exit 75 with retry text); locked-keystore guidance path.
 - **E2E:** `tool/test_cli.sh` joining the existing `tool/` suite; the
   README quickstart executed verbatim on both platforms.
 - **Supply chain:** the CLI's own dependency-closure snapshot test.
@@ -442,10 +456,11 @@ in core (design.md §13); npm wrapper channel; man pages.
 - **Windows waits for `WinCredApi`.** No S4 interim (§1).
 - **Masking and `_FILE` deferred with recorded designs**, not silently
   dropped (§1, §13).
-- **The lock lives in the CLI, not the library.** The library's
-  austerity-pass cut of `flock` (design.md §12) stands; the CLI is the
-  multi-writer deployment that §7 of the design doc says should bring its
-  own lock — so it does (§7).
+- **The lock lives in the CLI, not the library.** *(Superseded the same
+  day, 2026-07-12: core PR #3 reinstated the cross-writer `flock` inside
+  the library — the first-write key race proved cheap to close and easy to
+  hit. The CLI now inherits mutation locking and ships none of its own;
+  §7, SR-10.)*
 - **Name: `keyway` (2026-07-12).** Decision record in Appendix B. The
   library renames with it (one brand, two packages); public API identifiers
   (`SecretStorage`, the error types) are **not** renamed — this is a
@@ -484,8 +499,7 @@ migration, not a rename.
 | CLI package | `keyway_cli` | pub.dev name confirmed free 2026-07-12 |
 | Reference scheme | `kw://` | replaces draft `se://`; nothing shipped under the old scheme |
 | CLI store `appId` | `keyway-cli` | derives container path + keystore service (design.md §3 rules) |
-| Container path | `~/Library/Application Support/keyway-cli/secrets.enc` (macOS) · `${XDG_DATA_HOME:-~/.local/share}/keyway-cli/secrets.enc` (Linux) | derived by the library from `appId` |
-| CLI lock file | `cli.lock` beside the container | §7; CLI-owned, never the library's concern |
+| Container path | `~/Library/Application Support/keyway-cli/secrets.enc` (macOS) · `${XDG_DATA_HOME:-~/.local/share}/keyway-cli/secrets.enc` (Linux) | derived by the library from `appId`; the library also maintains `<container>.lock` beside it (§7 — not a CLI concern) |
 | Default manifest | `./.secrets.env` | content-descriptive, not tool-branded |
 
 **Explicitly NOT renamed with the brand** (wire/storage compatibility — these
@@ -520,7 +534,8 @@ tier drives every row):
 | `AuthenticationFailed` / `ContainerCorrupt` | 69 | container failed authentication / is corrupt — tamper or bit-rot; restore from backup |
 | `MigrationRequired` | 69 | store-scheme change detected (design.md §12) — shouldn't occur for the unentitled CLI binary; explain rather than auto-migrate |
 | `StoreTooLarge` | 69 | value/store exceeds the size envelope — this is a store for credentials, not blobs |
-| `SecureFileError` | 69 | container/key/dir permissions are group/other-accessible — the library refuses loose modes (OpenSSH stance); print the `chmod` fix |
+| `SecureFileError` | 69 | container/key/dir permissions are group/other-accessible — the library refuses loose modes (OpenSSH stance); print the `chmod` fix. Also raised when the filesystem cannot `flock` (fail-closed; local app-data storage always can) |
+| `StoreBusy` | 75 | another keyway/library process or isolate holds the store write lock — a **live** peer, not a stale file (the OS releases a dead holder's lock); retry, and if it persists, find the wedged holder |
 | `KeyInvalidated` | 69 | Android-only in practice; generic key-loss text if ever surfaced |
 | `UnsupportedCapability` | 70 | internal bug (both v1 backends enumerate) — report upstream |
 | `KeystoreOperationFailed` (catch-all) | 69 | the typed message + `keyway doctor` |
@@ -555,10 +570,6 @@ Manifest/usage failures are the CLI's own: parse errors and unresolved refs
   values are stored via `writeString` (UTF-8) — the env boundary is
   string-shaped anyway (env vars cannot carry NUL); document that binary
   secrets belong to the library tier, not the env tier.
-- **`flock`:** `@Native<Int Function(Int, Int)>(symbol: 'flock')`, `LOCK_EX`
-  around mutations on `cli.lock` opened `O_CREAT` `0600` beside the
-  container; released by process exit (crash-safe — no stale-lock
-  heuristics needed, which is why it beats a PID lockfile).
 - **Closure snapshot test:** replicate the core's `dart pub deps --json`
   snapshot for `keyway_cli`; the snapshot embeds package names, so it also
   pins the exact core version (§2's pin made testable).
