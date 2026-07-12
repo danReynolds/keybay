@@ -9,8 +9,19 @@ import 'package:secret_store/secret_store.dart';
 // backend's own unit test reaches them directly. (SecureFileError is now in
 // the public taxonomy, so it comes from the barrel above.)
 import 'package:secret_store/src/backends/encrypted_file_backend.dart';
+import 'package:secret_store/src/ffi/posix_file.dart';
 import 'package:secret_store/src/key_source.dart';
 import 'package:test/test.dart';
+
+/// A filesystem whose atomic write always fails (everything else is real), used
+/// to drive the container-write failure path — notably the fresh-key rollback.
+class _WriteFailsFs extends SecureFileSystem {
+  const _WriteFailsFs();
+  @override
+  void writeAtomicSync(String path, Uint8List bytes) {
+    throw SecureFileError('write', path, 28); // simulate ENOSPC mid-write
+  }
+}
 
 void main() {
   late Directory tmp;
@@ -211,14 +222,23 @@ void main() {
 
     test('a fresh-key write that fails rolls the key back (no orphan)',
         () async {
-      // Point the container at a path whose parent cannot be created (a file
-      // stands where the dir should be), so the write fails before sealing.
-      final blocker = File('${tmp.path}/blocker')..writeAsStringSync('x');
-      final ks = FileKeySource(keyPath);
+      // Fail the container write *after* a fresh key is minted (an injected fs
+      // whose writeAtomicSync throws; everything else real), so _save's
+      // rollback path actually runs. InMemoryKeySource keeps the only
+      // writeAtomicSync in the flow the container write itself — a FileKeySource
+      // would write the key through the same failing fs and never reach _save.
+      // (The prior version aimed the container at an uncreatable parent dir,
+      // which threw in ensurePrivateDirSync *before* any key was created, so it
+      // asserted nothing about rollback — and matched throwsA(anything).)
+      final ks = InMemoryKeySource();
       final be = EncryptedFileBackend(
-          path: '${blocker.path}/secrets.enc', keySource: ks);
-      await expectLater(be.write('k', b('v')), throwsA(anything));
-      // The store key must NOT have been left behind.
+        path: containerPath,
+        keySource: ks,
+        contextSalt: b('profile-uuid'),
+        fs: const _WriteFailsFs(),
+      );
+      await expectLater(be.write('k', b('v')), throwsA(isA<SecureFileError>()));
+      // The freshly-minted store key must NOT have been left behind.
       expect(await ks.read(), isNull,
           reason: 'fresh key rolled back on failure');
     });

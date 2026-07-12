@@ -8,8 +8,8 @@
 //     inside a real .app — the same branch every CLI takes).
 //   macOS, Keychain Sharing + development signing: native items + hardware
 //     (SE-probed on this Apple-silicon Mac) — the DP SUCCESS branch.
-//   iOS simulator: native items + software (no Secure Enclave on the sim; the
-//     SE probe reports its absence honestly — a real device reports hardware).
+//   iOS simulator: native items + hardware (Xcode 15+ simulators emulate the
+//     Secure Enclave, so the SE probe succeeds — same as a real device).
 //   Android emulator (API 31+): encrypted file + AndroidKeyStore-wrapped key
 //     via the pure-FFI JNI shim; level measured from the KEK (software on the
 //     emulator) in the dedicated test after a write.
@@ -25,9 +25,9 @@ import 'package:secret_store/secret_store.dart';
 /// deterministic storage shape); `EXPECT_LEVEL` is `hardware` | `software` |
 /// `login` and may be empty when the level can't be asserted up front (Android
 /// measures from a KEK that doesn't exist until the first write — see the
-/// dedicated test below). The level is environment-dependent: an iOS
-/// *simulator* has no Secure Enclave and honestly reports `software`, whereas a
-/// real device reports `hardware`.
+/// dedicated test below). The level is environment-dependent: a modern iOS
+/// *simulator* (Xcode 15+) emulates the Secure Enclave and reports `hardware`,
+/// as does a real device; an environment with no SE reports `software`.
 const String expectScheme = String.fromEnvironment('EXPECT_SCHEME');
 const String expectLevel = String.fromEnvironment('EXPECT_LEVEL');
 
@@ -75,8 +75,8 @@ void main() {
       _ => null,
     };
     if (wantLevel != null) {
-      // Measured, not assumed: iOS probes for a Secure Enclave (absent on the
-      // simulator → software), Android reads KeyInfo, macOS reports login.
+      // Measured, not assumed: iOS probes for a Secure Enclave (emulated on
+      // Xcode 15+ simulators → hardware), Android reads KeyInfo, macOS login.
       expect(info.level, wantLevel, reason: 'wrong measured level');
     }
 

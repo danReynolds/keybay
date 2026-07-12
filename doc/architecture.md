@@ -67,10 +67,16 @@ stack per OS.
   keychain is the one mainstream store that hardware-gates arbitrary secrets
   per item — so there, native items beat any software container and we use
   them. Nothing else qualifies, so nowhere else pays for a second shape.
-- **Uniform, strong at-rest crypto everywhere else — audited once.** On the
-  legacy stores (macOS login keychain: 3DES; gnome-keyring: AES-128-CBC +
-  ad-hoc KDF; kwallet: Blowfish) our AEAD file is *stronger* than storing
-  secrets natively. One crypto path to vector-firewall and review.
+- **Uniform, integrity-protected at-rest crypto everywhere else — audited
+  once.** On the legacy stores (macOS login keychain: 3DES; gnome-keyring:
+  AES-128-CBC + ad-hoc KDF; kwallet: Blowfish) our AEAD file adds **integrity**
+  and a **portable** encrypted container the native stores can't give. It is
+  *not* categorically stronger at rest: when the file's key lives in that same
+  legacy keystore and both are captured off one stolen disk, confidentiality is
+  login-password-bound just like a native item (cracking the keystore yields the
+  key, which opens the container) — the confidentiality upgrade to hardware (S1)
+  comes only from moving the key to a TPM/Secure Enclave, not from the container
+  cipher (§9; design.md §6). One crypto path to vector-firewall and review.
 - **Minimal per-platform code.** Per OS, the binding is "put/get small items"
   — shared by both shapes. No second stack.
 - **Android-native.** Android's Keystore is a *key* store, not a secret store;
@@ -88,9 +94,12 @@ stack per OS.
   (`WrongStoreKey`) before decryption; tamper fails as `AuthenticationFailed`.
 - **The key:** protected by the platform's best available secure storage, gated
   by whatever that store gates on (device unlock; Secure Enclave on Apple). The
-  container's confidentiality reduces to the key's protection *plus* our AEAD —
-  so on legacy-at-rest platforms it is *stronger* than storing secrets natively,
-  and on hardware platforms it shares the same gate (the key is hardware-held).
+  container's confidentiality reduces to the key's protection — so on
+  legacy-at-rest platforms, when the key shares a stolen disk with the container,
+  it is login-password-bound *just like* storing secrets natively (the AEAD's
+  honest wins there are **integrity** and a **portable** backup unit, not more
+  confidentiality); on hardware platforms the key is hardware-held and the
+  container shares that gate.
 - **Fail-closed, never fake it.** No usable key store (a headless box with no
   keyring) → throw with guidance, never a silent insecure fallback.
 - **Errors never carry secret values;** identifiers are validated; the Linux
@@ -108,7 +117,7 @@ The README's formal table is the reference; the shape summary:
 | Windows | encrypted file | DPAPI / wincred | future |
 | iOS | **native items** (DP keychain, Secure Enclave) | — (data is the item) | **shipped**; round-trip validated on the iOS simulator (`example_flutter/`); on-device Secure-Enclave check pending |
 | Android (API 31+) | encrypted file | Android Keystore KEK (TEE / StrongBox) via **pure-FFI JNI** — no plugin, no package:jni (design.md §12) | **shipped**; validated on an API 33 emulator incl. the StrongBox-fallback branch; on-device hardware check pending |
-| any, **headless** | encrypted file | TPM via `systemd-creds` | **not supported yet** (upcoming milestone); a prototype was built + validated, then removed from the tree (owner call 2026-07-10) — design in `headless-implementation-plan.md`, impl in git history. Fails closed today. |
+| any, **headless** | — (fails closed) | — | **out of scope** (owner call 2026-07-10) — not safely auto-detectable, needs its own entry point, and no demand yet. A `TpmKeySource` prototype was built + validated, then removed from the tree — design in `headless-implementation-plan.md`, impl in git history. Headless boxes fail closed, typed. |
 
 ## What is deliberately NOT here
 
@@ -143,5 +152,6 @@ and an app that *gains* the entitlement between versions moves its store from
 the file to the DP keychain — a one-time re-provision, by design (deterministic
 schemes; no silent migration). Where the Enclave is *not* reachable (every
 plain CLI, `dart run`), the encrypted file + login-Keychain key is the
-documented, OWASP-endorsed envelope pattern, and its AEAD is stronger at rest
-than the login keychain's own 3DES.
+documented, OWASP-endorsed envelope pattern; its AEAD adds integrity and a
+portable container, though at-rest confidentiality stays login-password-bound
+(the key sits in that same login keychain) until the key moves to hardware.

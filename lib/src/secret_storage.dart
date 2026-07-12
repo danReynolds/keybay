@@ -134,12 +134,14 @@ DataProtectionAvailability? _dpAvailabilityCache;
 SecurityLevel? _appleLevelCache;
 
 /// The **measured** level for Apple native (Data Protection keychain) items.
-/// The item's confidentiality is Secure-Enclave-gated only where an SE is
-/// present; rather than assume it (untrue on the iOS Simulator and on pre-T2
-/// Intel Macs, where the DP keychain falls back to software), this probes for
-/// a usable Secure Enclave — the Apple analogue of Android's
-/// `KeyInfo.getSecurityLevel()` — and reports [hardwareBacked] only when one
-/// exists, else [softwareBacked]. Fail-safe: the probe never throws.
+/// The item's confidentiality is Secure-Enclave-gated only where a usable SE is
+/// present. Rather than assume it — false on a pre-T2 Intel Mac (no SE), true on
+/// a modern Apple-silicon Simulator (Xcode 15+ emulate the SE) as well as real
+/// devices — this probes for a usable Secure Enclave (the Apple analogue of
+/// Android's `KeyInfo.getSecurityLevel()`) and reports [hardwareBacked] only
+/// when one exists, else [softwareBacked]. Because it measures rather than
+/// assumes, the report is correct across all of those cases. Fail-safe: the
+/// probe never throws.
 SecurityLevel _appleNativeLevel(AppleKeychainApi api) =>
     _appleLevelCache ??= (api.hasSecureEnclave()
         ? SecurityLevel.hardwareBacked

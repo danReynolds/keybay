@@ -77,6 +77,57 @@ void main() {
         }
       }
     });
+
+    test('golden wire vector (hand-computed, pins the format)', () {
+      // A single entry {'k': value 'v', no label}, encoded by hand so a matched
+      // encoder+decoder bug can't hide behind round-tripping. Both lengths
+      // precede the key/label bytes (keyLen and labelLen, then key, then label):
+      //   count    u32 = 00 00 00 01
+      //   keyLen   u16 = 00 01
+      //   labelLen u16 = 00 00
+      //   key      'k' = 6B
+      //   (no label bytes)
+      //   valueLen u32 = 00 00 00 01
+      //   value    'v' = 76
+      expect(
+        encodeTlv({'k': ContainerEntry(bytesOf('v'))}),
+        [0, 0, 0, 1, 0, 1, 0, 0, 0x6B, 0, 0, 0, 1, 0x76],
+      );
+    });
+
+    test('rejects a duplicate key in the payload', () {
+      // Two entries both keyed 'a' — unreachable via encodeTlv (a Map dedups),
+      // so build the bytes directly.
+      final bb = BytesBuilder();
+      bb.add((ByteData(4)..setUint32(0, 2)).buffer.asUint8List()); // count = 2
+      for (var i = 0; i < 2; i++) {
+        bb.add((ByteData(4)
+              ..setUint16(0, 1) // keyLen
+              ..setUint16(2, 0)) // labelLen
+            .buffer
+            .asUint8List());
+        bb.add('a'.codeUnits);
+        bb.add((ByteData(4)..setUint32(0, 1)).buffer.asUint8List()); // valueLen
+        bb.add('x'.codeUnits);
+      }
+      expect(() => decodeTlv(bb.toBytes()), throwsA(isA<ContainerCorrupt>()));
+    });
+
+    test('rejects trailing bytes after the declared entries', () {
+      final full = encodeTlv({'k': ContainerEntry(bytesOf('v'))});
+      final withTrailer = Uint8List.fromList([...full, 0x00]);
+      expect(() => decodeTlv(withTrailer), throwsA(isA<ContainerCorrupt>()));
+    });
+
+    test('empty value round-trips (0-byte secret is not "absent")', () {
+      final decoded = decodeTlv(encodeTlv({
+        'empty': ContainerEntry(Uint8List(0)),
+        'full': ContainerEntry(bytesOf('x')),
+      }));
+      expect(decoded.containsKey('empty'), isTrue);
+      expect(decoded['empty']!.value, isEmpty);
+      expect(decoded['full']!.value, [0x78]);
+    });
   });
 
   group('Container (XChaCha20-Poly1305 + HKDF + key commitment)', () {
@@ -99,6 +150,15 @@ void main() {
       expect(opened['db_key']!.value, bytesOf('the spice must flow'));
       expect(opened['db_key']!.label, 'DB key');
       expect(opened['device']!.value, [9, 8, 7, 6]);
+    });
+
+    test('empty value survives seal/open (0-byte secret)', () async {
+      final c = Container(contextSalt: salt);
+      final opened = await c.open(
+          await c.seal({'blank': ContainerEntry(Uint8List(0))}, key(1)),
+          key(1));
+      expect(opened.containsKey('blank'), isTrue);
+      expect(opened['blank']!.value, isEmpty);
     });
 
     test('nonce is fresh per seal (no deterministic reuse)', () async {

@@ -626,6 +626,12 @@ final class AppleKeychainApi implements KeystoreApi {
       return KeystoreProbe(available: true, locked: true, detail: e.message);
     } on KeystoreUnreachable catch (e) {
       return KeystoreProbe(available: false, locked: false, detail: e.message);
+    } on KeystoreOperationFailed catch (e) {
+      // An unexpected OSStatus on the probe read: the keychain API responded,
+      // so it is reachable, but something is off. Surface it in `detail`
+      // rather than throwing — `probe()` feeds `describe()`, a diagnostics
+      // call that must never raise.
+      return KeystoreProbe(available: true, locked: false, detail: e.message);
     }
   }
 

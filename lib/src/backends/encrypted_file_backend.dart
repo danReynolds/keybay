@@ -5,16 +5,18 @@
 /// fresh install from a lost container, a lost key, a wrong key, or tampering.
 ///
 /// **Concurrency.** Whole-file read-modify-write operations are serialized by
-/// an in-process FIFO mutex keyed on the **container path**, so concurrent
-/// calls — even from two separate backend instances (e.g. two
+/// a FIFO mutex keyed on the **container path**, so concurrent calls within one
+/// isolate — even from two separate backend instances (e.g. two
 /// `SecretStorage(appId:)` objects) targeting the same store — never interleave
-/// and drop updates. Coordination *across processes* is out of scope: a
-/// container has a **single writer**. Two processes writing the same container
-/// concurrently can lose an update or, on first write, both create a store key
-/// and leave the container sealed under a discarded one — bring your own lock,
-/// or don't share a container between writers. (An advisory `flock` was
-/// prototyped and cut as surface the common single-writer deployment doesn't
-/// need.)
+/// and drop updates. The mutex is an isolate-local static, so coordination
+/// *across isolates* (a Flutter background isolate, a spawned `Isolate`) and
+/// *across processes* is out of scope: a container has a **single writer**.
+/// Two writers on one container concurrently can lose an update or, on first
+/// write, both create a store key and leave the container sealed under a
+/// discarded one — keep a container to a single isolate, bring your own lock,
+/// or don't share it between writers. (An advisory `flock` was prototyped and
+/// cut as surface the common single-writer deployment doesn't need; it would
+/// have covered the cross-process case but not the cross-isolate one.)
 library;
 
 import 'dart:async';
@@ -48,10 +50,12 @@ final class EncryptedFileBackend implements SecretBackend {
   final SecureFileSystem _fs;
   final Container _container;
 
-  /// Serialization is keyed by container path and shared across instances: two
-  /// backends for the same store must take the same lock or they can drop each
-  /// other's whole-file updates. (Process-lifetime; one small entry per
-  /// distinct store path.)
+  /// Serialization is keyed by container path and shared across backend
+  /// instances **within an isolate**: two backends for the same store in the
+  /// same isolate must take the same lock or they can drop each other's
+  /// whole-file updates. Statics are isolate-local, so this does not coordinate
+  /// across isolates or processes (see the class doc). (Isolate-lifetime; one
+  /// small entry per distinct store path.)
   static final Map<String, _TurnLock> _locks = {};
   _TurnLock get _mutex => _locks.putIfAbsent(path, _TurnLock.new);
 

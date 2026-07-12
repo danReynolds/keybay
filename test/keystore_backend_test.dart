@@ -107,17 +107,25 @@ void main() {
 
       final be = EncryptedFileBackend(
           path: path, keySource: ks, contextSalt: b([1, 2, 3, 4]));
-      await be.write('db_key', b([9, 9, 9]), label: 'DB key');
-      expect(await be.read('db_key'), [9, 9, 9]);
+      // A distinctive ASCII plaintext marker, so "the container is ciphertext"
+      // is a real assertion: the previous value [9,9,9] stringifies to tab
+      // bytes and could never contain the digits "999" it checked for — the
+      // test passed even against a hypothetical plaintext container.
+      const marker = 'PLAINTEXT-MARKER-9f3a2b';
+      final value = Uint8List.fromList(marker.codeUnits);
+      await be.write('db_key', value, label: 'DB key');
+      expect(await be.read('db_key'), value);
 
       // The key lives in the (fake) keychain, exactly one item, 32 bytes.
       final stored = await api.getAll('dune/uuid');
       expect(stored.keys, ['store-key']);
       expect(stored['store-key'], hasLength(storeKeyLength));
 
-      // The on-disk container is ciphertext, not the plaintext value.
+      // The on-disk container is ciphertext — the marker must not survive in
+      // the clear.
       final raw = File(path).readAsBytesSync();
-      expect(String.fromCharCodes(raw), isNot(contains('999')));
+      expect(String.fromCharCodes(raw), isNot(contains(marker)),
+          reason: 'container must be ciphertext, not plaintext');
     });
 
     test('locked keychain surfaces as StoreKeyMissing-free typed error',

@@ -16,7 +16,8 @@ plugin (platform channels): unusable from a CLI or a server. Python, Go, and
 Rust each have a `keyring` library; Dart did not.
 
 `secret_store` fills that gap: pure Dart + FFI, no platform channels, so it runs
-in CLIs, servers, and Flutter apps alike. It targets macOS and Linux in v1.
+in CLIs, servers, and Flutter apps alike. It ships backends for macOS, Linux,
+iOS, and Android (12 / API 31+).
 
 ### Why build rather than adopt (surveyed 2026-07-05)
 
@@ -32,16 +33,17 @@ The gap is real; the build is thin glue over vetted infrastructure
 
 ## 2. Goals / non-goals
 
-**Goals** — `flutter_secure_storage`-class storage without Flutter (macOS +
-Linux); usable from CLIs, servers, and Flutter apps; backends as the extension
-seam with honest capability reporting; zero native build artifacts (subprocess +
-system-framework FFI only, no toolchain); a minimal, fully-enumerated dependency
-and API surface.
+**Goals** — `flutter_secure_storage`-class storage without Flutter (macOS,
+Linux, iOS, Android); usable from CLIs, servers, and Flutter apps; backends as
+the extension seam with honest capability reporting; zero native build artifacts
+(subprocess + system-framework FFI only, no toolchain); a minimal,
+fully-enumerated dependency and API surface.
 
-**Non-goals (v1)** — Windows/Android/iOS backends (§9 sketches the path);
-biometric prompts; change listeners; web; our own crypto primitives; rollback
-protection (§8 — a keystore-anchored counter is a possible v2, not carried
-today); cross-process write coordination (a container is single-writer — §7).
+**Non-goals (v1)** — Windows backend (§9 sketches the path); headless/server
+operation (out of scope — a headless box fails closed; §12); biometric prompts;
+change listeners; web; our own crypto primitives; rollback protection (§8 — a
+keystore-anchored counter is a possible v2, not carried today); cross-process
+write coordination (a container is single-writer — §7).
 
 (An earlier draft brought cross-process locking in-scope via `flock`; it was
 cut in the austerity pass — the race it guarded needs two processes writing one
@@ -105,8 +107,11 @@ if (store.backend.capabilities.enumeration) {
 final info = await store.backend.describe();      // which mechanism? reachable? locked?
 ```
 
-**Input contract.** `service` and `key` are validated against
-`[A-Za-z0-9._/-]{1,120}`; labels allow printable text with spaces but reject
+**Input contract.** `appId` and `key` are validated identifiers. `appId` is
+**traversal-proof** (`[A-Za-z0-9._-]{1,120}`, no `/`, must contain an
+alphanumeric — so `.`/`..` are unrepresentable — since it names a derived
+directory and the keystore service); `key` is validated against
+`[A-Za-z0-9._/-]{1,120}`. Labels allow printable text with spaces but reject
 control characters. One identifier grammar across backends beats per-backend
 escaping — and it keeps the Linux argv path safe by construction.
 
@@ -133,11 +138,10 @@ abstract interface class SecretBackend {
 }
 ```
 
-| Backend | Platform | Mechanism |
+| Backend | Where the resolver uses it | Mechanism |
 |---|---|---|
-| `KeystoreBackend` (macOS) | macOS | `AppleKeychainApi` — direct `SecItem` CoreFoundation FFI. Classic login keychain (`kSecUseDataProtectionKeychain: false`), `kSecAttrSynchronizable: false` (a synchronizable item would escrow the key to iCloud). Secrets move as `CFData` — no text protocol on this path. Enumeration via `SecItemCopyMatching`. |
-| `KeystoreBackend` (Linux) | Linux | `SecretToolApi` — `secret-tool` over an injectable, timeout-guarded `ProcessRunner`. Secret crosses on **stdin** (never argv), base64-encoded so binary/newlines survive. |
-| `EncryptedFileBackend` | anywhere | An authenticated container (§7) sealed by a `KeySource`. |
+| `KeystoreBackend` (native items — Model A) | iOS; entitled macOS (DP probe succeeds) | `AppleKeychainApi` — direct `SecItem` CoreFoundation FFI against the **Data Protection** keychain (Secure Enclave). `kSecAttrSynchronizable: false` (a synchronizable item would escrow the key to iCloud). Secrets move as `CFData` — no text protocol on this path; enumeration via `SecItemCopyMatching`. |
+| `EncryptedFileBackend` (Model B) | unentitled macOS / CLI; Linux; Android | An authenticated container (§7) whose 32-byte key is held by a `KeySource` in the platform keystore — **the keystore holds only the key, never the secrets**, so login Keychain / Secret Service are *not* native-item backends here. Key-storage bindings: `AppleKeychainApi` on the classic login keychain (`kSecUseDataProtectionKeychain: false`); `SecretToolApi` on the Secret Service (`secret-tool` over an injectable, timeout-guarded `ProcessRunner`, the key crossing on **stdin** never argv, base64 so binary/newlines survive); `AndroidKeystoreKeySource` (hardware-wrapped key via the pure-FFI JNI shim). |
 
 **The keystore seam is async.** A keystore is an IO boundary: the macOS binding
 resolves immediately (synchronous FFI wrapped in a future), the Linux binding
@@ -147,7 +151,8 @@ spawns a subprocess with a timeout. One generic `KeystoreApi` /
 **macOS FFI discipline.** CoreFoundation is manually reference-counted — the one
 place *we* can write a memory-safety bug. Contained by a tiny scope
 (add/copy/update/delete + CF helpers), strict `*Create*`/`CFRelease` pairing (a
-tracked ref list freed in `finally`), and a leak-checked integration pass.
+tracked ref list freed in `finally`), and a manual ownership audit (an automated
+leak-checked integration pass is a recorded follow-up, not yet built).
 `OSStatus` maps to the typed taxonomy (`errSecItemNotFound`,
 `errSecInteractionNotAllowed` → locked, `errSecDuplicateItem` → upsert, …).
 Writes are add-then-update on duplicate (covers the delete/add race).
@@ -382,9 +387,13 @@ TPM / Secure Enclave attaches later without redesign.
 
 ## 9. Platform expansion path
 
-iOS reuses the macOS `SecItem` C API almost verbatim. Windows is DPAPI/wincred
-(clean FFI). Android is the hard one — Keystore has no NDK C API, so the
-no-Flutter route is `package:jni`/`jnigen`. Because this is pure Dart + FFI with
+iOS ships, reusing the macOS `SecItem` C API almost verbatim (loaded from the
+process image rather than by absolute-path `dlopen`). Android ships too and was
+the hard one — Keystore has no NDK C API, so JNI is unavoidable; the no-Flutter
+route is a **hand-rolled ~24-function JNI shim over `dart:ffi`** that discovers
+the VM via `libnativehelper`'s `JNI_GetCreatedJavaVMs` (app-exported at API 31+)
+— *not* `package:jni`/`jnigen`, which §12 proved unusable off Flutter. Windows
+remains DPAPI/wincred (clean FFI), planned. Because this is pure Dart + FFI with
 no plugin registration, it also runs inside Flutter apps — the long-term option
 to retire `flutter_secure_storage` and share one audited store across surfaces.
 

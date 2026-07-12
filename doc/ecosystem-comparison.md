@@ -11,13 +11,13 @@ databases). This is a living benchmark, not a one-time audit — the "gaps" and
 
 **One-line verdict.** On architecture and the file-container path,
 `secret_store` is at or ahead of every peer surveyed — it is the *only* one
-that combines authenticated encryption, key commitment, a rollback-binding
-field, atomic writes, `fsync`, and advisory locking, and its fail-closed +
-never-leak-values discipline beats the mainstream tools. Where it is behind is
-never the crypto or the robustness; it is **API surface** (no accessibility
-tiers, no hardware-backing reporting, no typed key-invalidation error, no
-rekey API) and one **capability** (no shipped headless hardware-bound key
-source yet). None of the gaps are architectural; all are additive.
+that combines authenticated encryption, key commitment, atomic writes, and
+`fsync`, and its fail-closed + never-leak-values discipline beats the mainstream
+tools. Where it is behind is never the crypto or the robustness; it is **API
+surface** (no accessibility tiers, no hardware-backing reporting, no typed
+key-invalidation error, no rekey API) and one **capability** (no headless
+hardware-bound key source). None of the gaps are architectural; all are
+additive.
 
 ---
 
@@ -35,11 +35,11 @@ Ahead / Equal / Behind is relative to the *best* peer on that dimension.
 | File-container durability (atomic + fsync) | **Ahead** | 99designs (`WriteFile`, no fsync), `flutter_secure_storage` on Windows (non-atomic whole-file rewrite) lag; we do 0600-from-birth + atomic rename + dir-fsync. (An advisory `flock` was prototyped and cut — cross-process locking is out of scope; a container is single-writer, like most of the file-based peers.) |
 | macOS ACL correctness | **Ahead of the Go libs** | Direct SecItem FFI respects Keychain ACLs. `zalando/go-keyring` shells out to `/usr/bin/security`, which their own issue #110 admits makes items "as secure as … global read permissions." Equal to keyring-rs / `flutter_secure_storage` (also native API). |
 | Linux transport | **Equal** | We inherit libsecret's encrypted D-Bus session (`dh-ietf1024…`, libsecret's default) via `secret-tool`; the Go libs hard-code `plain`. Same-host, so this is defense-in-depth either way. |
-| Platform breadth | **Behind** | We have macOS + Linux + portable container. `flutter_secure_storage` has 6 platforms; keyring-rs has macOS/Windows/Linux(×3). No iOS/Android/Windows/web yet (all recorded). |
+| Platform breadth | **Behind (narrowing)** | We have macOS + Linux + iOS + Android + portable container. `flutter_secure_storage` has 6 platforms; keyring-rs has macOS/Windows/Linux(×3). No Windows/web yet (recorded). |
 | Hardware backing / biometric gating | **Behind (by design, for now)** | No Secure Enclave / StrongBox / biometric option. Correct non-goal while the backends are macOS + Linux (no UI/biometric context on a server or CLI); needed the day the iOS/Android backends land, since a Flutter app *is* a UI context. |
-| Headless hardware-bound key source | **Behind** | keyring-rs ships a headless `keyutils` store today; systemd-creds+TPM2 is becoming the server standard. Our TPM `KeySource` is a follow-up. See Flag 1. |
+| Headless hardware-bound key source | **Behind** | keyring-rs ships a headless `keyutils` store today; systemd-creds+TPM2 is becoming the server standard. Headless is out of scope for us now — a prototyped `TpmKeySource` was cut, so a headless box fails closed. See Flag 1. |
 | Accessibility / availability tiers | **Behind** | No `kSecAttrAccessible`-equivalent. Every serious iOS library (Valet, RN-keychain, expo) exposes tiers. Needed for the iOS backend. See Flag/Adopt. |
-| Security-level *reporting* | **Behind** | RN-keychain's `getSecurityLevel()` and its `storage` result field tell callers what backing they actually got; we don't. See Adopt 1. |
+| Security-level *reporting* | **Equal** | Shipped: `describe().level` reports a *measured* `SecurityLevel` (`hardwareBacked` — SE/StrongBox-probed — vs `softwareBacked` vs `loginBound`) on `BackendInfo`, the parity with RN-keychain's `getSecurityLevel()` / `storage` field that Adopt 1 called for. |
 | Migration / rekey API | **Behind** | No rotation surface yet. `flutter_secure_storage` and RN-keychain both do migrate-on-read (never downgrading). See Adopt 4. |
 | Memory hygiene | **Equal to Go, behind Rust** | We zero native staging buffers, but GC-heap plaintext can't be zeroed. Rust peers have `zeroize`. Inherent to the runtime. See Flag 2. |
 | Crypto supply chain | **Ahead** | Exact pin + vector firewall + implementation pinned past the swappable service locator + CI canary. Peers float their crypto deps (RN-keychain selects cipher by API level; MMKV silently truncates keys to 16 bytes). |
@@ -50,14 +50,18 @@ Ahead / Equal / Behind is relative to the *best* peer on that dimension.
 
 These are the places a reviewer should push, ordered by how much they matter.
 
-1. ~~**No headless hardware-bound key source yet.**~~ **RESOLVED (2026-07):
-   `TpmKeySource` shipped.** The server story now is `TpmKeySource` —
-   `systemd-creds` with TPM2 binding (AES-256-GCM, PCR-bound), fail-closed
-   without a TPM — so a headless box gets hardware-bound at-rest (S1), not a
-   key on disk. This was the field's direction (LINSTOR 1.33.0, RHEL9 guidance,
-   2025–26; keyring-rs ships headless `keyutils`), and **no other
-   cross-language keyring library wraps `systemd-creds`** — so shipping it
-   leapfrogs the peer class rather than merely catching up.
+1. **No headless hardware-bound key source — and headless has no story.** A
+   headless/server box with no reachable keystore **fails closed**
+   (`KeystoreUnreachable` + typed guidance), never a key on disk. A
+   `TpmKeySource` (`systemd-creds` with TPM2 binding, AES-256-GCM, PCR-bound,
+   fail-closed without a TPM) was prototyped and validated against the real
+   binary, then **removed** when headless was descoped — unreachable code in a
+   security package is unjustified surface. It stays the recorded direction if
+   headless returns (the same `KeySource` seam Android now ships on; the field's
+   trajectory — LINSTOR 1.33.0, RHEL9 guidance, 2025–26; keyring-rs ships
+   headless `keyutils`; and **no other cross-language keyring library wraps
+   `systemd-creds`**, so re-adding it would leapfrog the peer class), preserved
+   in doc/headless-implementation-plan.md and git history.
 
 2. **Memory hygiene is not airtight, and can't fully be in Dart.** We zero the
    native `malloc`/CFData staging buffers, and the Linux transport is
@@ -394,17 +398,23 @@ A**). Key store → wrap a key around app-stored ciphertext (**Model B**).
   *is* that agent (securityd, gnome-keyring), so we delegate to it (A) or wrap
   it (B) rather than run our own.
 
-**Where secret_store lands — and why it's correct.** It offers **both**, with A
-as the default (`SecretStorage(service:)`) and B as an explicit composition.
-That is not a hedge; it's the platform-correct mapping, because best practice
-*is* "A where the native store is a secret store, B where it's a key store or
-you're headless":
+**Where secret_store lands — and why it's correct.** The per-platform resolver
+composes **both** — there is no public knob (`SecretStorage(appId:)` is the whole
+surface; A-vs-B is the library's decision, not the caller's). That is not a
+hedge; it's the platform-correct mapping, because best practice *is* "A where the
+native store is a secret store, B where it's a key store or a legacy software
+keychain":
 
-- Our **A default on macOS/Linux** matches the keyring-library and
-  credential-helper norm exactly.
-- Our **B option** matches the Chromium / Electron `safeStorage` pattern and is
-  the only viable approach headless.
-- The future **iOS backend should be Model A** (direct keychain), matching every
-  iOS library; the future **Android backend must be Model B** (there is no A on
-  Android). The `KeySource` / backend seam already accommodates both, so the
-  rule to hold as backends land is simply **iOS → A, Android → B.**
+- **A on iOS and entitled macOS** — native Data Protection keychain items on the
+  Secure Enclave, matching every iOS library and the keyring/credential-helper
+  norm for a hardware secret store.
+- **B on unentitled macOS, Linux, and Android** — the encrypted file with its
+  32-byte key held in the platform keystore (login Keychain / Secret Service /
+  AndroidKeyStore). **Linux and unentitled macOS never use Model A** — the
+  keystore holds only the file scheme's key, not the secrets. This is the
+  Chromium / Electron `safeStorage` pattern, and the only shape that works on
+  Android (Keystore holds keys, not blobs).
+
+The `KeySource` / backend seam accommodates both, so the rule the resolver holds
+is **native-secret-store → A (iOS, entitled macOS); key-store-or-legacy-software-keychain
+→ B (Android, Linux, unentitled macOS).**

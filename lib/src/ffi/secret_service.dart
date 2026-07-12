@@ -75,9 +75,17 @@ final class SecretToolApi implements KeystoreApi {
   Future<Uint8List?> get(String service, String account) async {
     final r = await _run(['lookup', ..._attrs(service, account)]);
     if (r.launchFailed || r.timedOut) _translate(r, 'get');
+    // `lookup` exits 1 both for a genuine miss AND for a locked collection that
+    // fails without a prompter (headless, no GUI agent): with only `secret-tool`
+    // we cannot tell them apart, so we report "not found". A present container
+    // then surfaces as StoreKeyMissing, whose message is deliberately hedged
+    // ("unlock and retry") rather than over-claiming a permanently lost key.
+    // The desktop locked case is unaffected — a prompter blocks and the hard
+    // timeout maps it to KeystoreLocked. (Tightening this needs the exit-code
+    // matrix from the recorded TODO in probe().)
     if (r.exitCode == 1) {
       _scrub(r);
-      return null; // not found
+      return null; // not found (or a locked collection that failed fast)
     }
     if (r.exitCode != 0) _translate(r, 'get');
     try {

@@ -24,6 +24,12 @@ fix decision.
 > dbus-run-session harness), §8 rollback enforcement design, §5 SecretBuffer
 > (mlock'd native key memory), §11 remaining platform-claim verifications,
 > §12 ecosystem benchmarking.
+>
+> **Post-austerity correction (later pass):** two of the "resolved in code"
+> items above were subsequently *cut* — the §7 cross-process `flock` (locking
+> is out of scope now; the in-process mutex is the only serialization) and the
+> §9 Unicode label rules (labels are now control-char + length checks only).
+> (The §4 generation field was likewise removed — see design.md §7/§12.)
 
 ---
 

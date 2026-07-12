@@ -125,12 +125,21 @@ final class Container {
     for (var i = 0; i < _nonceLength; i++) {
       nonce[i] = _rng.nextInt(256);
     }
-    final box = await _aead.encrypt(
-      plaintext,
-      secretKey: key,
-      nonce: nonce,
-      aad: _aad(commit),
-    );
+    final SecretBox box;
+    try {
+      box = await _aead.encrypt(
+        plaintext,
+        secretKey: key,
+        nonce: nonce,
+        aad: _aad(commit),
+      );
+    } finally {
+      // Best-effort scrub of the concatenated-secrets buffer. Dart-heap memory
+      // cannot be reliably zeroed (the GC may already have copied it), so this
+      // only narrows the window — the package's load-bearing scrub guarantee is
+      // for native buffers. Free, so worth doing.
+      plaintext.fillRange(0, plaintext.length, 0);
+    }
     // magic|version|cipher|commit | nonce | ciphertext | tag
     final out = BytesBuilder(copy: false)
       ..add(_magic)
@@ -195,7 +204,18 @@ final class Container {
     } on SecretBoxAuthenticationError {
       throw const AuthenticationFailed();
     }
-    return decodeTlv(Uint8List.fromList(plaintext));
+    // decodeTlv copies every value into its own buffer, so the concatenated
+    // plaintext can be scrubbed once decoding is done. Best-effort, as in
+    // seal(): a Dart-heap scrub only narrows the window.
+    final buf = Uint8List.fromList(plaintext);
+    if (plaintext is Uint8List) {
+      plaintext.fillRange(0, plaintext.length, 0);
+    }
+    try {
+      return decodeTlv(buf);
+    } finally {
+      buf.fillRange(0, buf.length, 0);
+    }
   }
 }
 

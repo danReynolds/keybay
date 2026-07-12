@@ -161,8 +161,9 @@ Work:
    Developer PLA (the one-time blocker): the entitled overlay (team + identity +
    keychain-access-groups) signed the bundle with `application-identifier` +
    `keychain-access-groups`, `-allowProvisioningUpdates` created the profile,
-   and `flutter test … --dart-define=EXPECT_HARDWARE=true` asserted
-   `keystore` / `hardwareBacked` with a full DP-keychain round-trip. The overlay
+   and `flutter test … --dart-define=EXPECT_SCHEME=native
+   --dart-define=EXPECT_LEVEL=hardware` asserted `nativeItems` /
+   `hardwareBacked` with a full DP-keychain round-trip. The overlay
    is reverted out of the committed default (no personal team ID in the repo);
    re-run via tool/dp_keychain_verification.md.
 5. Resolver: `Platform.isIOS → KeystoreBackend(service: appId, api: iOS

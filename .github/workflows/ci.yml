@@ -1,8 +1,20 @@
 name: ci
 
 on:
+  # `push` is scoped to main so a branch with an open PR isn't built twice
+  # (once for the push, once for the PR).
   push:
+    branches: [main]
   pull_request:
+  schedule:
+    # Weekly, so the crypto-pin canary fails on a newly published `cryptography`
+    # release even when the repo is idle — not only on push/PR.
+    - cron: '17 6 * * 1'
+
+# Least privilege: every job gets a read-only token unless it opts into more
+# (only `supply-chain` does, for its SARIF upload).
+permissions:
+  contents: read
 
 # All third-party actions are pinned by commit SHA (tags are retargetable —
 # a hijacked tag is a code-execution path into CI). The trailing comment
@@ -20,8 +32,8 @@ jobs:
       - run: dart pub get
       - run: dart format --output=none --set-exit-if-changed .
       - run: dart analyze --fatal-infos
-      # Unit tier (hermetic): crypto vectors, container/fuzz, POSIX perms +
-      # flock, backend logic over fakes, and the dependency-closure firewall.
+      # Unit tier (hermetic): crypto vectors, container/fuzz, POSIX perms,
+      # backend logic over fakes, and the dependency-closure firewall.
       - run: dart test -x integration
 
   integration-macos:

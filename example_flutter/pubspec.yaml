@@ -3,7 +3,7 @@ description: >-
   Flutter host app for secret_store's mobile/desktop integration tiers: proves
   the package runs inside Flutter apps and exercises the resolver on real
   platform keystores (macOS entitled/unentitled, iOS simulator, Android
-  emulator later). See doc/implementation-plan.md Phase 2.
+  emulator). See doc/implementation-plan.md Phase 2.
 publish_to: "none"
 version: 1.0.0+1
 

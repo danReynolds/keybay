@@ -33,22 +33,34 @@ final class ContainerMissing extends SecretStoreException {
   final String path;
 }
 
-/// The container file exists but its store key is gone from the keystore
-/// (keychain item deleted, keyring reset). **Unrecoverable without a backup of
-/// the key** — the ciphertext can no longer be opened.
+/// The container file exists but the keystore did not return its store key.
+///
+/// If the keystore is unlocked and reachable, this is the deleted-key state
+/// (keychain item removed, keyring reset) and is **unrecoverable without a
+/// backup of the key** — the ciphertext can no longer be opened. But some
+/// backends cannot tell a *locked or unreachable* keyring apart from a deleted
+/// item: the Linux Secret Service in particular reports "not found" for a
+/// locked collection that fails without a prompter, so a merely-locked keyring
+/// surfaces here too. Before treating the key as lost, confirm the keystore is
+/// unlocked and reachable and retry.
 final class StoreKeyMissing extends SecretStoreException {
   const StoreKeyMissing()
       : super(
             'store_key_missing',
-            'Container exists but its store key is absent from the keystore; '
-                'the data cannot be decrypted without a backup of the key.');
+            'Container exists but its store key was not returned by the '
+                'keystore. If the keystore is unlocked and reachable, the key '
+                'is gone and the data cannot be decrypted without a backup; '
+                'otherwise unlock the keystore and retry (a locked or '
+                'unreachable keyring can present the same way on some '
+                'backends).');
 }
 
-/// The store key (or context salt) does not match this container: the
-/// header's key-commitment value disagrees with the one derived from the
-/// supplied key. Wrong key, wrong `contextSalt`, or a container sealed under a
-/// different key. Detected in constant time *before* decryption, so it is
-/// reliably distinguishable from tampering ([AuthenticationFailed]).
+/// The store key does not match this container: the header's key-commitment
+/// value disagrees with the one derived from the supplied key. The key is
+/// wrong, or the container was sealed under a different key (or, on a store
+/// configured with a caller context, a different context). Detected in
+/// constant time *before* decryption, so it is reliably distinguishable from
+/// tampering ([AuthenticationFailed]).
 final class WrongStoreKey extends SecretStoreException {
   const WrongStoreKey()
       : super(

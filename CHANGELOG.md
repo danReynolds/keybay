@@ -4,6 +4,38 @@
 
 Initial implementation (see [doc/design.md](doc/design.md)). Not yet published.
 
+### Fixes from a PR review pass (pre-release)
+
+Correctness / honesty:
+- **Linux locked-keyring diagnosis is honest.** `secret-tool lookup` cannot tell
+  a genuinely-absent key from a collection that is locked/unreachable without a
+  prompter; a present container then surfaced as `StoreKeyMissing` claiming the
+  data was unrecoverable. The `StoreKeyMissing` message (and the get-path
+  comment) now say to confirm the keystore is unlocked and retry before treating
+  the key as lost.
+- **`describe()` can no longer throw on macOS.** An unexpected `OSStatus` from
+  the Apple keychain probe was propagated as `KeystoreOperationFailed`; the probe
+  now reports it in `detail` instead, honoring the diagnostics-never-throw
+  contract.
+- **The concatenated-plaintext buffer is scrubbed** after seal/open (best-effort
+  Dart-heap zeroing; native-buffer zeroing remains the load-bearing guarantee).
+
+Docs / tests / CI:
+- Concurrency contract corrected: the serialization mutex is **isolate**-local,
+  not process-wide (a background isolate is a second uncoordinated writer).
+- Test coverage: real-subprocess tests for `SystemProcessRunner` (timeout SIGKILL
+  incl. the stdin-blocked path, launch-failure, exit codes); TLV golden wire
+  vector, duplicate-key/trailing-byte rejection, empty-value round-trips; the
+  fresh-key-rollback test now actually exercises the rollback (was passing
+  vacuously); a vacuous "ciphertext" assertion fixed.
+- CI: least-privilege `permissions`, a weekly `schedule` so the crypto-pin canary
+  fires on an idle repo, `push` scoped to main to avoid double-runs; stale
+  comments corrected.
+- The manual DP-keychain verification procedure and the ecosystem/design docs
+  were brought back in line with the shipped code (removed `service:` API,
+  cut `flock`/rollback-field/`TpmKeySource`, iOS-simulator Secure Enclave); the
+  committed personal iOS `DEVELOPMENT_TEAM` was scrubbed.
+
 ### Hardening from a self-review pass (pre-release)
 
 Correctness / lifecycle:
@@ -126,7 +158,7 @@ unchanged — these are lifecycle/ownership and truthful-reporting fixes.
   **zero** CocoaPods plugins). Round-trip validated on the iOS simulator; the
   Secure-Enclave hardware property is pending a one-time on-device run.
 
-### One-input API + per-platform resolver (pre-release; supersedes the earlier constructor surface described below)
+### One-input API + per-platform resolver (pre-release; supersedes the earlier constructor surface)
 
 - **The production surface is now exactly `SecretStorage(appId:)`.** The
   resolver derives everything from the validated `appId` and picks the
@@ -245,44 +277,3 @@ unchanged — these are lifecycle/ownership and truthful-reporting fixes.
 - **New Linux integration test** (`test/secret_service_integration_test.dart`)
   runs under `dbus-run-session` against a real gnome-keyring in CI — verified
   locally in a Docker ubuntu container. This is what caught the two bugs above.
-
-### Intent-first public API (pre-release)
-
-- **The concrete backends are no longer exported.** `KeystoreBackend` and
-  `EncryptedFileBackend` are hidden — which mechanism to use is the library's
-  per-platform decision, not the caller's. The public surface is three
-  constructors: `SecretStorage(service:, {api})` (the secure default; `api`
-  is the advanced binding override, whose one use is opting an entitled macOS
-  app up to the Data Protection keychain), `SecretStorage.encryptedFile(path:,
-  keySource:, contextSalt:)` (headless / one-file — replaces
-  `withBackend(EncryptedFileBackend(...))`), and `withBackend(...)` (test /
-  custom escape hatch). `describe()` reports which mechanism was chosen.
-
-- **macOS Data Protection keychain opt-in.** `MacKeychainApi.dataProtection()`
-  targets the DP keychain (AES-256-GCM + Secure Enclave) for a signed, entitled
-  app: `SecretStorage(service: s, api: MacKeychainApi.dataProtection())`. Uses
-  the app's implicit default access group (Xcode's Keychain Sharing capability
-  is all that's needed — no access group to configure). An unentitled process
-  is refused with `errSecMissingEntitlement` (−34018) → `KeystoreUnreachable`,
-  never silently falling back to the login keychain. The refusal path is
-  integration-tested on the unsigned CI runner; the entitled-app success path
-  is verified manually (CI can't sign an app bundle).
-
-- **Front API** — `SecretStorage`: bytes-first async key/value with String
-  conveniences, identifier/label validation, capability-guarded enumeration.
-  Default `SecretStorage(service:)` resolves the platform keystore (fail-closed
-  off macOS/Linux).
-- **Backends** (`SecretBackend` seam, honest `capabilities`):
-  - `KeystoreBackend` — direct OS-keystore items (model A). macOS via
-    `MacKeychainApi` (direct `SecItem` FFI, validated against the real login
-    Keychain); Linux via `SecretToolApi` (`secret-tool`, stdin transport, hard
-    timeout, output scrubbing).
-  - `EncryptedFileBackend` — XChaCha20-Poly1305 authenticated container with
-    HKDF-SHA256 key derivation, binary TLV payload, profile-bound AAD, atomic
-    0600-from-birth writes; the full §7 failure matrix as distinct typed errors.
-- **Key sources**: `KeystoreKeySource` (model B — key in the OS keystore,
-  container encrypted on disk; dune's default), `FileKeySource` (explicit
-  insecure fallback), `InMemoryKeySource`.
-- **Security**: `Random.secure()` only; RFC 8439 / RFC 5869 / draft-arciszewski
-  vectors run against the pinned `cryptography`; one third-party runtime
-  dependency, enforced by a dependency-closure test.
