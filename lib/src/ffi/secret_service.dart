@@ -99,6 +99,31 @@ final class SecretToolApi implements KeystoreApi {
   }
 
   @override
+  Future<bool> exists(String service, String account) async {
+    // Attributes-only presence check. `secret-tool search` lists a matching
+    // item's `attribute.account` line even when its collection is locked, and
+    // prints the `secret = …` value only when unlocked — so existence is judged
+    // from the parsed account lines, never by fetching and base64-decoding the
+    // value the way `get`/`lookup` does. (lookup is additionally blind on a
+    // locked collection, exiting 1 empty; search is not.) Both streams echo
+    // secret material, so they are parsed at the byte level and scrubbed.
+    final r = await _run(['search', '--all', ..._attrs(service, account)]);
+    if (r.launchFailed || r.timedOut) _translate(r, 'exists');
+    // No-match is exit 0 empty on current secret-tool, exit 1 on older ones.
+    if (r.exitCode == 1) {
+      _scrub(r);
+      return false;
+    }
+    if (r.exitCode != 0) _translate(r, 'exists');
+    try {
+      return {..._parseAccounts(r.stderr), ..._parseAccounts(r.stdout)}
+          .contains(account);
+    } finally {
+      _scrub(r);
+    }
+  }
+
+  @override
   Future<void> set(String service, String account, Uint8List value,
       {String? label}) async {
     final r = await _run(
