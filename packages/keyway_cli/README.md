@@ -48,14 +48,15 @@ commands exactly:
 
 ```sh
 cp secrets.env.example .secrets.env
-keyway run -- ./verify.sh
+keyway run -- ./app.sh
 keyway set acme-example/openai-api-key
-keyway run -- ./verify.sh
+keyway run -- ./app.sh
 ```
 
 The first `run` fails closed and prints the required `set` command without
-launching the script. Enter any disposable value at the hidden prompt. The
-second `run` prints `Keyway quickstart passed.` without revealing the value.
+launching the app. Enter any disposable value at the hidden prompt. The second
+`run` safely shows the literal URL and reports the secret as available without
+printing its value.
 
 ## Commands
 

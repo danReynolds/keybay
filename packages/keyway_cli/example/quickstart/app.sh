@@ -11,4 +11,6 @@ if [ -z "${OPENAI_API_KEY:-}" ]; then
   exit 1
 fi
 
-echo "Keyway quickstart passed."
+echo "Keyway example app started."
+echo "  API_URL: $API_URL"
+echo "  OPENAI_API_KEY: available (value not printed)"

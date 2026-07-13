@@ -8,11 +8,18 @@ From this directory:
 
 ```sh
 cp secrets.env.example .secrets.env
-keyway run -- ./verify.sh
+keyway run -- ./app.sh
 keyway set acme-example/openai-api-key
-keyway run -- ./verify.sh
+keyway run -- ./app.sh
 ```
 
 The first `run` fails closed and prints the `set` command without launching the
-script. Enter any disposable value at the hidden prompt. The second `run`
-prints `Keyway quickstart passed.` without revealing the value.
+app. Enter any disposable value at the hidden prompt. The second `run` shows
+the literal URL and confirms that the secret reached the app without printing
+its value:
+
+```text
+Keyway example app started.
+  API_URL: https://staging.example.com
+  OPENAI_API_KEY: available (value not printed)
+```

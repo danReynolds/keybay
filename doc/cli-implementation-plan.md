@@ -510,8 +510,11 @@ malware, root, and the child's own conduct remain out of scope at every tier.
 
 1. **GitHub Releases (primary):** per-platform `dart compile exe` binaries
    from a CI matrix (macOS arm64/x64, Linux x64/arm64), macOS ones Developer-ID
-   signed with a secure timestamp and hardened runtime, notarized, and stapled
-   (SR-11), SHA-256 sums + build provenance attestation.
+   signed with a secure timestamp and hardened runtime, and notarized as
+   standalone Mach-O binaries (SR-11). Apple publishes an online ticket but
+   cannot staple it to a raw executable; Keyway does not add an installer or
+   app bundle solely to gain stapling. SHA-256 sums + build provenance
+   attestation accompany every artifact.
    Honest note: Dart AOT builds are not bit-reproducible; provenance is the
    compensating control.
 2. **Homebrew tap** (`brew install danreynolds/tap/keyway`), day one;
@@ -597,9 +600,10 @@ Linux release hardware against the DX-2 budgets.
 
 **Phase 3 — release.** Use the frozen macOS signing identifier and entitlement
 set; compile, Developer-ID sign with a secure timestamp and hardened runtime,
-notarize, and staple macOS binaries; verify the designated requirement, exact
-entitlement set, and successful signed-binary upgrade access to an existing
-keychain item;
+notarize standalone macOS binaries, require an accepted online ticket and
+empty issue log, and verify with Gatekeeper; verify the designated requirement,
+exact entitlement set, and successful signed-binary upgrade access to an
+existing keychain item;
 build Linux artifacts; publish checksums + provenance; validate Homebrew and
 `dart install` from clean machines; execute the documented quickstart verbatim
 on macOS and Linux; complete Appendix B's registration checklist.
@@ -713,26 +717,25 @@ in under five minutes on macOS and Linux.
 - **Name: `keyway`; scheme `kw://`; appId `keyway-cli`; manifest filename
   `.secrets.env`** (2026-07-12; §16, Appendix B).
 
-## 15. Open questions
+## 15. Resolved platform contracts
 
-The product surface is frozen, but implementation exposed two platform-level
-contract decisions that must be ratified before Phase 3 closes:
+The product surface is frozen. Implementation exposed two platform-level
+details, both ratified by the owner on 2026-07-13 under the same austerity rule:
+prefer the smaller fail-safe contract when additional native or packaging code
+does not materially improve the supported security model.
 
 1. **Hidden-prompt `SIGQUIT` / `SIGTSTP`.** Dart AOT exposes `SIGINT`,
    `SIGTERM`, and `SIGHUP` streams on both v1 platforms, but not a portable
-   macOS stream for `SIGQUIT` or job-control suspend/resume. The austere
-   implementation temporarily ignores `SIGQUIT` and `SIGTSTP` only while echo
-   is hidden, restores their prior dispositions afterward, and proves by PTY
-   that neither can terminate the process with a silent terminal. Ratify that
-   fail-safe contract, or accept a native signal bridge solely to preserve
-   the fuller §18 behavior.
+   macOS stream for `SIGQUIT` or job-control suspend/resume. Keyway temporarily
+   ignores `SIGQUIT` and `SIGTSTP` only while echo is hidden, restores their
+   prior dispositions afterward, and proves by PTY that neither can terminate
+   the process with a silent terminal. No native signal bridge is added solely
+   to preserve those two controls during the short prompt window.
 2. **Standalone macOS notarization.** Apple accepts standalone Mach-O binaries
    for notarization but does not support stapling a ticket to the raw binary.
-   The implemented release path signs the standalone binary, submits it in a
-   ZIP, requires an accepted ticket with no issues, and verifies it with
-   `spctl`; it does not add an app bundle, disk image, or installer solely to
-   gain stapling. Ratify that contract, or accept the additional distribution
-   surface required for a stapleable container.
+   The release path signs the standalone binary, submits it in a ZIP, requires
+   an accepted ticket with no issues, and verifies it with `spctl`; it does not
+   add an app bundle, disk image, or installer solely to gain stapling.
 
 The key grammar, workspace layout, PATH behavior, doctor health exit, CLI SDK
 floor, and macOS signing identifier remain frozen below or in their normative
@@ -822,17 +825,17 @@ available, unlocked backend and 69 for a reported unhealthy state.
   failures return 126 with the non-secret command and errno (SR-13).
 - **Prompt echo restoration:** after the TTY check, remember the prior echo
   mode, set `stdin.echoMode = false`, and restore the exact prior mode in
-  `finally` and before acting on the normal terminal-facing termination
-  signals on both v1 platforms (`SIGINT`, `SIGTERM`, `SIGHUP`, `SIGQUIT`).
-  Cancel all subscriptions on normal completion. After restoration, exit with
-  the conventional signal-derived status (130/143/129/131 respectively).
-  Handle job-control suspension too: on `SIGTSTP`, restore echo, temporarily
-  restore/default the stop disposition and suspend; on `SIGCONT`, re-disable
-  echo only if the prompt is still active. `SIGKILL` and process/runtime
-  crashes cannot be handled and are the explicit OS-level limits. PTY tests
-  assert normal completion, each supported termination signal, and
-  suspend/resume; no supported interactive interruption path may leave the
-  terminal silent.
+  `finally` and before acting on Dart's portable terminal-facing termination
+  signals on both v1 platforms (`SIGINT`, `SIGTERM`, `SIGHUP`). Cancel all
+  subscriptions on normal completion. After restoration, exit with the
+  conventional signal-derived status (130/143/129 respectively). While echo
+  is hidden only, temporarily ignore `SIGQUIT` and `SIGTSTP`; restore their
+  exact prior dispositions afterward. This deliberately trades two momentary
+  job-control shortcuts for a smaller fail-safe implementation that cannot
+  strand a silent terminal. `SIGKILL` and process/runtime crashes cannot be
+  handled and are the explicit OS-level limits. PTY tests assert normal
+  completion, every supported termination signal, temporary quit/suspend
+  immunity, and disposition restoration.
 - **Secret-input byte handling:** retain at most the core's 16 MiB sealed-store
   envelope + 1 byte; the extra byte triggers a size error rather than unbounded
   buffering. Within the cap, `--stdin` reads to EOF and the interactive path

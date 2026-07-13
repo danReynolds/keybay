@@ -67,9 +67,8 @@ Apple creates notarization tickets for standalone Mach-O binaries but does not
 support stapling tickets to them. The workflow therefore submits a ZIP,
 publishes Apple's online ticket for the binary, and distributes the unchanged
 signed/notarized binary in a tarball. It does not add a `.pkg`, disk image, or
-app bundle solely to gain stapling. The normative implementation plan still
-says "staple" and must be ratified to this technically possible contract
-before the first tag.
+app bundle solely to gain stapling. The owner ratified this standalone contract
+on 2026-07-13; offline-first installer distribution is not a v1 requirement.
 
 ## Cut a CLI release
 
@@ -128,15 +127,15 @@ keyway --version
 keyway doctor
 cd "$(brew --prefix keyway)/share/keyway/example/quickstart"
 cp secrets.env.example .secrets.env
-keyway run -- ./verify.sh
+keyway run -- ./app.sh
 keyway set acme-example/openai-api-key
-keyway run -- ./verify.sh
+keyway run -- ./app.sh
 keyway rm acme-example/openai-api-key
 ```
 
 The first `run` must exit 78 and print the exact `set` remediation without
-launching the child. Input at `set` must be hidden. The second `run` must print
-only `Keyway quickstart passed.`
+launching the child. Input at `set` must be hidden. The second `run` must show
+the literal URL and report the secret as available without printing its value.
 
 ### GitHub archive on Linux
 

@@ -26,9 +26,9 @@ cp packages/keyway_cli/example/quickstart/README.md \
   "$tmp/example/quickstart/README.md"
 cp packages/keyway_cli/example/quickstart/secrets.env.example \
   "$tmp/example/quickstart/secrets.env.example"
-cp packages/keyway_cli/example/quickstart/verify.sh \
-  "$tmp/example/quickstart/verify.sh"
-chmod 0755 "$tmp/example/quickstart/verify.sh"
+cp packages/keyway_cli/example/quickstart/app.sh \
+  "$tmp/example/quickstart/app.sh"
+chmod 0755 "$tmp/example/quickstart/app.sh"
 
 mkdir -p "$(dirname "$output")"
 COPYFILE_DISABLE=1 tar -czf "$output" -C "$tmp" \

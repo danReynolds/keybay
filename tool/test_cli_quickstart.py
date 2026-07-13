@@ -113,7 +113,7 @@ def main() -> int:
             os.path.join(repo, ".secrets.env"),
         )
 
-        missing = run_checked([executable, "run", "--", "./verify.sh"], repo)
+        missing = run_checked([executable, "run", "--", "./app.sh"], repo)
         if missing.returncode != 78:
             raise AssertionError(f"initial run exited {missing.returncode}: {missing.stderr}")
         expected_missing = (
@@ -131,10 +131,15 @@ def main() -> int:
 
         interactive_set(executable, repo, secret)
 
-        success = run_checked([executable, "run", "--", "./verify.sh"], repo)
+        success = run_checked([executable, "run", "--", "./app.sh"], repo)
         if success.returncode != 0:
             raise AssertionError(f"second run exited {success.returncode}: {success.stderr}")
-        if success.stdout != "Keyway quickstart passed.\n" or success.stderr:
+        expected_success = (
+            "Keyway example app started.\n"
+            "  API_URL: https://staging.example.com\n"
+            "  OPENAI_API_KEY: available (value not printed)\n"
+        )
+        if success.stdout != expected_success or success.stderr:
             raise AssertionError(
                 f"unexpected quickstart output: {success.stdout!r} {success.stderr!r}"
             )

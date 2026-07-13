@@ -25,7 +25,7 @@ expected = {
     "example/quickstart": "directory",
     "example/quickstart/README.md": "file",
     "example/quickstart/secrets.env.example": "file",
-    "example/quickstart/verify.sh": "file",
+    "example/quickstart/app.sh": "file",
     "keyway": "file",
 }
 
@@ -52,7 +52,7 @@ except (OSError, tarfile.TarError, ValueError) as error:
     raise SystemExit(1)
 PY
 tar -xzf "$archive" -C "$tmp"
-expected_files=$'LICENSE\nREADME.md\nexample/quickstart/README.md\nexample/quickstart/secrets.env.example\nexample/quickstart/verify.sh\nkeyway'
+expected_files=$'LICENSE\nREADME.md\nexample/quickstart/README.md\nexample/quickstart/app.sh\nexample/quickstart/secrets.env.example\nkeyway'
 actual_files="$(cd "$tmp" && find . -type f -print | sed 's#^\./##' | LC_ALL=C sort)"
 if [[ "$actual_files" != "$expected_files" ]]; then
   echo "unexpected release archive files:" >&2
@@ -75,14 +75,14 @@ if [[ ! -x "$tmp/keyway" ]]; then
   echo "release archive keyway binary is not executable" >&2
   exit 1
 fi
-if [[ ! -x "$tmp/example/quickstart/verify.sh" ]]; then
+if [[ ! -x "$tmp/example/quickstart/app.sh" ]]; then
   echo "release archive quickstart verifier is not executable" >&2
   exit 1
 fi
 for relative in \
   example/quickstart/README.md \
   example/quickstart/secrets.env.example \
-  example/quickstart/verify.sh; do
+  example/quickstart/app.sh; do
   if ! cmp -s "$tmp/$relative" "packages/keyway_cli/$relative"; then
     echo "release archive changed packaged example file '$relative'" >&2
     exit 1
