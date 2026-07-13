@@ -34,9 +34,20 @@ if [[ -z "$installed" ]]; then
   echo "dart install did not create a keyway executable under disposable HOME" >&2
   exit 1
 fi
-[[ "$("$installed" --version)" == "keyway 0.1.0" ]]
-[[ "$("$installed" --help | wc -l | tr -d ' ')" -le 24 ]]
+actual_version="$("$installed" --version)"
+if [[ "$actual_version" != "0.1.0" ]]; then
+  echo "installed keyway version was '$actual_version', expected '0.1.0'" >&2
+  exit 1
+fi
+help_lines="$("$installed" --help | wc -l | tr -d ' ')"
+if ((help_lines > 24)); then
+  echo "installed keyway help used $help_lines lines, expected at most 24" >&2
+  exit 1
+fi
 
 HOME="$home" dart uninstall keyway_cli
-[[ ! -e "$installed" ]]
+if [[ -e "$installed" ]]; then
+  echo "dart uninstall left the keyway executable installed" >&2
+  exit 1
+fi
 echo "CLI hermetic dart install passed"
