@@ -75,9 +75,19 @@ final class SecretInputReader {
       stderr.writeln();
       return decodeSecretBytes(line.bytes);
     } finally {
-      terminal.echoMode = previousEchoMode;
-      await signalGuard?.close();
-      await lineSubscription?.cancel();
+      // Every cleanup action must run even if an earlier one fails. A terminal
+      // can disappear while input is pending; a failed echo restoration must
+      // not leave the temporary signal dispositions or stdin subscription
+      // installed for the remainder of the process.
+      try {
+        terminal.echoMode = previousEchoMode;
+      } finally {
+        try {
+          await signalGuard?.close();
+        } finally {
+          await lineSubscription?.cancel();
+        }
+      }
     }
   }
 }

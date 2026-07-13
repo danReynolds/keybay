@@ -530,9 +530,11 @@ malware, root, and the child's own conduct remain out of scope at every tier.
    became available, so this channel has one documented installation spelling.
    The "any language" positioning fails if the answer to "how do I install
    it" starts with "install Dart".
-4. **Registrations:** Appendix B's checklist — `keyway.dev`, pub.dev names,
-   npm/PyPI reclamation filings, scoped-org fallbacks. (The GitHub repo
-   rename to `danReynolds/keyway` is done, 2026-07-12.)
+4. **Identity surface:** the existing `danReynolds/keyway` repository and the
+   two real pub.dev packages are sufficient. No custom site/domain, separate
+   GitHub organization, or placeholder package on an unused registry is part
+   of v0.1. Add another identity only when a real distribution artifact needs
+   one.
 
 Release train: the CLI pins the exact core version; a core release triggers a
 reviewed CLI pin-bump release. Independent CHANGELOGs; per-package tags. Pub.dev
@@ -979,9 +981,9 @@ that admits only the matching key — precisely this product: the one
 sanctioned path by which keys reach a process. Chosen over ~30 vetted
 candidates; final four:
 
-| Finalist | Availability (pub / npm / brew / crates / PyPI / .dev) | Deciding factor |
+| Finalist | Availability (pub / npm / brew / crates / PyPI) | Deciding factor |
 |---|---|---|
-| **keyway** ✅ | ✅ / squatted / ✅ / ✅ / squatted / ❓ (registered since 2020; control unconfirmed) | Best metaphor and sound of the entire search; both squats are dead micro-projects; the brand collision (keyway.ai, AI-for-real-estate, ~$40M raised) is **out-of-category** |
+| **keyway** ✅ | ✅ / squatted / ✅ / ✅ / squatted | Best metaphor and sound of the entire search; both squats are dead micro-projects; the brand collision (keyway.ai, AI-for-real-estate, ~$40M raised) is **out-of-category** |
 | envkeep | all clean | Only true clean sweep, but permanently one letter from EnvKey — an **in-category** hosted secrets product; near-word-same-niche is the worse confusion profile |
 | kove | all clean | Ownable coined word, but meaning-free (tagline must build it) and kove.com is an enterprise software mark |
 | keyhold | clean except PyPI | Sturdy, flat; outclassed by keyway's semantics |
@@ -995,22 +997,18 @@ Bastillion-née-KeyBox), `quartz`/`slate`/`cove`/`ark`/`boreal`/`enclose`/
 product collisions). Pattern worth remembering: real 4–6-letter nouns are
 gone; only coined or compound names survive clean.
 
-**Squat details** (both plausibly reclaimable; scoped fallback regardless):
+**Squat details** (historical research, not scheduled work):
 npm `keyway` — a one-release 2022 toy ("the opposite of `Object.keys`");
 PyPI `keyway` — a one-day-in-2023 "persistent environment variables"
-project (ironically category-adjacent). File an npm abandoned-package
-dispute and a PyPI PEP 541 request; a future npm wrapper channel works as
-`@keyway/cli` either way.
+project (ironically category-adjacent). Do not file reclamations or occupy
+fallback scopes unless a real package for that ecosystem is approved.
 
 **Registration checklist (owner actions):** ~~rename the GitHub repo~~
-(done 2026-07-12 — `danReynolds/keyway`; pubspec updated); confirm whether the
-owner controls `keyway.dev`, which has been registered since 2020, and either
-record that control or choose/acquire a domain fallback before release. The
-exact GitHub `keyway` name is an existing user, so decide whether a separate
-organization is needed before selecting and reserving a fallback. Publish
-stub/placeholder packages where free (crates) or scoped (`@keyway` npm org);
-file the npm/PyPI reclamations; perform a five-minute USPTO trademark sanity
-pass on "KEYWAY" for software goods.
+(done 2026-07-12 — `danReynolds/keyway`; pubspec updated); publish only the
+actual `keyway` and `keyway_cli` packages on pub.dev; perform a trademark
+sanity pass on "KEYWAY" for software goods. The GitHub repository is the
+canonical homepage. There is deliberately no custom site/domain, separate
+organization, or placeholder package on another registry for v0.1.
 
 ## Appendix C — recorded designs, not scheduled scope
 

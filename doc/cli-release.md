@@ -41,7 +41,14 @@ security and installation contract.
 3. Create the public `danReynolds/homebrew-tap` repository with a `main`
    branch and a `Formula/` directory. The release workflow refuses to publish
    before it can read this repository; after the GitHub release exists it
-   writes only `Formula/keyway.rb`.
+   writes only `Formula/keyway.rb`. Treat the tap as a code-distribution trust
+   root: keep it formula-only apart from a short README, add no collaborators,
+   require linear history, and disallow force pushes and branch deletion. The
+   fine-grained `HOMEBREW_TAP_TOKEN` is its only automated writer and has no
+   access to the Keyway source repository. A pull-request-only rule is not used
+   on the tap because the approval-gated release job deliberately commits the
+   generated, hash-pinned formula directly; the fresh Homebrew acceptance job
+   then installs and exercises that public commit before pub.dev publication.
 4. Create the protected GitHub environment `pub.dev` and require approval.
    Push the signed core tag first:
 
@@ -72,10 +79,10 @@ security and installation contract.
    OIDC exclusively. Do not publish `keyway_cli` yet: its first manual
    publication occurs only after the signed native release in the section
    below, because it exact-pins this now-hosted core version.
-5. Complete Appendix B's owner actions: confirm control of `keyway.dev` or
-   choose a domain fallback, decide whether a separate GitHub organization is
-   needed, create the scoped npm fallback, file the npm/PyPI reclamations, and
-   record the trademark sanity check.
+5. Record Appendix B's trademark sanity check. Do not create a custom
+   site/domain, separate GitHub organization, or placeholder packages on
+   unused registries for v0.1. The existing repository and the two actual
+   pub.dev packages are the complete initial identity surface.
 
 ## macOS identity and notarization
 

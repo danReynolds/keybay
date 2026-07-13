@@ -158,6 +158,34 @@ void main() {
       expect(terminal.setCalls, <bool>[false, true]);
     });
 
+    test(
+      'interactive mode cancels input when echo restoration fails',
+      () async {
+        var inputCancelled = false;
+        final input = StreamController<List<int>>(
+          onCancel: () => inputCancelled = true,
+        );
+        final terminal = _FakeTerminal(
+          hasTerminal: true,
+          echoMode: true,
+          failOnSetCall: 2,
+        );
+        final reader = SecretInputReader(
+          input: input.stream,
+          terminal: terminal,
+          stderr: StringBuffer(),
+        );
+
+        final read = reader.read(key: 'acme/key', fromStdin: false);
+        input.add(utf8.encode('value\n'));
+
+        await expectLater(read, throwsA(isA<StateError>()));
+        expect(inputCancelled, isTrue);
+        expect(terminal.setCalls, <bool>[false, true]);
+        await input.close();
+      },
+    );
+
     test('interactive mode accepts a chunked final line at EOF', () async {
       final terminal = _FakeTerminal(hasTerminal: true, echoMode: true);
       final reader = SecretInputReader(
@@ -202,12 +230,16 @@ void main() {
 }
 
 final class _FakeTerminal implements TerminalControl {
-  _FakeTerminal({required this.hasTerminal, required bool echoMode})
-    : _echoMode = echoMode;
+  _FakeTerminal({
+    required this.hasTerminal,
+    required bool echoMode,
+    this.failOnSetCall,
+  }) : _echoMode = echoMode;
 
   @override
   final bool hasTerminal;
   bool _echoMode;
+  final int? failOnSetCall;
   final List<bool> setCalls = <bool>[];
 
   @override
@@ -216,6 +248,9 @@ final class _FakeTerminal implements TerminalControl {
   @override
   set echoMode(bool value) {
     setCalls.add(value);
+    if (setCalls.length == failOnSetCall) {
+      throw StateError('terminal disappeared');
+    }
     _echoMode = value;
   }
 }

@@ -5,11 +5,20 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/keyway-cli-storage.XXXXXX")"
 holder_pid=""
 app_id=""
+writer_pids=()
 fail() {
   echo "$1" >&2
   exit 1
 }
 cleanup() {
+  # macOS still ships Bash 3.2, where expanding an empty array under `set -u`
+  # is an unbound-variable error. Guard before expanding it.
+  if [[ -n "${writer_pids[*]-}" ]]; then
+    for writer_pid in "${writer_pids[@]}"; do
+      kill "$writer_pid" 2>/dev/null || true
+      wait "$writer_pid" 2>/dev/null || true
+    done
+  fi
   if [[ -n "$holder_pid" ]]; then
     kill "$holder_pid" 2>/dev/null || true
     wait "$holder_pid" 2>/dev/null || true
@@ -39,24 +48,43 @@ manifest="$tmp/.secrets.env"
 printf 'LITERAL=from-manifest\nSECRET=kw://%s\n' "$key" >"$manifest"
 
 concurrent_writers=8
-writer_pids=()
 concurrent_names=()
+concurrent_gate="$tmp/concurrent-writer-gate"
 for writer in $(seq 0 $((concurrent_writers - 1))); do
   suffix="$(printf '%02d' "$writer")"
   concurrent_names+=("CONCURRENT_$suffix")
   printf 'CONCURRENT_%s=kw://keyway-itest/concurrent-%s\n' \
     "$suffix" "$suffix" >>"$manifest"
-  printf 'concurrent-%s' "$suffix" | \
-    "$tmp/keyway-integration" "$app_id" set --stdin \
-      "keyway-itest/concurrent-$suffix" &
+  (
+    touch "$tmp/concurrent-writer-ready-$suffix"
+    while [[ ! -e "$concurrent_gate" ]]; do
+      sleep 0.01
+    done
+    printf 'concurrent-%s' "$suffix" | \
+      "$tmp/keyway-integration" "$app_id" set --stdin \
+        "keyway-itest/concurrent-$suffix"
+  ) &
   writer_pids+=("$!")
 done
+ready_count=0
+for _ in $(seq 1 200); do
+  ready_count="$(
+    find "$tmp" -name 'concurrent-writer-ready-*' -type f | \
+      wc -l | tr -d ' '
+  )"
+  [[ "$ready_count" == "$concurrent_writers" ]] && break
+  sleep 0.01
+done
+[[ "$ready_count" == "$concurrent_writers" ]] || \
+  fail "concurrent writers did not reach the start gate"
+touch "$concurrent_gate"
 writer_failed=0
 for writer_pid in "${writer_pids[@]}"; do
   if ! wait "$writer_pid"; then
     writer_failed=1
   fi
 done
+writer_pids=()
 ((writer_failed == 0)) || fail "a concurrent writer failed"
 
 set_output="$(printf '%s' "$sentinel" | \
@@ -122,6 +150,10 @@ holder_pid=""
   fail "live lock output omitted writer guidance"
 [[ "$busy_output" == *"not a stale lock file"* ]] || \
   fail "live lock output omitted stale-file guidance"
+resolved_after_busy="$("$tmp/keyway-integration" "$app_id" run -f "$manifest" -- \
+  /usr/bin/printenv SECRET)"
+[[ "$resolved_after_busy" == "$sentinel" ]] || \
+  fail "contended write changed the previously stored value"
 
 "$tmp/keyway-integration" "$app_id" rm "$key"
 "$tmp/keyway-integration" "$app_id" rm "$key"
