@@ -36,6 +36,11 @@ Dart users can install the package directly:
 dart install keyway_cli
 ```
 
+On Linux, Keyway requires the `secret-tool` client and an unlocked desktop
+Secret Service provider. Homebrew installs its `libsecret` dependency; distro
+or Dart/archive installs should install `libsecret-tools` (Debian/Ubuntu) or
+the equivalent package. A headless session still fails closed by design.
+
 Under `dart run`, the shared Dart VM—not Keyway alone—is the macOS keychain
 trust unit. `keyway doctor` makes the runtime distinction visible.
 

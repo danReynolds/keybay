@@ -117,10 +117,13 @@ on 2026-07-13; offline-first installer distribution is not a v1 requirement.
    `origin/main`. It then builds native arm64/x64 artifacts on each OS, signs
    and notarizes macOS, executes the real README quickstart, verifies archive
    contents, publishes SHA-256 sums and GitHub provenance attestations, creates
-   the GitHub release, updates the tap formula from the actual artifact hashes,
-   and only then reaches the pub.dev job. For v0.1.0, the explicit bootstrap
-   guard validates the CLI package but skips OIDC, ensuring the first manual
-   publication cannot precede the native release. A native-release failure
+   the GitHub release, and updates the tap formula from the actual artifact
+   hashes. Fresh runners then install the published Homebrew formula and Linux
+   archive without setting up Dart, verify the Linux checksum and provenance,
+   and execute the packaged quickstart against real platform stores. Only those
+   jobs can unlock pub.dev. For v0.1.0, the explicit bootstrap guard validates
+   the CLI package but skips OIDC, ensuring the first manual publication cannot
+   precede the native release. A native-release or channel-acceptance failure
    therefore cannot publish a partial CLI release.
 5. Inspect the workflow logs, the per-architecture Apple notary result and
    issue-log artifacts, release attestations, checksums, and tap commit. A
@@ -145,8 +148,11 @@ on 2026-07-13; offline-first installer distribution is not a v1 requirement.
 
 ## Clean-machine acceptance
 
-Use fresh macOS and Ubuntu accounts with no Dart installation and no existing
-`keyway-cli` store.
+The release workflow automatically exercises the published Homebrew and Linux
+archive channels on fresh runners without setting up Dart. Complete the same
+acceptance once in fresh macOS and Ubuntu user accounts with no Dart installation
+and no existing `keyway-cli` store; those physical receipts catch image-specific
+assumptions that hosted runners cannot.
 
 ### Homebrew on macOS
 
@@ -168,10 +174,11 @@ the literal URL and report the secret as available without printing its value.
 
 ### GitHub archive on Linux
 
-Verify `SHA256SUMS` and the GitHub attestation, extract the matching Linux
-archive, place `keyway` on `PATH`, then run the same commands from the
-archive's `example/quickstart` directory. `doctor` must identify Secret
-Service as reachable and unlocked.
+Install the distro's `secret-tool` client (`libsecret-tools` on Debian/Ubuntu)
+and use an unlocked desktop Secret Service provider. Verify `SHA256SUMS` and
+the GitHub attestation, extract the matching Linux archive, place `keyway` on
+`PATH`, then run the same commands from the archive's `example/quickstart`
+directory. `doctor` must identify Secret Service as reachable and unlocked.
 
 ### Dart-native channel
 

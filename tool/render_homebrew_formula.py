@@ -64,6 +64,8 @@ def render(version: str, directory: pathlib.Path) -> str:
   end
 
   on_linux do
+    depends_on "libsecret"
+
     if Hardware::CPU.arm?
 {values[("linux", "arm64")]}
     else

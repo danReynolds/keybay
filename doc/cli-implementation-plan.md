@@ -518,7 +518,9 @@ malware, root, and the child's own conduct remain out of scope at every tier.
    Honest note: Dart AOT builds are not bit-reproducible; provenance is the
    compensating control.
 2. **Homebrew tap** (`brew install danreynolds/tap/keyway`), day one;
-   homebrew-core once traction justifies it. Scoop/winget when Windows lands.
+   the formula installs `libsecret` on Linux so the required `secret-tool`
+   client is present; homebrew-core once traction justifies it. Scoop/winget
+   when Windows lands.
 3. **`dart install keyway_cli`** for the Dart-native audience, with the
    documented identity caveat (§5 `doctor`, design.md §8): a pub-channel
    install's keychain trust unit is the broadly shared VM or an ad-hoc-signed
@@ -582,7 +584,8 @@ the real platform mechanism, while fakes are confined to pure command logic
   native archive packaged, structurally verified, extracted, and its README
   quickstart executed verbatim against real Keychain/Secret Service storage on
   both platforms, including the fail-closed → set → run → remove → fail-closed
-  lifecycle.
+  lifecycle. A negative archive corpus proves duplicate, link, traversal,
+  unexpected, missing, and corrupt members fail before extraction.
 - **Supply chain:** the CLI's own dependency-closure snapshot test.
 
 ## 13. Phases
@@ -612,8 +615,10 @@ notarize standalone macOS binaries, require an accepted online ticket and
 empty issue log, and verify with Gatekeeper; verify the designated requirement,
 exact entitlement set, and successful signed-binary upgrade access to an
 existing keychain item;
-build Linux artifacts; publish checksums + provenance; validate Homebrew and
-`dart install` from clean machines; execute the documented quickstart verbatim
+build Linux artifacts; publish checksums + provenance; gate pub.dev on fresh
+hosted runners installing the published Homebrew and Linux archive channels
+without Dart; validate Homebrew, the GitHub archive, and `dart install` from
+physical clean machines; execute the documented quickstart verbatim
 on macOS and Linux; complete Appendix B's registration checklist.
 *Acceptance:* a person with no Dart toolchain installs and onboards a repo
 in under five minutes on macOS and Linux.

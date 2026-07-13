@@ -298,8 +298,76 @@ jobs:
           fi
           gh api "${args[@]}"
 
-  publish-pub:
+  accept-homebrew:
     needs: publish-release
+    runs-on: macos-15-intel
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: install and exercise the published Homebrew channel without Dart
+        run: |
+          version="${GITHUB_REF_NAME#keyway_cli-v}"
+          brew tap danreynolds/tap
+          brew install danreynolds/tap/keyway
+          prefix="$(brew --prefix keyway)"
+          binary="$prefix/bin/keyway"
+          test "$(PATH=/usr/bin:/bin "$binary" --version)" = "$version"
+          PATH=/usr/bin:/bin "$binary" doctor
+          KEYWAY_BINARY="$binary" \
+          KEYWAY_QUICKSTART_DIR="$prefix/share/keyway/example/quickstart" \
+          KEYWAY_QUICKSTART=1 \
+          PATH=/usr/bin:/bin \
+            ./tool/test_cli_quickstart.sh
+
+  accept-linux-archive:
+    needs: publish-release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - run: sudo apt-get update && sudo apt-get install -y libsecret-tools gnome-keyring dbus
+      - name: verify and exercise the published Linux channel without Dart
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#keyway_cli-v}"
+          asset="keyway-${version}-linux-x64.tar.gz"
+          release_dir="$RUNNER_TEMP/keyway-published-release"
+          mkdir -p "$release_dir"
+          cd "$release_dir"
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "$asset" \
+            --pattern SHA256SUMS
+          checksum_line="$(awk -v name="$asset" '$2 == name { print }' SHA256SUMS)"
+          test "$(printf '%s\n' "$checksum_line" | wc -l)" -eq 1
+          printf '%s\n' "$checksum_line" | sha256sum -c -
+          gh attestation verify "$asset" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release_cli.yml" \
+            --source-ref "$GITHUB_REF" \
+            --deny-self-hosted-runners
+          archive="$release_dir/$asset"
+          cd "$GITHUB_WORKSPACE"
+          ./tool/verify_cli_archive.sh "$archive" "$version"
+          mkdir "$release_dir/extracted"
+          tar -xzf "$archive" -C "$release_dir/extracted"
+          export KEYWAY_BINARY="$release_dir/extracted/keyway"
+          export KEYWAY_QUICKSTART_DIR="$release_dir/extracted/example/quickstart"
+          export KEYWAY_QUICKSTART=1
+          dbus-run-session -- bash -c '
+            eval "$(printf release-acceptance | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
+            export GNOME_KEYRING_CONTROL
+            export PATH=/usr/bin:/bin
+            "$KEYWAY_BINARY" doctor
+            ./tool/test_cli_quickstart.sh
+          '
+
+  publish-pub:
+    needs: [accept-homebrew, accept-linux-archive]
     runs-on: ubuntu-24.04
     environment: pub.dev
     permissions:

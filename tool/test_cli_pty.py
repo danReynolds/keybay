@@ -65,10 +65,10 @@ def read_remaining(fd: int, timeout: float = 1.0) -> bytes:
     return bytes(output)
 
 
-def spawn(executable: str) -> tuple[int, int, bytes]:
+def spawn(executable: str, *arguments: str) -> tuple[int, int, bytes]:
     pid, master = pty.fork()
     if pid == 0:
-        os.execl(executable, executable)
+        os.execl(executable, executable, *arguments)
     output = wait_for(master, PROMPT)
     if echo_enabled(master):
         raise AssertionError("terminal echo remained enabled after the prompt")
@@ -100,6 +100,18 @@ def check_normal(executable: str) -> None:
     output += read_remaining(master)
     if SECRET in output:
         raise AssertionError("hidden input appeared in PTY output")
+    os.close(master)
+
+
+def check_disposition_restoration(executable: str) -> None:
+    pid, master, output = spawn(executable, "--verify-dispositions")
+    os.write(master, SECRET + b"\n")
+    output += wait_for(master, b"signals:restored")
+    wait_for_echo(master, True)
+    wait_exit(pid, 0)
+    output += read_remaining(master)
+    if SECRET in output:
+        raise AssertionError("hidden input appeared during disposition check")
     os.close(master)
 
 
@@ -158,6 +170,7 @@ def main() -> int:
         return 2
     executable = os.path.abspath(sys.argv[1])
     check_normal(executable)
+    check_disposition_restoration(executable)
     for sig, status in (
         (signal.SIGINT, 130),
         (signal.SIGTERM, 143),

@@ -236,8 +236,9 @@ typedef _DartSignal = Pointer<Void> Function(int, Pointer<Void>);
 
 /// Dart does not expose SIGQUIT or job-control signal streams on macOS.
 /// Ignoring them only while the prompt owns the terminal is the fail-safe
-/// temporary behavior: neither can strand echo disabled. Phase 2's gate
-/// decides whether full signal fidelity justifies a native signal bridge.
+/// temporary behavior: neither can strand echo disabled. The owner ratified
+/// this austere contract instead of adding a native signal bridge solely for
+/// the short hidden-input window (implementation plan §15).
 final class _IgnoredSignalGuard {
   _IgnoredSignalGuard(this.signalNumbers);
 

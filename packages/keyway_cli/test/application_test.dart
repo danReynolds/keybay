@@ -129,6 +129,82 @@ void main() {
       },
     );
 
+    test(
+      'different repository namespaces keep the same env name independent',
+      () async {
+        final backend = _MemoryBackend(<String, List<int>>{
+          'acme-api/openai-key': utf8.encode('api-value'),
+          'acme-web/openai-key': utf8.encode('web-value'),
+        });
+
+        for (final entry in <String, String>{
+          'acme-api/openai-key': 'api-value',
+          'acme-web/openai-key': 'web-value',
+        }.entries) {
+          final executor = _FakeCommandExecutor();
+          final application = _application(
+            backend: backend,
+            executor: executor,
+            manifest: Manifest(<String, ManifestValue>{
+              'OPENAI_API_KEY': SecretManifestValue(entry.key),
+            }),
+          );
+
+          expect(
+            await application.execute(
+              RunCommand(
+                manifestPath: '.secrets.env',
+                executable: 'true',
+                arguments: const <String>[],
+              ),
+            ),
+            exitSuccess,
+          );
+          expect(
+            executor.calls.single.environment['OPENAI_API_KEY'],
+            entry.value,
+          );
+        }
+      },
+    );
+
+    test(
+      'two repositories using one complete reference share its value',
+      () async {
+        final backend = _MemoryBackend(<String, List<int>>{
+          'acme-shared/openai-key': utf8.encode('shared-value'),
+        });
+
+        for (final repository in <String>['api', 'web']) {
+          final executor = _FakeCommandExecutor();
+          final application = _application(
+            backend: backend,
+            executor: executor,
+            manifest: Manifest(<String, ManifestValue>{
+              'OPENAI_API_KEY': const SecretManifestValue(
+                'acme-shared/openai-key',
+              ),
+            }),
+          );
+
+          expect(
+            await application.execute(
+              RunCommand(
+                manifestPath: '.secrets.$repository.env',
+                executable: 'true',
+                arguments: const <String>[],
+              ),
+            ),
+            exitSuccess,
+          );
+          expect(
+            executor.calls.single.environment['OPENAI_API_KEY'],
+            'shared-value',
+          );
+        }
+      },
+    );
+
     test('reports every missing key once and launches nothing', () async {
       final backend = _MemoryBackend(<String, List<int>>{
         'acme/present': utf8.encode('present-value'),

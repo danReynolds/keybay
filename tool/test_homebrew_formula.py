@@ -46,6 +46,9 @@ def main() -> int:
                 raise AssertionError(f"formula omitted or duplicated {filename}")
         if 'pkgshare.install "example"' not in formula:
             raise AssertionError("formula did not install the packaged quickstart")
+        linux_block = formula.split("  on_linux do\n", 1)[1].split("\n  end", 1)[0]
+        if 'depends_on "libsecret"' not in linux_block:
+            raise AssertionError("formula did not install Linux's secret-tool client")
         if 'assert_equal "#{version}\\n"' not in formula:
             raise AssertionError("formula test did not verify the CLI version contract")
         subprocess.run(["ruby", "-c", str(formula_path)], check=True)
