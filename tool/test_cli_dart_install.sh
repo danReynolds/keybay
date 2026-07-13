@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Hermetic smoke for Dart 3.10's `dart install` product channel. The core is
-# still unpublished during development, so the disposable package copy points
-# its exact dependency at this checkout; the final hosted-resolution proof is
-# a Phase 3 external gate after first publication.
+# Hermetic smoke for the current SDK's local `dart install` descriptor. The
+# core is still unpublished during development, so the disposable package copy
+# points its exact dependency at this checkout. Dart 3.10 supports the final
+# hosted spelling but not this newer local descriptor; that SDK is covered by
+# the rest of the CLI suite, and its hosted install remains a Phase 3 external
+# gate after first publication.
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/keyway-dart-install.XXXXXX")"
