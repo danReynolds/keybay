@@ -36,6 +36,9 @@ Dart users can install the package directly:
 dart install keyway_cli
 ```
 
+This builds and installs a `keyway` executable. Follow Dart's notice if its
+install-bin directory is not already on `PATH`.
+
 On Linux, Keyway requires the `secret-tool` client and an unlocked desktop
 Secret Service provider. Homebrew installs its `libsecret` dependency; distro
 or Dart/archive installs should install `libsecret-tools` (Debian/Ubuntu) or
