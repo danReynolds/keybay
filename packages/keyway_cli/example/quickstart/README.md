@@ -13,6 +13,11 @@ keyway set acme-example/openai-api-key
 keyway run -- ./app.sh
 ```
 
+The copied manifest contains only a public URL and a `kw://` reference. In a
+real repository, commit `.secrets.env` so the secret contract is reviewed and
+shared while each developer supplies their own value. This packaged example
+uses a visible template so every distribution channel carries it predictably.
+
 The first `run` fails closed and prints the `set` command without launching the
 app. Enter any disposable value at the hidden prompt. The second `run` shows
 the literal URL and confirms that the secret reached the app without printing
@@ -23,3 +28,12 @@ Keyway example app started.
   API_URL: https://staging.example.com
   OPENAI_API_KEY: available (value not printed)
 ```
+
+Remove the disposable demo value and generated manifest when finished:
+
+```sh
+keyway rm acme-example/openai-api-key
+rm .secrets.env
+```
+
+`keyway rm` is silent and succeeds even if the value is already absent.

@@ -56,7 +56,16 @@ keyway run -- ./app.sh
 The first `run` fails closed and prints the required `set` command without
 launching the app. Enter any disposable value at the hidden prompt. The second
 `run` safely shows the literal URL and reports the secret as available without
-printing its value.
+printing its value. The generated `.secrets.env` contains only a public literal
+and a reference; real projects should commit manifests like this so every
+developer shares the contract but supplies their own value.
+
+After this disposable demo:
+
+```sh
+keyway rm acme-example/openai-api-key
+rm .secrets.env
+```
 
 ## Commands
 
