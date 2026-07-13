@@ -50,6 +50,12 @@ def assert_result(
             f"status {result.returncode}, expected {status}\n"
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
+    if stdout is not None and result.stdout != stdout:
+        raise AssertionError(f"stdout {result.stdout!r}, expected {stdout!r}")
+    if stderr_contains is not None and stderr_contains not in result.stderr:
+        raise AssertionError(
+            f"stderr did not contain {stderr_contains!r}: {result.stderr!r}"
+        )
 
 
 def read_pty(fd: int, needle: bytes, timeout: float = 5.0) -> bytes:
@@ -71,12 +77,6 @@ def read_pty(fd: int, needle: bytes, timeout: float = 5.0) -> bytes:
     if needle not in output:
         raise AssertionError(f"PTY output missing {needle!r}: {bytes(output)!r}")
     return bytes(output)
-    if stdout is not None and result.stdout != stdout:
-        raise AssertionError(f"stdout {result.stdout!r}, expected {stdout!r}")
-    if stderr_contains is not None and stderr_contains not in result.stderr:
-        raise AssertionError(
-            f"stderr did not contain {stderr_contains!r}: {result.stderr!r}"
-        )
 
 
 def main() -> int:

@@ -26,7 +26,10 @@ mkdir -p "$home"
 HOME="$home" dart install \
   "keyway_cli@{path: $tmp/keyway_cli}"
 
-installed="$(find "$home" \( -type f -o -type l \) -name keyway -perm -u+x -print -quit)"
+installed="$(
+  find "$home" \( -type f -o -type l \) \
+    -path '*/Dart/install/bin/keyway' -perm -u+x -print -quit
+)"
 if [[ -z "$installed" ]]; then
   echo "dart install did not create a keyway executable under disposable HOME" >&2
   exit 1
