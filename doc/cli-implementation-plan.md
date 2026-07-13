@@ -631,14 +631,14 @@ in under five minutes on macOS and Linux.
   carries a value; a literal is visibly plaintext in review). Containment:
   literal values are ASCII-trimmed and otherwise uninterpreted — the dotenv
   dialect (quotes, escapes, interpolation) stays rejected (§1, §4).
-- **Import is dotenv-only, permanently (2026-07-13).** `keyway import`
-  reads `.env`-family files — the incumbent being replaced — and nothing
-  else. There is no provider concept to import *from*; `--stdin` is the
-  universal adapter for every other source
-  (`op read … | keyway set acme-payments/key --stdin`). With mixed manifests,
-  import's output is a *complete* replacement manifest (secret lines →
-  refs, literal lines normalized to Keyway's grammar). Still §20-gated for v1;
-  promote on first-user evidence.
+- **Import is de-scoped from the initial build (2026-07-13).** It is not part
+  of Phases 1–3. If usage evidence later justifies reconsidering it, the
+  recorded design stays narrow: `keyway import` reads `.env`-family files —
+  the incumbent being replaced — and nothing else. There is no provider
+  concept to import *from*; `--stdin` is the universal adapter for every
+  other source (`op read … | keyway set acme-payments/key --stdin`). With
+  mixed manifests, import's output would be a *complete* replacement manifest
+  (secret lines → refs, literal lines normalized to Keyway's grammar).
 - **Profiles are files (2026-07-13).** The already-ratified `-f` flag is
   the entire mechanism: `.secrets.<env>.env` by convention, selected per
   invocation. No profile concept, no `--profile`, no user config — the
@@ -888,7 +888,7 @@ promises.
 | `get` | **Rejected** | A standing plaintext-extraction command creates the `$(keyway get …)` scripting path outside the run-scoped model. `keyway run -- printenv ENV_NAME` is the documented escape hatch. |
 | `check` | **Rejected** | `keyway run -- true` is the check; a failed `run` is the report. |
 | `fill` | Unproven | The failed-run loop covers onboarding at typical secret counts. |
-| `import` | Unproven — design recorded | Dotenv-only source, interactive per-line secret/literal triage, output = one complete mixed manifest to stdout; `--stdin` covers every non-file source (§14). Promote only on first-user evidence. |
+| `import` | **De-scoped from initial build — design recorded** | Not part of Phases 1–3. If post-release usage evidence justifies reconsideration: dotenv-only source, interactive per-line secret/literal triage, output = one complete mixed manifest to stdout; `--stdin` covers every non-file source (§14). |
 | `init` | Unproven | The grammar is three lines in the README. |
 | `completion` | Unproven | Five commands; marginal value against permanent maintenance. |
 | Labels | Rejected for v1 | Invisible on the v1 platforms (file backend; no keystore UI shows them). |

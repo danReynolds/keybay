@@ -41,6 +41,7 @@ jobs:
       # Unit tier (hermetic): crypto vectors, container/fuzz, POSIX perms,
       # backend logic over fakes, and the dependency-closure firewall.
       - run: dart test -x integration
+      - run: dart test packages/keyway_cli -x integration
 
   integration-macos:
     if: github.event_name != 'schedule'

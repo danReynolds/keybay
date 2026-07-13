@@ -122,7 +122,8 @@ trap restore_entitled_overlay EXIT
 
 leg_unit() {
   cd "$REPO" && dart format --output=none --set-exit-if-changed . &&
-    dart analyze --fatal-infos && dart test -x integration
+    dart analyze --fatal-infos && dart test -x integration &&
+    dart test packages/keyway_cli -x integration
 }
 leg_macos_cli() {
   cd "$REPO" && KEYWAY_INTEGRATION=1 dart test test/keychain_integration_test.dart

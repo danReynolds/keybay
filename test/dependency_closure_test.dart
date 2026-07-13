@@ -23,7 +23,9 @@ void main() {
     // `directDependencies` is the main deps only (dev deps are listed
     // separately under `devDependencies`), so the BFS covers the runtime
     // closure and excludes the test/lints toolchain.
-    final root = packages.firstWhere((p) => p['kind'] == 'root');
+    // A pub workspace reports every workspace member as `kind: root`; select
+    // this package by name rather than depending on output order.
+    final root = packages.firstWhere((p) => p['name'] == 'keyway');
     final seeds = (root['directDependencies'] as List).cast<String>();
 
     // BFS the main closure.
@@ -34,7 +36,9 @@ void main() {
       if (!closure.add(name)) continue;
       final pkg = byName[name];
       if (pkg == null) continue;
-      queue.addAll((pkg['dependencies'] as List).cast<String>());
+      // Workspace members list dev dependencies in `dependencies`; the
+      // `directDependencies` field remains the runtime-only edge set.
+      queue.addAll((pkg['directDependencies'] as List).cast<String>());
     }
 
     expect(
