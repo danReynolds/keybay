@@ -47,7 +47,9 @@ jobs:
       # The 3.10 floor predates --ignore-warnings, so this belongs on the
       # current-SDK Linux lane rather than cli-minimum-sdk.
       - if: runner.os == 'Linux'
-        run: ./tool/validate_cli_publish.sh
+        run: |
+          ./tool/validate_publish.sh . cryptography ffi
+          ./tool/validate_publish.sh packages/keyway_cli ffi keyway
 
   cli-minimum-sdk:
     if: github.event_name != 'schedule'

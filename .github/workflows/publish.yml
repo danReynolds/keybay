@@ -6,7 +6,8 @@ name: publish
 #
 # One-time setup on pub.dev (Admin → Automated publishing → Enable publishing
 # from GitHub Actions): repository `danReynolds/keyway`, workflow
-# `publish.yml`. Then:  git tag v0.1.0 && git push origin v0.1.0
+# `publish.yml`. Then: git tag -s v0.1.0 -m "keyway 0.1.0" &&
+# git push origin v0.1.0.
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+*']
@@ -18,11 +19,29 @@ permissions:
 
 jobs:
   publish:
+    runs-on: ubuntu-24.04
+    environment: pub.dev
     permissions:
+      contents: read
       id-token: write # mint the OIDC token pub.dev verifies
-    # Reusable workflow pinned by commit SHA (repo convention — a tag is
-    # retargetable). This SHA is dart-lang/setup-dart v1.7.2, the same pin the
-    # CI workflow uses.
-    uses: dart-lang/setup-dart/.github/workflows/publish.yml@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
-    with:
-      environment: pub.dev
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
+      - name: verify signed tag, version, and main ancestry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          package_version="$(awk '$1 == "version:" { print $2 }' pubspec.yaml)"
+          test "$version" = "$package_version"
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME" --jq .object.sha)"
+          tag_verified="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_object" --jq .verification.verified)"
+          test "$tag_verified" = "true"
+      - run: dart pub get
+      - run: ./tool/validate_publish.sh . cryptography ffi
+      - name: publish to pub.dev through GitHub OIDC
+        run: dart pub publish --force

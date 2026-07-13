@@ -38,7 +38,8 @@ security and installation contract.
    `danReynolds/keyway`: `publish.yml` with tag pattern `v{{version}}` for the
    core, and `release_cli.yml` with tag pattern
    `keyway_cli-v{{version}}` for the CLI. Both use the protected `pub.dev`
-   environment.
+   environment. Both automated paths require a signed, GitHub-verified tag on
+   `main` whose version matches the package before requesting an OIDC token.
 4. Complete Appendix B's owner actions: register `keyway.dev`, reserve the
    GitHub organization if available, create the scoped npm fallback, file the
    npm/PyPI reclamations, and record the trademark sanity check.
@@ -78,12 +79,15 @@ before the first tag.
    ```sh
    ./tool/test.sh
    ./tool/test_linux.sh
-   ./tool/validate_cli_publish.sh
+   ./tool/validate_publish.sh . cryptography ffi
+   ./tool/validate_publish.sh packages/keyway_cli ffi keyway
    ```
 
-   The validator permits only pub's two expected warnings for the normative
-   exact `ffi` and `keyway` pins; validation errors or any new warning fail the
-   release.
+   The validator permits only pub's expected warnings for the normative exact
+   pins (`cryptography` and `ffi` in the core; `ffi` and `keyway` in the CLI).
+   It also proves the core archive excludes the separately published CLI
+   workspace.
+   Validation errors, dirty package files, or any new warning fail the release.
 
 3. Tag the exact reviewed commit with the package-specific tag:
 

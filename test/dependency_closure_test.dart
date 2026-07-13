@@ -70,4 +70,9 @@ void main() {
     // pubspec_overrides.yaml silently overrides the pinned resolution.
     expect(File('pubspec_overrides.yaml').existsSync(), isFalse);
   });
+
+  test('core publish archive excludes workspace member packages', () {
+    final pubignore = File('.pubignore').readAsStringSync();
+    expect(pubignore, contains(RegExp(r'^packages/$', multiLine: true)));
+  });
 }

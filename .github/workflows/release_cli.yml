@@ -37,7 +37,7 @@ jobs:
       - run: dart test -x integration
       - run: dart test packages/keyway_cli -x integration
       - run: ./tool/test_cli.sh
-      - run: ./tool/validate_cli_publish.sh
+      - run: ./tool/validate_publish.sh packages/keyway_cli ffi keyway
 
   build-linux:
     needs: validate
@@ -310,7 +310,7 @@ jobs:
       - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
       - run: dart pub get
         working-directory: packages/keyway_cli
-      - run: ./tool/validate_cli_publish.sh
+      - run: ./tool/validate_publish.sh packages/keyway_cli ffi keyway
       - name: publish to pub.dev through GitHub OIDC
         run: dart pub publish --force
         working-directory: packages/keyway_cli
