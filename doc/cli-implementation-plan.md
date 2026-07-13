@@ -533,7 +533,11 @@ malware, root, and the child's own conduct remain out of scope at every tier.
    rename to `danReynolds/keyway` is done, 2026-07-12.)
 
 Release train: the CLI pins the exact core version; a core release triggers a
-reviewed CLI pin-bump release. Independent CHANGELOGs; per-package tags.
+reviewed CLI pin-bump release. Independent CHANGELOGs; per-package tags. Pub.dev
+requires each package's first version to be published manually. The one-time
+v0.1.0 bootstrap is still signed-tag-bound and archive-validated; the core is
+published first, and the CLI is published manually only after every native
+release gate succeeds. Trusted OIDC publishing is mandatory thereafter.
 
 ## 12. Testing
 

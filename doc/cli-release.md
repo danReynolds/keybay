@@ -25,25 +25,36 @@ security and installation contract.
    branch and a `Formula/` directory. The release workflow refuses to publish
    before it can read this repository; after the GitHub release exists it
    writes only `Formula/keyway.rb`.
-3. Manually publish the first packages in dependency order. Pub.dev does not
-   permit automated publishing until a package already exists:
+3. Create the protected GitHub environment `pub.dev` and require approval.
+   Push the signed core tag first:
 
    ```sh
+   git tag -s v0.1.0 -m "keyway 0.1.0"
+   git push origin v0.1.0
+   ```
+
+   The bootstrap guard in `publish.yml` validates the signed tag and exact
+   archive but deliberately skips OIDC because pub.dev does not permit
+   automated first publication. After that workflow succeeds, check out the
+   exact tag in a clean checkout and publish the core manually:
+
+   ```sh
+   git checkout --detach v0.1.0
+   ./tool/validate_publish.sh . cryptography ffi
    core_stage="$(mktemp -d)"
    rmdir "$core_stage"
    ./tool/stage_core_publish.sh "$core_stage"
    (cd "$core_stage" && dart pub publish)
    rm -rf "$core_stage"
-   dart pub -C packages/keyway_cli publish
    ```
 
-   Review each archive before confirming. Publish `keyway` first because
-   `keyway_cli` exact-pins it. Then enable GitHub trusted publishing for
-   `danReynolds/keyway`: `publish.yml` with tag pattern `v{{version}}` for the
-   core, and `release_cli.yml` with tag pattern
-   `keyway_cli-v{{version}}` for the CLI. Both use the protected `pub.dev`
-   environment. Both automated paths require a signed, GitHub-verified tag on
-   `main` whose version matches the package before requesting an OIDC token.
+   Review the archive before confirming. Then enable GitHub trusted publishing
+   for `keyway` from `danReynolds/keyway`, workflow `publish.yml`, tag pattern
+   `v{{version}}`, requiring the `pub.dev` environment. Remove the two explicit
+   `v0.1.0` bootstrap conditions from `publish.yml`; later core releases use
+   OIDC exclusively. Do not publish `keyway_cli` yet: its first manual
+   publication occurs only after the signed native release in the section
+   below, because it exact-pins this now-hosted core version.
 4. Complete Appendix B's owner actions: register `keyway.dev`, reserve the
    GitHub organization if available, create the scoped npm fallback, file the
    npm/PyPI reclamations, and record the trademark sanity check.
@@ -107,12 +118,30 @@ on 2026-07-13; offline-first installer distribution is not a v1 requirement.
    and notarizes macOS, executes the real README quickstart, verifies archive
    contents, publishes SHA-256 sums and GitHub provenance attestations, creates
    the GitHub release, updates the tap formula from the actual artifact hashes,
-   and only then publishes the CLI through pub.dev trusted publishing. A
-   native-release failure therefore cannot publish a partial CLI release.
+   and only then reaches the pub.dev job. For v0.1.0, the explicit bootstrap
+   guard validates the CLI package but skips OIDC, ensuring the first manual
+   publication cannot precede the native release. A native-release failure
+   therefore cannot publish a partial CLI release.
 5. Inspect the workflow logs, the per-architecture Apple notary result and
    issue-log artifacts, release attestations, checksums, and tap commit. A
    skipped architecture or failed post-release formula update is an incomplete
    release, not a warning.
+6. After every native v0.1.0 receipt passes, check out the exact signed tag in a
+   clean checkout and publish the CLI's first version manually:
+
+   ```sh
+   git checkout --detach keyway_cli-v0.1.0
+   ./tool/validate_publish.sh packages/keyway_cli ffi keyway
+   dart pub -C packages/keyway_cli publish
+   ```
+
+   Review the archive before confirming. Then enable GitHub trusted publishing
+   for `keyway_cli` from `danReynolds/keyway`, workflow `release_cli.yml`, tag
+   pattern `keyway_cli-v{{version}}`, requiring the `pub.dev` environment.
+   Remove the two explicit `keyway_cli-v0.1.0` bootstrap conditions from
+   `release_cli.yml`; later CLI releases publish through OIDC only. The first
+   release is not complete until this manual publication and the hosted-install
+   receipt below succeed.
 
 ## Clean-machine acceptance
 

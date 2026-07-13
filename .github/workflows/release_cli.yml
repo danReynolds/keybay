@@ -311,6 +311,16 @@ jobs:
       - run: dart pub get
         working-directory: packages/keyway_cli
       - run: ./tool/validate_publish.sh packages/keyway_cli ffi keyway
+      - name: record manual first-publication bootstrap
+        if: github.ref_name == 'keyway_cli-v0.1.0'
+        run: |
+          echo "::notice title=Manual pub.dev bootstrap required::The signed native Keyway CLI 0.1.0 release is complete. Publish keyway_cli 0.1.0 manually from this exact tag, then enable trusted publishing. See doc/cli-release.md."
+          {
+            echo "### Manual pub.dev bootstrap required"
+            echo
+            echo "All native release gates completed and the keyway_cli 0.1.0 archive validated. Pub.dev cannot automate a package's first version, so publish manually from this exact tag, then enable trusted publishing and remove this one-time guard."
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: publish to pub.dev through GitHub OIDC
+        if: github.ref_name != 'keyway_cli-v0.1.0'
         run: dart pub publish --force
         working-directory: packages/keyway_cli
