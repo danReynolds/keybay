@@ -157,6 +157,47 @@ void main() {
       expect(terminal.echoMode, isTrue);
       expect(terminal.setCalls, <bool>[false, true]);
     });
+
+    test('interactive mode accepts a chunked final line at EOF', () async {
+      final terminal = _FakeTerminal(hasTerminal: true, echoMode: true);
+      final reader = SecretInputReader(
+        input: Stream<List<int>>.fromIterable(<List<int>>[
+          utf8.encode('chunked-'),
+          utf8.encode('value'),
+        ]),
+        terminal: terminal,
+        stderr: StringBuffer(),
+      );
+
+      expect(
+        await reader.read(key: 'acme/key', fromStdin: false),
+        'chunked-value',
+      );
+      expect(terminal.echoMode, isTrue);
+      expect(terminal.setCalls, <bool>[false, true]);
+    });
+
+    test('interactive mode bounds input before a newline arrives', () async {
+      final terminal = _FakeTerminal(hasTerminal: true, echoMode: true);
+      final reader = SecretInputReader(
+        input: Stream<List<int>>.value(Uint8List(maxSecretInputBytes + 2)),
+        terminal: terminal,
+        stderr: StringBuffer(),
+      );
+
+      await expectLater(
+        reader.read(key: 'acme/key', fromStdin: false),
+        throwsA(
+          isA<SecretInputException>().having(
+            (error) => error.message,
+            'message',
+            contains('16 MiB store envelope'),
+          ),
+        ),
+      );
+      expect(terminal.echoMode, isTrue);
+      expect(terminal.setCalls, <bool>[false, true]);
+    });
   });
 }
 
