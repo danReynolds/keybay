@@ -1,0 +1,9 @@
+{
+  "name": "keyway-node-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node server.mjs --check",
+    "start": "node server.mjs"
+  }
+}

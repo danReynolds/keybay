@@ -43,6 +43,10 @@ The executable quickstart in
 [`packages/keyway_cli/example/quickstart`](packages/keyway_cli/example/quickstart)
 is exercised against the real macOS and Linux stores in CI.
 
+Source-checkout demos in [`demo`](demo) show the same CLI contract around a
+Flutter widget test, a Rails runner, and a Node service. The applications read
+ordinary environment variables and have no Keyway dependency.
+
 When developing from a checkout, `tool/keyway-dev` runs the latest source
 through the Dart VM while preserving the caller's working directory:
 
