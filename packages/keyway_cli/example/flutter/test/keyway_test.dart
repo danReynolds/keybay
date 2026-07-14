@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:keyway_flutter_example/main.dart';
 
 void main() {
-  testWidgets('receives configuration without rendering the credential', (
+  testWidgets('renders the disposable credential received from the host', (
     tester,
   ) async {
     final fromKeyway =
@@ -27,15 +27,12 @@ void main() {
 
     await tester.pumpWidget(KeywayExampleApp(environment: environment));
 
-    expect(find.text('API: https://staging.example.com'), findsOneWidget);
-    expect(find.text('API token: available'), findsOneWidget);
-    final credentialWasRendered = tester
-        .widgetList<Text>(find.byType(Text))
-        .any((widget) => widget.data?.contains(token!) ?? false);
+    expect(find.text('https://staging.example.com'), findsOneWidget);
+    expect(find.text(token!), findsOneWidget);
+    expect(find.byKey(const ValueKey('api-token-value')), findsOneWidget);
     expect(
-      credentialWasRendered,
-      isFalse,
-      reason: 'the credential must never be rendered or printed',
+      find.textContaining('Never use a production credential'),
+      findsOneWidget,
     );
   });
 }

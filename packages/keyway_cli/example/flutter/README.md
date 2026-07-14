@@ -1,8 +1,7 @@
-# Flutter test example
+# Flutter app example
 
-This small Flutter application proves that a host-side Flutter test receives
-ordinary environment variables through Keyway. The widget reports only
-whether the credential is available; it never renders the value.
+This macOS Flutter application receives ordinary environment variables through
+Keyway and renders the injected disposable value in a real app window.
 
 First choose an installed or source-checkout executable as described in the
 [examples guide](../README.md). Then, from this directory:
@@ -10,18 +9,19 @@ First choose an installed or source-checkout executable as described in the
 ```sh
 flutter pub get
 cp secrets.env.example .secrets.env
-keyway run -- flutter test
+keyway run -- flutter run -d macos
 keyway set keyway-flutter/api-token
-keyway run -- flutter test
+keyway run -- flutter run -d macos
 ```
 
-The first run fails closed before Flutter starts. Enter any disposable value
-at the hidden prompt, then run the test again. The test verifies the literal
-API URL, confirms the credential reached the test process, and confirms its
-value does not appear in the widget tree or a failure message. A plain
-`flutter test` uses a disposable fixture so the package remains independently
-testable; the committed integration marker makes `keyway run` exercise the
-real process environment instead.
+The first run fails closed before Flutter starts. Enter a disposable value at
+the hidden prompt, then run again. The launched window displays the public API
+URL and the exact disposable value inherited by the app process. Stop the app
+with Control-C. A plain `flutter test` verifies the same widget independently;
+running that test through Keyway exercises the real process environment.
+
+This example intentionally puts the full value on screen. It can appear in
+screenshots or accessibility tooling, so never enter a production credential.
 
 Clean up afterward:
 
@@ -30,6 +30,6 @@ keyway rm keyway-flutter/api-token
 rm .secrets.env
 ```
 
-This is deliberately a development-test example. A credential embedded in a
-mobile application or delivered to a client process is recoverable by that
+This is deliberately a desktop development example. A credential embedded in
+a mobile application or delivered to a client process is recoverable by that
 client; backend service credentials belong on the backend.

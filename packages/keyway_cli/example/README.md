@@ -3,15 +3,20 @@
 These are all examples of the CLI process boundary:
 
 - [`quickstart`](quickstart): the packaged language-neutral acceptance path
-- [`flutter`](flutter): inject a test credential into a Flutter widget test
-- [`rails`](rails): boot a Rails application and run application code
-- [`node`](node): start a Node HTTP service
+- [`flutter`](flutter): launch a macOS Flutter app with injected configuration
+- [`rails`](rails): boot a Rails web app on the loopback interface
+- [`node`](node): start a Node web app on the loopback interface
 
 Each example contains a manifest template with public configuration and
 `kw://` references only. Copy it to `.secrets.env` as instructed; every
 developer supplies their own values through the local Keyway store. The
 examples use different qualified namespaces, so their disposable values do
 not bleed into one another.
+
+The three visual app examples intentionally render the injected value so you
+can see the complete process boundary working. Use a disposable value only:
+the value can appear on screen, in screenshots, or in browser tooling. The
+language-neutral quickstart keeps its terminal output redacted.
 
 ## Choose the executable first
 

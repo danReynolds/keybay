@@ -1,5 +1,5 @@
 name: keyway_flutter_example
-description: Host-side Flutter test illustrating Keyway CLI injection.
+description: Bootable macOS Flutter app illustrating Keyway CLI injection.
 publish_to: none
 version: 1.0.0
 
