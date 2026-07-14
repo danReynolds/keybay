@@ -13,7 +13,7 @@ if (!openAiConfigured) {
 const status = { status: 'ok', openai: 'configured' };
 
 if (process.argv.includes('--check')) {
-  console.log('Keyway Node demo is configured (value not printed).');
+  console.log('Keyway Node example is configured (value not printed).');
 } else {
   const server = createServer((_request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' });
@@ -21,7 +21,7 @@ if (process.argv.includes('--check')) {
   });
 
   server.listen(port, '127.0.0.1', () => {
-    console.log(`Keyway Node demo listening on http://127.0.0.1:${port}`);
+    console.log(`Keyway Node example listening on http://127.0.0.1:${port}`);
     console.log('OPENAI_API_KEY: available (value not printed)');
   });
 }

@@ -52,8 +52,10 @@ trust unit. `keyway doctor` makes the runtime distinction visible.
 
 The source package and native release archives include a language-neutral
 executable example. Use `packages/keyway_cli/example/quickstart` in a source
-checkout or `example/quickstart` in an extracted native archive, then run these
-commands exactly:
+checkout or `example/quickstart` in an extracted native archive. The
+[repository examples guide](https://github.com/danReynolds/keyway/tree/main/packages/keyway_cli/example)
+distinguishes an installed `keyway` from the current source checkout; choose
+one before running these commands:
 
 ```sh
 cp secrets.env.example .secrets.env
@@ -69,7 +71,7 @@ printing its value. The generated `.secrets.env` contains only a public literal
 and a reference; real projects should commit manifests like this so every
 developer shares the contract but supplies their own value.
 
-After this disposable demo:
+After this disposable example:
 
 ```sh
 keyway rm acme-example/openai-api-key

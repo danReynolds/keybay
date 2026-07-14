@@ -39,13 +39,12 @@ references. `keyway run -- COMMAND` resolves the references and replaces
 itself with exactly that command—no account, server, daemon, shell hook, or
 resident wrapper.
 
-The executable quickstart in
-[`packages/keyway_cli/example/quickstart`](packages/keyway_cli/example/quickstart)
-is exercised against the real macOS and Linux stores in CI.
-
-Source-checkout demos in [`demo`](demo) show the same CLI contract around a
-Flutter widget test, a Rails runner, and a Node service. The applications read
-ordinary environment variables and have no Keyway dependency.
+The CLI owns its examples under
+[`packages/keyway_cli/example`](packages/keyway_cli/example): the packaged
+language-neutral quickstart plus Flutter, Rails, and Node workflows. The
+applications read ordinary environment variables and have no Keyway
+dependency. The quickstart is exercised against real macOS and Linux stores
+in CI.
 
 ## How your secrets are protected
 

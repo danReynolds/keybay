@@ -4,7 +4,10 @@ This language-neutral example proves both halves of a mixed Keyway manifest:
 the literal `API_URL` and the referenced `OPENAI_API_KEY` reach exactly one
 child process.
 
-From this directory:
+These commands require `keyway` on `PATH`. Source contributors can choose the
+repository runner in the
+[examples guide](https://github.com/danReynolds/keyway/tree/main/packages/keyway_cli/example).
+Then, from this directory:
 
 ```sh
 cp secrets.env.example .secrets.env
@@ -29,7 +32,7 @@ Keyway example app started.
   OPENAI_API_KEY: available (value not printed)
 ```
 
-Remove the disposable demo value and generated manifest when finished:
+Remove the disposable example value and generated manifest when finished:
 
 ```sh
 keyway rm acme-example/openai-api-key

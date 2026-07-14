@@ -35,7 +35,7 @@ jobs:
       - run: dart format --output=none --set-exit-if-changed .
       - run: dart analyze --fatal-infos
       - run: dart test -x integration
-      - run: dart test packages/keyway_cli -x integration
+      - run: dart test packages/keyway_cli/test -x integration
       - run: ./tool/test_cli.sh
       - run: ./tool/validate_publish.sh packages/keyway_cli ffi keyway
 

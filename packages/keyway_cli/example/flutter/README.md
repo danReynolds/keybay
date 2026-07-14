@@ -1,15 +1,17 @@
-# Flutter test demo
+# Flutter test example
 
 This small Flutter application proves that a host-side Flutter test receives
 ordinary environment variables through Keyway. The widget reports only
 whether the credential is available; it never renders the value.
 
-From this directory:
+First choose an installed or source-checkout executable as described in the
+[examples guide](../README.md). Then, from this directory:
 
 ```sh
 flutter pub get
+cp secrets.env.example .secrets.env
 keyway run -- flutter test
-keyway set demo-flutter/api-token
+keyway set keyway-flutter/api-token
 keyway run -- flutter test
 ```
 
@@ -24,7 +26,8 @@ real process environment instead.
 Clean up afterward:
 
 ```sh
-keyway rm demo-flutter/api-token
+keyway rm keyway-flutter/api-token
+rm .secrets.env
 ```
 
 This is deliberately a development-test example. A credential embedded in a
