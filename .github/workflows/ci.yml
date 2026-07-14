@@ -41,7 +41,7 @@ jobs:
       # Unit tier (hermetic): crypto vectors, container/fuzz, POSIX perms,
       # backend logic over fakes, and the dependency-closure firewall.
       - run: dart test -x integration
-      - run: dart test packages/keyway_cli -x integration
+      - run: dart test packages/keyway_cli/test -x integration
       - run: ./tool/test_cli.sh
       # Exercise the exact package archive and warning contract before a tag.
       # The 3.10 floor predates --ignore-warnings, so this belongs on the
@@ -63,7 +63,7 @@ jobs:
       # The CLI's documented SDK floor is a tested product channel, including
       # AOT/exec/PTY behavior, not only a pubspec constraint. Dart 3.10's
       # hosted-only install proof follows first publication (release runbook).
-      - run: dart test packages/keyway_cli -x integration
+      - run: dart test packages/keyway_cli/test -x integration
       - run: KEYWAY_SKIP_DART_INSTALL=1 ./tool/test_cli.sh
 
   integration-macos:

@@ -1,5 +1,5 @@
 {
-  "name": "keyway-node-demo",
+  "name": "keyway-node-example",
   "private": true,
   "type": "module",
   "scripts": {

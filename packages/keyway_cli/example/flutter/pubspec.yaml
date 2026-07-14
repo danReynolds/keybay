@@ -1,10 +1,10 @@
-name: keyway_flutter_demo
-description: Host-side Flutter test demonstrating Keyway CLI injection.
+name: keyway_flutter_example
+description: Host-side Flutter test illustrating Keyway CLI injection.
 publish_to: none
 version: 1.0.0
 
 environment:
-  sdk: ^3.6.0
+  sdk: ^3.10.0
 
 dependencies:
   flutter:

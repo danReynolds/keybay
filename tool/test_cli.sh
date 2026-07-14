@@ -4,6 +4,23 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/keyway-cli-test.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
+repo="$PWD"
+
+# The source runner must ignore a caller package config and keep the caller's
+# directory as the manifest boundary.
+mkdir -p "$tmp/dev-project/.dart_tool"
+printf '{"configVersion":2,"packages":[]}\n' > \
+  "$tmp/dev-project/.dart_tool/package_config.json"
+printf 'KEYWAY_DEV_MARKER=from-example\n' > \
+  "$tmp/dev-project/.secrets.env"
+dev_output="$(
+  cd "$tmp/dev-project"
+  "$repo/tool/keyway-dev" run -- /usr/bin/printenv KEYWAY_DEV_MARKER
+)"
+[[ "$dev_output" == "from-example" ]] || {
+  echo "keyway-dev did not preserve the caller manifest directory" >&2
+  exit 1
+}
 
 dart compile exe packages/keyway_cli/bin/keyway.dart -o "$tmp/keyway"
 dart compile exe packages/keyway_cli/tool/prompt_harness.dart \
