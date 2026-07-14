@@ -1,10 +1,10 @@
 # keyway CLI (`keyway_cli`) — implementation plan
 
-*Plan for a package that does not yet exist. It records the product design,
-the DX and security requirements, the frozen constants, and the
-implementation context, so the build starts from conclusions rather than
-re-deriving them. Once code exists, the usual rule applies: where this file
-and the code disagree, the code wins and this file gets corrected.*
+*Implementation contract for the `keyway_cli` package. It records the product
+design, the DX and security requirements, the frozen constants, and the
+implementation context, so the build and review proceed from conclusions
+rather than re-deriving them. Where this file and the as-built code disagree,
+the code wins and this file gets corrected.*
 
 *Naming is settled (2026-07-12): the product and executable are **`keyway`**,
 the CLI package is **`keyway_cli`**, and the library — formerly
@@ -130,7 +130,11 @@ keyway       (engine: platform storage, container, typed errors — unchanged;
   one resolution and lockfile, shared CI, an exact core pin, and valid per-
   package pub.dev `repository:` links. The CLI package exposes only
   `bin/keyway.dart` through `executables: {keyway: keyway}`; it does not export
-  a second Dart library API.
+  a second Dart library API. Core publication uses a clean-checkout, explicit-
+  allowlist staging directory that omits `packages/` and removes the repository-
+  only `workspace:` field from the staged pubspec. This is necessary because a
+  root `.pubignore` exclusion for `packages/` is inherited by workspace members
+  and would also empty the separately published CLI archive.
 - **CLI SDK floor:** Dart `^3.10.0`. The primary release binaries need no Dart
   installation; the Dart-native channel can therefore use the single current
   `dart install keyway_cli` spelling without carrying the pre-3.10 activation
@@ -288,7 +292,7 @@ the child inherits its own stdout/stderr unchanged.
 | Command | Behavior |
 |---|---|
 | `keyway run [-f FILE] -- COMMAND [ARGS…]` | The product. **Exactly one manifest**: explicit `-f FILE`, or the default `./.secrets.env` looked up in cwd only — no upward search (SR-15), no multi-file composition. `--` is **required**, making parsing unambiguous. Parse → resolve **every** reference → on any failure, list *every* missing key as a ready-to-run `keyway set KEY` line and exit 78 having launched nothing (SR-4) → overlay literals and resolved references onto the parent environment → `execve` (§6). A manifest with no references never constructs or reads `SecretStorage`; it executes with only the literal overlays. Two documented idioms replace cut commands: **`keyway run -- true`** is the check ("do all references resolve?" — exit 0 iff yes), and **`keyway run -- printenv ENV_NAME`** is the explicit reveal/debug escape hatch, deliberately spelled inside the run-scoped model rather than as a standing extraction command (§20 `get`). |
-| `keyway set [--stdin] KEY` | `KEY` is the qualified key spelling only — the same at-least-two-segment grammar as a manifest reference, without `kw://` (`acme-payments/openai-api-key`). There is no scheme-bearing alias, and a single-segment key is a usage error. Value via interactive hidden prompt (echo off, TTY required), or `--stdin`: strict UTF-8, NUL rejected, exactly one trailing LF or CRLF stripped. No value argument exists (SR-1). No labels — on the v1 platforms the file backend renders them invisible anyway (§20). Prints `Stored.` to stderr after interactive input (the human typed blind and deserves an ack); silent with `--stdin`. |
+| `keyway set [--stdin] KEY` | `KEY` is the qualified key spelling only — the same at-least-two-segment grammar as a manifest reference, without `kw://` (`acme-payments/openai-api-key`). There is no scheme-bearing alias, and a single-segment key is a usage error. Value via interactive hidden prompt (echo off, TTY required), or `--stdin`: bounded by the core's 16 MiB store envelope, strict UTF-8, NUL rejected, exactly one trailing LF or CRLF stripped. No value argument exists (SR-1). No labels — on the v1 platforms the file backend renders them invisible anyway (§20). Prints `Stored.` to stderr after interactive input (the human typed blind and deserves an ack); silent with `--stdin`. |
 | `keyway rm KEY` | `KEY` uses the same qualified grammar as `set`. Removal is idempotent and silent whether the key existed or not — matching the library's `delete` semantics and avoiding a check/delete race. |
 | `keyway list` | One complete qualified key per line, sorted across the single CLI store. No values, labels, tables, namespaces-as-filters, or other filtering — stable for ordinary shell composition (`grep`, `wc -l`) without a formal porcelain API. |
 | `keyway doctor` | Reports exactly what `backend.describe()` provides plus identity basics: scheme, measured `SecurityLevel`, available/locked, backend detail, CLI version, and **compiled binary vs. Dart VM** — the trust-unit warning (under `dart run`, the keychain ACL unit is the shared VM; design.md §8). It never equates "compiled" with a stable signature: codesign is not inspected. No container paths, secret counts, or codesign parsing (§20). Exit 0 iff the backend reports available and unlocked; otherwise print the health report and exit 69. |
@@ -506,12 +510,17 @@ malware, root, and the child's own conduct remain out of scope at every tier.
 
 1. **GitHub Releases (primary):** per-platform `dart compile exe` binaries
    from a CI matrix (macOS arm64/x64, Linux x64/arm64), macOS ones Developer-ID
-   signed with a secure timestamp and hardened runtime, notarized, and stapled
-   (SR-11), SHA-256 sums + build provenance attestation.
+   signed with a secure timestamp and hardened runtime, and notarized as
+   standalone Mach-O binaries (SR-11). Apple publishes an online ticket but
+   cannot staple it to a raw executable; Keyway does not add an installer or
+   app bundle solely to gain stapling. SHA-256 sums + build provenance
+   attestation accompany every artifact.
    Honest note: Dart AOT builds are not bit-reproducible; provenance is the
    compensating control.
 2. **Homebrew tap** (`brew install danreynolds/tap/keyway`), day one;
-   homebrew-core once traction justifies it. Scoop/winget when Windows lands.
+   the formula installs `libsecret` on Linux so the required `secret-tool`
+   client is present; homebrew-core once traction justifies it. Scoop/winget
+   when Windows lands.
 3. **`dart install keyway_cli`** for the Dart-native audience, with the
    documented identity caveat (§5 `doctor`, design.md §8): a pub-channel
    install's keychain trust unit is the broadly shared VM or an ad-hoc-signed
@@ -521,12 +530,18 @@ malware, root, and the child's own conduct remain out of scope at every tier.
    became available, so this channel has one documented installation spelling.
    The "any language" positioning fails if the answer to "how do I install
    it" starts with "install Dart".
-4. **Registrations:** Appendix B's checklist — `keyway.dev`, pub.dev names,
-   npm/PyPI reclamation filings, scoped-org fallbacks. (The GitHub repo
-   rename to `danReynolds/keyway` is done, 2026-07-12.)
+4. **Identity surface:** the existing `danReynolds/keyway` repository and the
+   two real pub.dev packages are sufficient. No custom site/domain, separate
+   GitHub organization, or placeholder package on an unused registry is part
+   of v0.1. Add another identity only when a real distribution artifact needs
+   one.
 
 Release train: the CLI pins the exact core version; a core release triggers a
-reviewed CLI pin-bump release. Independent CHANGELOGs; per-package tags.
+reviewed CLI pin-bump release. Independent CHANGELOGs; per-package tags. Pub.dev
+requires each package's first version to be published manually. The one-time
+v0.1.0 bootstrap is still signed-tag-bound and archive-validated; the core is
+published first, and the CLI is published manually only after every native
+release gate succeeds. Trusted OIDC publishing is mandatory thereafter.
 
 ## 12. Testing
 
@@ -562,12 +577,17 @@ the real platform mechanism, while fakes are confined to pure command logic
 - **Integration tier:** real keystores in CI exactly like the core (macOS
   Keychain; Linux via `dbus-run-session` gnome-keyring in Docker):
   `set → run → child sees value → rm` round-trips; exec-path PATH/exit/
-  signal fidelity; cross-writer serialization (two concurrent `set`s → no
-  lost update, courtesy of the library's flock; a deliberately wedged
-  holder → `StoreBusy` as exit 75 with retry text); locked-keystore
+  signal fidelity; cross-writer serialization (eight independent compiled
+  `set` processes → every distinct name and value survives, courtesy of the
+  library's flock; a deliberately wedged holder → `StoreBusy` as exit 75 with
+  retry text); locked-keystore
   guidance path.
 - **E2E:** `tool/test_cli.sh` joining the existing `tool/` suite; the
-  README quickstart executed verbatim on both platforms.
+  native archive packaged, structurally verified, extracted, and its README
+  quickstart executed verbatim against real Keychain/Secret Service storage on
+  both platforms, including the fail-closed → set → run → remove → fail-closed
+  lifecycle. A negative archive corpus proves duplicate, link, traversal,
+  unexpected, missing, and corrupt members fail before extraction.
 - **Supply chain:** the CLI's own dependency-closure snapshot test.
 
 ## 13. Phases
@@ -593,11 +613,14 @@ Linux release hardware against the DX-2 budgets.
 
 **Phase 3 — release.** Use the frozen macOS signing identifier and entitlement
 set; compile, Developer-ID sign with a secure timestamp and hardened runtime,
-notarize, and staple macOS binaries; verify the designated requirement, exact
-entitlement set, and successful signed-binary upgrade access to an existing
-keychain item;
-build Linux artifacts; publish checksums + provenance; validate Homebrew and
-`dart install` from clean machines; execute the documented quickstart verbatim
+notarize standalone macOS binaries, require an accepted online ticket and
+empty issue log, and verify with Gatekeeper; verify the designated requirement,
+exact entitlement set, and successful signed-binary upgrade access to an
+existing keychain item;
+build Linux artifacts; publish checksums + provenance; gate pub.dev on fresh
+hosted runners installing the published Homebrew and Linux archive channels
+without Dart; validate Homebrew, the GitHub archive, and `dart install` from
+physical clean machines; execute the documented quickstart verbatim
 on macOS and Linux; complete Appendix B's registration checklist.
 *Acceptance:* a person with no Dart toolchain installs and onboards a repo
 in under five minutes on macOS and Linux.
@@ -631,14 +654,14 @@ in under five minutes on macOS and Linux.
   carries a value; a literal is visibly plaintext in review). Containment:
   literal values are ASCII-trimmed and otherwise uninterpreted — the dotenv
   dialect (quotes, escapes, interpolation) stays rejected (§1, §4).
-- **Import is dotenv-only, permanently (2026-07-13).** `keyway import`
-  reads `.env`-family files — the incumbent being replaced — and nothing
-  else. There is no provider concept to import *from*; `--stdin` is the
-  universal adapter for every other source
-  (`op read … | keyway set acme-payments/key --stdin`). With mixed manifests,
-  import's output is a *complete* replacement manifest (secret lines →
-  refs, literal lines normalized to Keyway's grammar). Still §20-gated for v1;
-  promote on first-user evidence.
+- **Import is de-scoped from the initial build (2026-07-13).** It is not part
+  of Phases 1–3. If usage evidence later justifies reconsidering it, the
+  recorded design stays narrow: `keyway import` reads `.env`-family files —
+  the incumbent being replaced — and nothing else. There is no provider
+  concept to import *from*; `--stdin` is the universal adapter for every
+  other source (`op read … | keyway set acme-payments/key --stdin`). With
+  mixed manifests, import's output would be a *complete* replacement manifest
+  (secret lines → refs, literal lines normalized to Keyway's grammar).
 - **Profiles are files (2026-07-13).** The already-ratified `-f` flag is
   the entire mechanism: `.secrets.<env>.env` by convention, selected per
   invocation. No profile concept, no `--profile`, no user config — the
@@ -709,12 +732,29 @@ in under five minutes on macOS and Linux.
 - **Name: `keyway`; scheme `kw://`; appId `keyway-cli`; manifest filename
   `.secrets.env`** (2026-07-12; §16, Appendix B).
 
-## 15. Open questions
+## 15. Resolved platform contracts
 
-None at this time. The key grammar, workspace layout, PATH behavior, doctor
-health exit, CLI SDK floor, and macOS signing identifier are frozen below or
-in their normative sections. The next decision point is the Phase 1
-completion review; reopening scope requires usage evidence (§20).
+The product surface is frozen. Implementation exposed two platform-level
+details, both ratified by the owner on 2026-07-13 under the same austerity rule:
+prefer the smaller fail-safe contract when additional native or packaging code
+does not materially improve the supported security model.
+
+1. **Hidden-prompt `SIGQUIT` / `SIGTSTP`.** Dart AOT exposes `SIGINT`,
+   `SIGTERM`, and `SIGHUP` streams on both v1 platforms, but not a portable
+   macOS stream for `SIGQUIT` or job-control suspend/resume. Keyway temporarily
+   ignores `SIGQUIT` and `SIGTSTP` only while echo is hidden, restores their
+   prior dispositions afterward, and proves by PTY that neither can terminate
+   the process with a silent terminal. No native signal bridge is added solely
+   to preserve those two controls during the short prompt window.
+2. **Standalone macOS notarization.** Apple accepts standalone Mach-O binaries
+   for notarization but does not support stapling a ticket to the raw binary.
+   The release path signs the standalone binary, submits it in a ZIP, requires
+   an accepted ticket with no issues, and verifies it with `spctl`; it does not
+   add an app bundle, disk image, or installer solely to gain stapling.
+
+The key grammar, workspace layout, PATH behavior, doctor health exit, CLI SDK
+floor, and macOS signing identifier remain frozen below or in their normative
+sections. Reopening product scope still requires usage evidence (§20).
 
 ## 16. Frozen constants
 
@@ -731,6 +771,7 @@ migration, not a rename.
 | CLI key grammar | `[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*`, max 120 characters | same grammar for refs, `set`, and `rm`; at least two segments; every segment starts alphanumeric; no option-shaped or machine-global keys |
 | Container path | `~/Library/Application Support/keyway-cli/secrets.enc` (macOS) · `${XDG_DATA_HOME:-~/.local/share}/keyway-cli/secrets.enc` (Linux) | derived by the library from `appId`; the library also maintains `<container>.lock` beside it (§7 — not a CLI concern) |
 | Default manifest | `./.secrets.env` | content-descriptive, not tool-branded |
+| CLI secret-input cap | 16 MiB | matches the core's maximum sealed-container envelope; the reader retains at most cap + 1 byte to reject oversized input without unbounded buffering |
 | macOS codesign identifier | `dev.keyway.cli` | every signed release uses this identifier, the same Developer ID team, a secure timestamp + hardened runtime, and no Keychain Sharing entitlement |
 
 **Explicitly NOT renamed with the brand** (wire/storage compatibility — these
@@ -799,19 +840,22 @@ available, unlocked backend and 69 for a reported unhealthy state.
   failures return 126 with the non-secret command and errno (SR-13).
 - **Prompt echo restoration:** after the TTY check, remember the prior echo
   mode, set `stdin.echoMode = false`, and restore the exact prior mode in
-  `finally` and before acting on the normal terminal-facing termination
-  signals on both v1 platforms (`SIGINT`, `SIGTERM`, `SIGHUP`, `SIGQUIT`).
-  Cancel all subscriptions on normal completion. After restoration, exit with
-  the conventional signal-derived status (130/143/129/131 respectively).
-  Handle job-control suspension too: on `SIGTSTP`, restore echo, temporarily
-  restore/default the stop disposition and suspend; on `SIGCONT`, re-disable
-  echo only if the prompt is still active. `SIGKILL` and process/runtime
-  crashes cannot be handled and are the explicit OS-level limits. PTY tests
-  assert normal completion, each supported termination signal, and
-  suspend/resume; no supported interactive interruption path may leave the
-  terminal silent.
-- **`--stdin` byte handling:** read to EOF as bytes; strict UTF-8 decode
-  (reject on failure); reject NUL; strip exactly one trailing LF or CRLF.
+  `finally` and before acting on Dart's portable terminal-facing termination
+  signals on both v1 platforms (`SIGINT`, `SIGTERM`, `SIGHUP`). Cancel all
+  subscriptions on normal completion. After restoration, exit with the
+  conventional signal-derived status (130/143/129 respectively). While echo
+  is hidden only, temporarily ignore `SIGQUIT` and `SIGTSTP`; restore their
+  exact prior dispositions afterward. This deliberately trades two momentary
+  job-control shortcuts for a smaller fail-safe implementation that cannot
+  strand a silent terminal. `SIGKILL` and process/runtime crashes cannot be
+  handled and are the explicit OS-level limits. PTY tests assert normal
+  completion, every supported termination signal, temporary quit/suspend
+  immunity, and disposition restoration.
+- **Secret-input byte handling:** retain at most the core's 16 MiB sealed-store
+  envelope + 1 byte; the extra byte triggers a size error rather than unbounded
+  buffering. Within the cap, `--stdin` reads to EOF and the interactive path
+  reads one line; strict UTF-8 decode (reject on failure); reject NUL; strip
+  exactly one trailing LF or CRLF.
   Values are stored via `writeString` — the env boundary is string-shaped
   anyway (env vars cannot carry NUL); binary secrets belong to the library
   tier, not the env tier. Empty input is a valid empty secret; a lone trailing
@@ -849,7 +893,7 @@ Fail-closed run (SR-4, DX-3/DX-4) — this *is* the onboarding workflow:
 
 ```console
 $ keyway run -- npm start
-error: 2 of 3 references in .secrets.env are not set on this machine:
+error: 2 of 3 references in ./.secrets.env are not set on this machine:
 
   keyway set acme-payments/database-password
   keyway set acme-shared/stripe-test-key
@@ -870,12 +914,16 @@ ready
 
 ```console
 $ keyway doctor
-scheme:     encrypted file + login-Keychain key   (macOS, unentitled CLI)
-level:      loginBound (S3)                        # measured, not assumed
-keystore:   reachable, unlocked
-runtime:    compiled executable (signature not inspected)
-keyway:     0.1.0
+scheme:   encrypted file
+level:    loginBound
+keystore: reachable, unlocked
+detail:   container=absent key=absent via keystore
+runtime:  compiled executable (signature not inspected)
+keyway:   0.1.0
 ```
+
+The `detail` presence words reflect the current store state and become
+`present` after first use; `level` remains the measured S3/login-bound result.
 
 ## 20. Deferred and rejected surface (record, not roadmap)
 
@@ -888,7 +936,7 @@ promises.
 | `get` | **Rejected** | A standing plaintext-extraction command creates the `$(keyway get …)` scripting path outside the run-scoped model. `keyway run -- printenv ENV_NAME` is the documented escape hatch. |
 | `check` | **Rejected** | `keyway run -- true` is the check; a failed `run` is the report. |
 | `fill` | Unproven | The failed-run loop covers onboarding at typical secret counts. |
-| `import` | Unproven — design recorded | Dotenv-only source, interactive per-line secret/literal triage, output = one complete mixed manifest to stdout; `--stdin` covers every non-file source (§14). Promote only on first-user evidence. |
+| `import` | **De-scoped from initial build — design recorded** | Not part of Phases 1–3. If post-release usage evidence justifies reconsideration: dotenv-only source, interactive per-line secret/literal triage, output = one complete mixed manifest to stdout; `--stdin` covers every non-file source (§14). |
 | `init` | Unproven | The grammar is three lines in the README. |
 | `completion` | Unproven | Five commands; marginal value against permanent maintenance. |
 | Labels | Rejected for v1 | Invisible on the v1 platforms (file backend; no keystore UI shows them). |
@@ -933,9 +981,9 @@ that admits only the matching key — precisely this product: the one
 sanctioned path by which keys reach a process. Chosen over ~30 vetted
 candidates; final four:
 
-| Finalist | Availability (pub / npm / brew / crates / PyPI / .dev) | Deciding factor |
+| Finalist | Availability (pub / npm / brew / crates / PyPI) | Deciding factor |
 |---|---|---|
-| **keyway** ✅ | ✅ / squatted / ✅ / ✅ / squatted / ✅ (unregistered 2026-07-12) | Best metaphor and sound of the entire search; both squats are dead micro-projects; the brand collision (keyway.ai, AI-for-real-estate, ~$40M raised) is **out-of-category** |
+| **keyway** ✅ | ✅ / squatted / ✅ / ✅ / squatted | Best metaphor and sound of the entire search; both squats are dead micro-projects; the brand collision (keyway.ai, AI-for-real-estate, ~$40M raised) is **out-of-category** |
 | envkeep | all clean | Only true clean sweep, but permanently one letter from EnvKey — an **in-category** hosted secrets product; near-word-same-niche is the worse confusion profile |
 | kove | all clean | Ownable coined word, but meaning-free (tagline must build it) and kove.com is an enterprise software mark |
 | keyhold | clean except PyPI | Sturdy, flat; outclassed by keyway's semantics |
@@ -949,19 +997,18 @@ Bastillion-née-KeyBox), `quartz`/`slate`/`cove`/`ark`/`boreal`/`enclose`/
 product collisions). Pattern worth remembering: real 4–6-letter nouns are
 gone; only coined or compound names survive clean.
 
-**Squat details** (both plausibly reclaimable; scoped fallback regardless):
+**Squat details** (historical research, not scheduled work):
 npm `keyway` — a one-release 2022 toy ("the opposite of `Object.keys`");
 PyPI `keyway` — a one-day-in-2023 "persistent environment variables"
-project (ironically category-adjacent). File an npm abandoned-package
-dispute and a PyPI PEP 541 request; a future npm wrapper channel works as
-`@keyway/cli` either way.
+project (ironically category-adjacent). Do not file reclamations or occupy
+fallback scopes unless a real package for that ecosystem is approved.
 
 **Registration checklist (owner actions):** ~~rename the GitHub repo~~
-(done 2026-07-12 — `danReynolds/keyway`; pubspec updated); register
-`keyway.dev` (unregistered as of 2026-07-12); reserve the GitHub `keyway`
-org name if available; publish stub/placeholder packages where free
-(crates) or scoped (`@keyway` npm org); file the npm/PyPI reclamations; a
-five-minute USPTO TESS sanity pass on "KEYWAY" for software goods.
+(done 2026-07-12 — `danReynolds/keyway`; pubspec updated); publish only the
+actual `keyway` and `keyway_cli` packages on pub.dev; perform a trademark
+sanity pass on "KEYWAY" for software goods. The GitHub repository is the
+canonical homepage. There is deliberately no custom site/domain, separate
+organization, or placeholder package on another registry for v0.1.
 
 ## Appendix C — recorded designs, not scheduled scope
 

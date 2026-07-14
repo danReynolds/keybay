@@ -4,9 +4,10 @@ name: publish
 # stored in the repo) when a v-prefixed version tag is pushed. The tag must
 # match the `version:` in pubspec.yaml.
 #
-# One-time setup on pub.dev (Admin → Automated publishing → Enable publishing
-# from GitHub Actions): repository `danReynolds/keyway`, workflow
-# `publish.yml`. Then:  git tag v0.1.0 && git push origin v0.1.0
+# Pub.dev requires a manual first publication. The signed v0.1.0 tag therefore
+# validates and stages the exact package but deliberately skips OIDC; publish
+# it manually from that tag, enable trusted publishing, then remove the two
+# v0.1.0 bootstrap conditions below. Every later tag publishes through OIDC.
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+*']
@@ -18,9 +19,43 @@ permissions:
 
 jobs:
   publish:
+    runs-on: ubuntu-24.04
+    environment: pub.dev
     permissions:
+      contents: read
       id-token: write # mint the OIDC token pub.dev verifies
-    # Reusable workflow pinned by commit SHA (repo convention — a tag is
-    # retargetable). This SHA is dart-lang/setup-dart v1.7.2, the same pin the
-    # CI workflow uses.
-    uses: dart-lang/setup-dart/.github/workflows/publish.yml@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
+      - name: verify signed tag, version, and main ancestry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          package_version="$(awk '$1 == "version:" { print $2 }' pubspec.yaml)"
+          test "$version" = "$package_version"
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME" --jq .object.sha)"
+          tag_verified="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_object" --jq .verification.verified)"
+          test "$tag_verified" = "true"
+      - run: dart pub get
+      - run: ./tool/validate_publish.sh . cryptography ffi
+      - name: stage core package without workspace-only files
+        run: ./tool/stage_core_publish.sh "$RUNNER_TEMP/keyway-core-publish"
+      - name: record manual first-publication bootstrap
+        if: github.ref_name == 'v0.1.0'
+        run: |
+          echo "::notice title=Manual pub.dev bootstrap required::Publish keyway 0.1.0 manually from this signed tag, then enable trusted publishing. See doc/cli-release.md."
+          {
+            echo "### Manual pub.dev bootstrap required"
+            echo
+            echo "The signed v0.1.0 source and staged archive validated, but pub.dev cannot automate a package's first version. Publish from this exact tag using the release runbook, then enable trusted publishing and remove this one-time guard."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: publish to pub.dev through GitHub OIDC
+        if: github.ref_name != 'v0.1.0'
+        run: |
+          cd "$RUNNER_TEMP/keyway-core-publish"
+          dart pub publish --force

@@ -16,6 +16,9 @@ topics:
 environment:
   sdk: ^3.6.0
 
+workspace:
+  - packages/keyway_cli
+
 # Dependency policy (doc/design.md §10): exactly one third-party runtime dependency,
 # exact-pinned, its transitive closure entirely dart-lang official. A
 # dart pub deps snapshot test (test/dependency_closure_test.dart) fails CI if
