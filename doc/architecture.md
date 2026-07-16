@@ -1,21 +1,22 @@
 # keybay — architecture
 
-The canonical, current-state architecture. (History and the reasoning behind
-individual choices live in `design.md`; this is the austere summary of where we
-landed.)
+The canonical, current-state architecture. The reasoning behind individual
+choices lives in `design.md`; this is the austere summary of where we landed.
 
 ## TL;DR
 
 **Two shapes, one input, zero knobs.** You name your app; the library resolves
-the strongest scheme the platform offers:
+the fixed, platform-appropriate scheme for Keybay's threat model:
 
-- Where the platform has a hardware store that holds *arbitrary secrets* —
-  Apple's **Secure Enclave** via the Data Protection keychain (iOS; entitled
-  macOS apps) — each secret is a **native keychain item**, hardware-gated.
-- Everywhere else, every secret lives in **one authenticated encrypted file**
-  (XChaCha20-Poly1305 + key commitment) whose 32-byte key lives in the
-  platform's best secure store — the desktop OS keystore, or a hardware
-  Keystore key on Android.
+- On iOS and entitled macOS apps, each secret is a **native Data Protection
+  Keychain item** with a fixed device-bound, non-synchronizing accessibility
+  policy. Keybay does not attest or report a hardware-backing level for these
+  items.
+- On the other supported paths—unentitled macOS, Linux desktop, and Android—
+  every secret lives in **one authenticated encrypted file**
+  (XChaCha20-Poly1305 + key commitment). Its 32-byte key lives in the desktop
+  OS credential store or is wrapped by Android Keystore. The Android key's
+  actual security level is inspected rather than assumed.
 
 No per-platform secret formats beyond those two, no configuration knobs, no
 fallbacks. The macOS choice between them is automatic (a once-per-process Data
@@ -34,10 +35,10 @@ final info = await store.backend.describe();   // which scheme + SecurityLevel
 
 ```
 SecretStorage            bytes-first async KV; appId validation (traversal-proof
-    │                    grammar); the per-platform resolver. The only public type.
+    │                    grammar); the per-platform resolver. Primary entry point.
     │  (appId → derived file path + keystore identity)
     │
-    ├─ KeystoreBackend        native items — Apple Secure Enclave path
+    ├─ KeystoreBackend        native items — Apple Data Protection Keychain
     │      │                  (iOS; entitled macOS via the DP probe)
     │      └─ KeystoreApi (per OS)
     │
@@ -47,7 +48,7 @@ SecretStorage            bytes-first async KV; appId validation (traversal-proof
            └─ KeySource       where the file's 32-byte key lives:
                   │             desktop login → the OS keystore (SystemKeySource)
                   │             Android      → AndroidKeystoreKeySource
-                  │                            (hardware KEK over the pure-FFI
+                  │                            (Keystore KEK over the pure-FFI
                   │                            JNI shim, API 31+)
                   └─ KeystoreApi (per OS)  store/retrieve ONE key:
                                 AppleKeychainApi (SecItem, login or DP mode),
@@ -58,15 +59,15 @@ Three seams, all with fakes: `SecretBackend` (what storage looks like),
 `KeySource` (where the key lives), and `KeystoreApi` (how one OS stores an
 item/key). **Both shapes share the same per-OS `KeystoreApi` binding** — native
 items use it directly, the file scheme uses it through `SystemKeySource` — so
-best-per-platform composes the same bindings two ways rather than forking a
+the platform policy composes the same bindings two ways rather than forking a
 stack per OS.
 
 ## Why this shape
 
-- **Hardware for the data wherever the platform can give it.** Apple's DP
-  keychain is the one mainstream store that hardware-gates arbitrary secrets
-  per item — so there, native items beat any software container and we use
-  them. Nothing else qualifies, so nowhere else pays for a second shape.
+- **Native item storage where the platform provides it.** Apple's Data
+  Protection Keychain holds arbitrary secret items and supplies device-bound
+  accessibility and access-group policy, so Keybay uses it directly rather than
+  layering a second container over it.
 - **Uniform, integrity-protected at-rest crypto everywhere else — audited
   once.** On the legacy stores (macOS login keychain: 3DES; gnome-keyring:
   AES-128-CBC + ad-hoc KDF; kwallet: Blowfish) our AEAD file adds **integrity**
@@ -74,9 +75,9 @@ stack per OS.
   *not* categorically stronger at rest: when the file's key lives in that same
   legacy keystore and both are captured off one stolen disk, confidentiality is
   login-password-bound just like a native item (cracking the keystore yields the
-  key, which opens the container) — the confidentiality upgrade to hardware (S1)
-  comes only from moving the key to a TPM/Secure Enclave, not from the container
-  cipher (§9; design.md §6). One crypto path to vector-firewall and review.
+  key, which opens the container) — hardware resistance comes only when the
+  wrapping key is actually reported in hardware, not from the container cipher.
+  One crypto path to vector-firewall and review.
 - **Minimal per-platform code.** Per OS, the binding is "put/get small items"
   — shared by both shapes. No second stack.
 - **Android-native.** Android's Keystore is a *key* store, not a secret store;
@@ -89,21 +90,25 @@ stack per OS.
 
 ## Security model
 
-- **At rest:** every secret is XChaCha20-Poly1305-sealed with a key-committing
-  header on every platform. A wrong or mismatched key fails closed
+- **At rest:** Apple native-item paths delegate confidentiality and integrity to
+  the Data Protection Keychain. File paths use XChaCha20-Poly1305 with a
+  key-committing header: a wrong or mismatched key fails closed
   (`WrongStoreKey`) before decryption; tamper fails as `AuthenticationFailed`.
-- **The key:** protected by the platform's best available secure storage, gated
-  by whatever that store gates on (device unlock; Secure Enclave on Apple). The
-  container's confidentiality reduces to the key's protection — so on
+- **The file key:** held by the selected desktop credential store or wrapped by
+  Android Keystore. The container's confidentiality reduces to that key's
+  protection — so on
   legacy-at-rest platforms, when the key shares a stolen disk with the container,
   it is login-password-bound *just like* storing secrets natively (the AEAD's
   honest wins there are **integrity** and a **portable** backup unit, not more
-  confidentiality); on hardware platforms the key is hardware-held and the
-  container shares that gate.
+  confidentiality). Android reports `hardwareBacked` only when platform
+  inspection returns TEE or StrongBox; software-backed providers remain
+  possible and are reported as such.
 - **Fail-closed, never fake it.** No usable key store (a headless box with no
   keyring) → throw with guidance, never a silent insecure fallback.
 - **Errors never carry secret values;** identifiers are validated; the Linux
-  subprocess transport is bytes-only and scrubbed. (Details in `design.md`.)
+  subprocess keeps values off argv, captures output as bytes, and scrubs
+  buffers after use. (The input is transient base64 text on stdin; details in
+  `design.md`.)
 
 ## Per-platform resolution
 
@@ -112,30 +117,32 @@ The README's formal table is the reference; the shape summary:
 | Platform (context) | Shape | Key store | Status |
 |---|---|---|---|
 | macOS — CLI / unentitled | encrypted file | login Keychain (`SecItem`) | **shipped** |
-| macOS — signed + entitled | **native items** (DP keychain, Secure Enclave) | — (data is the item) | **shipped**; refusal path CI-tested, success path validated end-to-end via the `example_flutter/` harness (local-only, needs signing) |
+| macOS — signed + entitled | **native items** (Data Protection Keychain) | — (data is the item) | **shipped**; fixed device-bound policy; hardware backing not attested; refusal path CI-tested and success path exercised via the signed `example_flutter/` harness |
 | Linux — desktop | encrypted file | Secret Service (`secret-tool`) | **shipped** |
 | Windows | encrypted file | DPAPI / wincred | future |
-| iOS | **native items** (DP keychain, Secure Enclave) | — (data is the item) | **shipped**; round-trip validated on the iOS simulator (`example_flutter/`); on-device Secure-Enclave check pending |
-| Android (API 31+) | encrypted file | Android Keystore KEK (TEE / StrongBox) via **pure-FFI JNI** — no plugin, no package:jni (design.md §12) | **shipped**; validated on an API 33 emulator incl. the StrongBox-fallback branch; on-device hardware check pending |
-| any, **headless** | — (fails closed) | — | **out of scope** (owner call 2026-07-10) — not safely auto-detectable, needs its own entry point, and no demand yet. A `TpmKeySource` prototype was built + validated, then removed from the tree — design in `headless-implementation-plan.md`, impl in git history. Headless boxes fail closed, typed. |
+| iOS | **native items** (Data Protection Keychain) | — (data is the item) | **shipped**; fixed device-bound policy; hardware backing not attested; round-trip exercised on the iOS simulator (`example_flutter/`) |
+| Android (API 31+) | encrypted file | Android Keystore KEK via **pure-FFI JNI** — StrongBox requested, actual level inspected | **shipped**; validated on an API 33 emulator incl. the StrongBox-fallback branch; physical hardware mediation not established by emulator testing |
+| **headless deployment** | no dedicated shape | no dedicated provider | **out of scope** (owner call 2026-07-10). The desktop resolver may still reach a configured desktop credential service, but there is no supported availability contract. A TPM prototype and its rationale remain in `headless-implementation-plan.md` and git history. |
 
 ## What is deliberately NOT here
 
-- **No third shape.** Native items exist *only* where a hardware store holds
-  arbitrary secrets per item (Apple's Secure Enclave); the encrypted file
-  covers everything else. No per-platform bespoke formats beyond those two.
+- **No third shape.** Native items exist where the Data Protection Keychain
+  stores arbitrary secrets; the authenticated file covers everything else. No
+  per-platform bespoke formats beyond those two.
 - **No configuration knobs.** No `keyStore` / `path` / `dataStore` /
   `api` / `nonInteractive` parameters — `appId` is the only input; the file
   path, the keystore identity, and the scheme are derived. (Non-interactive
   keychain behavior is simply always on: a locked keychain fails typed instead
   of raising a GUI prompt.)
-- **No insecure fallback.** No key-on-disk option; if there is no secure place
+- **No insecure fallback.** No plaintext key-on-disk option; if there is no secure place
   for the key, we throw.
-- **No headless mode at all** (out of scope, owner call 2026-07-10). It cannot
-  be safely auto-detected (see `headless-implementation-plan.md` §1), so it
-  would need its own explicit entry point — and until there is demand, no
-  entry point beats a rarely-used one. Headless boxes fail closed, typed. The
-  macOS DP probe is *not* an instance of the auto-detection problem:
+- **No dedicated headless mode** (out of scope, owner call 2026-07-10). It
+  cannot be safely auto-detected (see `headless-implementation-plan.md` §1), so
+  it would need its own explicit entry point — and until there is demand, no
+  entry point beats a rarely-used one. A headless process can still encounter
+  the desktop resolver; if its credential service is absent or locked, the
+  operation fails typed. The macOS DP probe is *not* an instance of the
+  auto-detection problem:
   entitlements are baked into the code signature, so the probe is
   deterministic per binary, and every ambiguous outcome fails loud rather
   than switching schemes.
@@ -144,14 +151,19 @@ The README's formal table is the reference; the shape summary:
 
 ## The Apple note (stated honestly)
 
-Where the Secure Enclave is reachable (iOS; entitled macOS apps), secrets are
-**native per-item keychain entries** — the platform convention, hardware bulk
-crypto, per-item gating by the OS. Two consequences to know: keychain items
-**survive app uninstall** on Apple platforms (documented platform behavior),
-and an app that *gains* the entitlement between versions moves its store from
-the file to the DP keychain — a one-time re-provision, by design (deterministic
-schemes; no silent migration). Where the Enclave is *not* reachable (every
-plain CLI, `dart run`), the encrypted file + login-Keychain key is the
-documented, OWASP-endorsed envelope pattern; its AEAD adds integrity and a
-portable container, though at-rest confidentiality stays login-password-bound
-(the key sits in that same login keychain) until the key moves to hardware.
+On iOS and entitled macOS apps, secrets are **native per-item Data Protection
+Keychain entries**. Keybay uses
+`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`: items do not migrate to a
+different device, but after the first unlock following boot they remain
+available when the device relocks. They are non-synchronizing. A separate
+hardware-backing level is deliberately omitted because Keybay cannot attest it.
+
+Two lifecycle consequences matter: Apple Keychain items commonly persist after
+app uninstall, but Apple does not document that as a contract, so applications
+must not depend on either persistence or automatic deletion. A macOS app that
+gains the entitlement between versions moves from the file scheme to Data
+Protection Keychain items. Keybay surfaces the existing file as
+`MigrationRequired` instead of silently presenting an empty store. Plain CLIs
+and `dart run` use the authenticated file plus a login-Keychain key; AEAD adds
+integrity and a portable container, while at-rest confidentiality remains
+login-password-bound.

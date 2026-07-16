@@ -22,8 +22,9 @@ out of scope, with rationale).
 
 - Container confidentiality/integrity: XChaCha20-Poly1305 (AEAD), via
   `package:cryptography`, exercised against RFC 8439 and draft-arciszewski
-  vectors in this package's own test suite so a buggy or compromised dependency
-  update cannot pass silently.
+  vectors in this package's own test suite so incompatible behavior is caught
+  before the exact dependency pin moves. These checks do not prove a dependency
+  uncompromised.
 - Key derivation: HKDF-SHA256, RFC 5869, vector-tested here.
 - Randomness: `Random.secure()` (OS CSPRNG) only.
 

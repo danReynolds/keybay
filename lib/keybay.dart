@@ -5,8 +5,8 @@
 /// here is attack surface and compatibility surface:
 ///
 /// - [SecretStorage] — the store. One constructor, one input (`appId`); the
-///   library resolves the strongest scheme per platform. No mechanism, path,
-///   or key-home knobs exist.
+///   library resolves its fixed policy for the current platform. No mechanism,
+///   path, or key-home knobs exist.
 /// - The typed error taxonomy.
 /// - [SecretBackend] / [BackendInfo] / [BackendCapabilities] /
 ///   [SecurityLevel] — the `describe()` surface, and the interface consumers

@@ -95,6 +95,10 @@ void main() {
       api.locked = true;
       final info = await be.describe();
       expect(info.scheme, StorageScheme.nativeItems);
+      // Native Apple Keychain items do not expose a per-item hardware
+      // attestation through this API. Keep the level absent rather than
+      // inferring one from the device's unrelated Secure Enclave capability.
+      expect(info.level, isNull);
       expect(info.locked, isTrue);
     });
   });

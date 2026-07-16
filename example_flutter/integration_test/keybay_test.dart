@@ -6,10 +6,9 @@
 // doc/implementation-plan.md Phase 2):
 //   macOS, ad-hoc signing (no entitlement): file + loginBound (−34018 branch
 //     inside a real .app — the same branch every CLI takes).
-//   macOS, Keychain Sharing + development signing: native items + hardware
-//     (SE-probed on this Apple-silicon Mac) — the DP SUCCESS branch.
-//   iOS simulator: native items + hardware (Xcode 15+ simulators emulate the
-//     Secure Enclave, so the SE probe succeeds — same as a real device).
+//   macOS, Keychain Sharing + development signing: native items; no inferred
+//     hardware level.
+//   iOS simulator: native items; no inferred hardware level.
 //   Android emulator (API 31+): encrypted file + AndroidKeyStore-wrapped key
 //     via the pure-FFI JNI shim; level measured from the KEK (software on the
 //     emulator) in the dedicated test after a write.
@@ -25,9 +24,7 @@ import 'package:keybay/keybay.dart';
 /// deterministic storage shape); `EXPECT_LEVEL` is `hardware` | `software` |
 /// `login` and may be empty when the level can't be asserted up front (Android
 /// measures from a KEK that doesn't exist until the first write — see the
-/// dedicated test below). The level is environment-dependent: a modern iOS
-/// *simulator* (Xcode 15+) emulates the Secure Enclave and reports `hardware`,
-/// as does a real device; an environment with no SE reports `software`.
+/// dedicated test below). Apple native-item paths deliberately leave it null.
 const String expectScheme = String.fromEnvironment('EXPECT_SCHEME');
 const String expectLevel = String.fromEnvironment('EXPECT_LEVEL');
 
@@ -54,8 +51,7 @@ void main() {
     await store.deleteAll();
   });
 
-  test('resolver picked the scheme + level this environment must get',
-      () async {
+  test('resolver picked the scheme and any inspectable level', () async {
     final info = await store.backend.describe();
 
     final wantScheme = switch (expectScheme) {
@@ -76,9 +72,16 @@ void main() {
       _ => null,
     };
     if (wantLevel != null) {
-      // Measured, not assumed: iOS probes for a Secure Enclave (emulated on
-      // Xcode 15+ simulators → hardware), Android reads KeyInfo, macOS login.
+      // Measured, not assumed: Android reads KeyInfo and macOS login uses the
+      // login-bound file-key path. Apple native items leave the level null.
       expect(info.level, wantLevel, reason: 'wrong measured level');
+    } else if ((Platform.isIOS || Platform.isMacOS) &&
+        wantScheme == StorageScheme.nativeItems) {
+      // This is an explicit contract, not merely a missing expectation: an
+      // Apple capability probe cannot attest the backing of this Keychain
+      // item, so native-item diagnostics must not manufacture a level.
+      expect(info.level, isNull,
+          reason: 'Apple native items are not hardware-attested by Keybay');
     }
 
     expect(info.available, isTrue);
@@ -187,7 +190,7 @@ void main() {
         isNot(contains('pl4in-t3xt-pr00f')),
         reason: 'container must be ciphertext');
     // The blob is our versioned format ('SKW1'), and small (wrapped 32-byte
-    // key + GCM overhead — the raw store key never touches disk).
+    // key + GCM overhead — no plaintext store key is written beside it).
     final blobBytes = blob.readAsBytesSync();
     expect(blobBytes.sublist(0, 4), [0x53, 0x4B, 0x57, 0x31]);
     expect(blobBytes.length, lessThan(128));

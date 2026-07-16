@@ -1,9 +1,11 @@
 # Verifying the macOS Data Protection keychain (entitled success path)
 
-On macOS the resolver picks native Data Protection keychain items (AES-256-GCM +
-Secure Enclave, `hardwareBacked`) **only** for a signed app carrying a
-`keychain-access-groups` entitlement authorized by a provisioning profile. Its
-two other outcomes are covered automatically:
+On macOS the resolver picks native Data Protection Keychain items **only** for a
+signed app carrying a `keychain-access-groups` entitlement authorized by a
+provisioning profile. `describe().scheme` reports native items;
+`describe().level` stays null because Keybay does not infer or attest hardware
+backing for arbitrary keychain-item bytes. The resolver's two other outcomes
+are covered automatically:
 
 - **Refusal path** (`errSecMissingEntitlement` −34018 → the file scheme) — CI,
   every push (`keychain_integration_test.dart`, plus the resolver end-to-end).
@@ -88,14 +90,12 @@ The permanent harness is `example_flutter/` — no throwaway app.
    cd example_flutter
    flutter test integration_test/keybay_test.dart -d macos \
      --dart-define=EXPECT_SCHEME=native \
-     --dart-define=EXPECT_LEVEL=hardware \
      --dart-define=APP_ID=com.example.keybayHarness.native
    ```
 
-   Expected: **All tests passed!** The first test (`resolver picked the scheme +
-   level this environment must get`) asserts `info.scheme ==
-   StorageScheme.nativeItems` and `info.level == SecurityLevel.hardwareBacked` —
-   i.e. the DP **success** branch is live. A build error about "entitlements that
+   Expected: **All tests passed!** The first test asserts `info.scheme ==
+   StorageScheme.nativeItems`; the round-trip proves the Data Protection
+   Keychain **success** branch is live. A build error about "entitlements that
    require signing with a development certificate" means step 1's identity didn't
    take; a runtime `keystore_unreachable` means the entitlement/profile isn't in
    effect (recheck steps 2–3).

@@ -10,39 +10,31 @@ library;
 import 'dart:typed_data';
 
 /// Which of the two storage shapes the resolver chose. These are the whole
-/// system: a secret is either a native secure-hardware keychain item, or an
-/// entry in one authenticated encrypted file whose key lives in a keystore.
+/// system: a secret is either a native Data Protection Keychain item, or an
+/// entry in one authenticated encrypted file whose key is OS-protected.
 ///
 /// This is the typed discriminator the library branches on (e.g. the macOS
 /// scheme-migration guard); it replaces the earlier stringly-typed backend
 /// `name`.
 enum StorageScheme {
-  /// Each secret is its own native item in a hardware-backed OS keychain
-  /// (Apple's Data Protection keychain / Secure Enclave). No separate key,
-  /// no file — the keychain item is the storage.
+  /// Each secret is its own native item in Apple's Data Protection Keychain.
+  /// No separate Keybay store key or file exists on this path.
   nativeItems,
 
-  /// All secrets live in one authenticated encrypted file; its 32-byte key is
-  /// held in the platform keystore.
+  /// All secrets live in one authenticated encrypted file. Its 32-byte key is
+  /// stored by a desktop credential service or wrapped by Android Keystore.
   encryptedFile,
 }
 
-/// How strongly the resolved scheme protects the store against **offline**
-/// attack (a stolen disk or backup). Reported by [BackendInfo.level] so a
-/// consumer can verify — not guess — what protection is in effect.
+/// An observed protection signal for backends that expose one Keybay can
+/// inspect. Android reports the wrapping key's provider; desktop file-key
+/// sources report login binding. Apple native items leave the level null rather
+/// than infer hardware backing from an unrelated capability.
 enum SecurityLevel {
-  /// The key (or the data itself) is sealed in **verified** secure hardware —
-  /// Apple's Secure Enclave, or an Android Keystore key whose
-  /// `KeyInfo.getSecurityLevel()` reports `TRUSTED_ENVIRONMENT`/`STRONGBOX`. A
-  /// stolen disk or backup is useless offline: reading the store requires that
-  /// specific device.
+  /// Android reported the wrapping key in TEE or StrongBox.
   hardwareBacked,
 
-  /// The key is held by the platform keystore, but secure-hardware residency
-  /// was **not** established — e.g. an Android device whose Keystore falls back
-  /// to a software implementation, or an emulator. The key is still
-  /// OS-protected, but a stolen disk may be attackable offline; do not assume
-  /// hardware isolation.
+  /// Android's wrapping-key provider was not reported as TEE or StrongBox.
   softwareBacked,
 
   /// The key is protected by the OS login (login Keychain, Secret Service,
@@ -88,12 +80,11 @@ final class BackendInfo {
 
   final BackendCapabilities capabilities;
 
-  /// The offline-attack protection level of the resolved scheme, when known.
-  /// The library backends **measure** this (Apple probes for a Secure Enclave;
-  /// Android reads `KeyInfo.getSecurityLevel()`), so it may be **null** when
-  /// the level cannot yet be established — most notably an Android store before
-  /// its first write, when no hardware key exists to inspect. It is also null
-  /// for custom/test backends that don't declare one. Null-check before use.
+  /// The observed platform protection signal, when known. Android reads
+  /// `KeyInfo.getSecurityLevel()`, so this is null before its first write when
+  /// no wrapping key exists to inspect. Apple native-item paths also leave it
+  /// null because their hardware backing is not attested. Custom/test backends
+  /// may omit it too. Null-check before use.
   final SecurityLevel? level;
 
   /// Free-form extra detail (e.g. a path or provider name). Never a secret.
@@ -109,8 +100,8 @@ abstract interface class SecretBackend {
   Future<Uint8List?> read(String key);
 
   /// Whether [key] exists. The native-item backend answers this with an
-  /// attributes-only keystore query, so it never fetches (or, on a hardware
-  /// keychain, decrypts) the value. The encrypted-file backend must still read
+  /// attributes-only keystore query, so it never fetches the value. The
+  /// encrypted-file backend must still read
   /// and decrypt the whole container, which is a single sealed blob.
   Future<bool> contains(String key);
 

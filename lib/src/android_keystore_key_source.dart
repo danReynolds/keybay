@@ -1,19 +1,22 @@
 /// Android Keystore [KeySource]: the container's 32-byte store key is wrapped
-/// by an AES-256-GCM key that lives **inside** AndroidKeyStore (TEE, or
-/// StrongBox where present) and never leaves hardware. Only the wrapped blob
-/// touches disk, beside the container. See doc/implementation-plan.md Phase 3.
+/// by an AES-256-GCM key created in Android Keystore. StrongBox is requested,
+/// then the normal provider is retried when unavailable; the actual level is
+/// inspected and may be software-backed. Only the wrapped blob is written
+/// beside the container. See doc/implementation-plan.md Phase 3.
 ///
 /// Reliability posture (the ecosystem lessons, design.md §9):
 /// - KEK is generated with `setUserAuthenticationRequired(false)` — the
-///   best-case reliability profile (no biometric-enrollment invalidation).
+///   unattended-access profile (no biometric-enrollment invalidation).
 /// - **StrongBox try-then-fallback**: attempt `setIsStrongBoxBacked(true)`,
-///   fall back to TEE on `StrongBoxUnavailableException` (most devices).
+///   retry through the normal provider on `StrongBoxUnavailableException`.
+///   The resulting provider may be TEE-backed or software-backed.
 /// - **Write-time self-test**: after wrapping, the blob is unwrapped through
 ///   the full path and compared before anything is persisted — a device with
 ///   a broken Keystore fails closed at provisioning, never at read time
-///   (Tink's lesson; no silent software fallback).
+///   (Tink's lesson; no plaintext store-key fallback).
 /// - **Key loss is loud**: a present blob with a missing/unusable KEK (data
-///   restored onto a different device — hardware keys never migrate — or
+///   restored onto a different device — Android Keystore keys do not migrate
+///   with app data — or
 ///   OS/OEM eviction, or blob corruption) throws [KeyInvalidated] instead of
 ///   silently starting an empty store.
 library;
@@ -175,7 +178,7 @@ final class AndroidKeystoreKeySource implements KeySource {
     final jni = Jni.instance();
 
     // 1. Ensure the KEK and wrap the key. Generous frame capacity: the
-    //    StrongBox-then-TEE fallback runs two KeyGenParameterSpec builds in one
+    //    StrongBox-then-provider fallback runs two parameter builds in one
     //    frame, well past the default 64-local guarantee.
     final (iv, ct) = jni.withFrame<(Uint8List, Uint8List)>(capacity: 256, (f) {
       final ks = _loadKeystore(f);
@@ -185,7 +188,7 @@ final class AndroidKeystoreKeySource implements KeySource {
           _generateKek(f, strongBox: true);
         } on JavaThrown catch (e) {
           if (!f.isThrowableA(e, _strongBoxUnavailable)) rethrow;
-          _generateKek(f, strongBox: false); // TEE fallback — still hardware
+          _generateKek(f, strongBox: false); // Normal provider; measure below.
         }
         kek = _getKek(f, ks);
         if (kek == nullptr) {

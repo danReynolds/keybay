@@ -18,17 +18,17 @@ REPOSITORY = "https://github.com/danReynolds/keybay"
 PUBLIC_FILES = %w[index.html styles.css 404.html robots.txt].freeze
 
 DOCUMENTS = [
-  {source: "README.md", route: "docs/guide/", group: "Start", label: "Guide"},
-  {source: "packages/keybay_cli/README.md", route: "docs/cli/", group: "Start", label: "CLI"},
-  {source: "doc/architecture.md", route: "docs/architecture/", group: "Security", label: "Architecture"},
-  {source: "doc/design.md", route: "docs/design/", group: "Security", label: "Cryptography and design"},
-  {source: "SECURITY.md", route: "docs/security/", group: "Security", label: "Security policy"},
-  {source: "doc/cli-recovery.md", route: "docs/recovery/", group: "Security", label: "Recovery"},
-  {source: "doc/platforms/ios.md", route: "docs/platforms/ios/", group: "Platforms", label: "iOS"},
-  {source: "doc/platforms/macos.md", route: "docs/platforms/macos/", group: "Platforms", label: "macOS"},
-  {source: "doc/platforms/android.md", route: "docs/platforms/android/", group: "Platforms", label: "Android"},
-  {source: "doc/platforms/linux.md", route: "docs/platforms/linux/", group: "Platforms", label: "Linux"},
-  {source: "doc/ecosystem-comparison.md", route: "docs/comparison/", group: "Reference", label: "Ecosystem comparison"},
+  {source: "README.md", route: "docs/guide/", group: "Start", label: "Dart & Flutter SDK", summary: "Install the SDK, open a store with one appId, and understand the supported runtime and threat-model boundaries."},
+  {source: "packages/keybay_cli/README.md", route: "docs/cli/", group: "Start", label: "CLI", summary: "Commit a small manifest, store project-qualified values locally, and launch exactly one process with resolved environment variables."},
+  {source: "doc/platforms/ios.md", route: "docs/platforms/ios/", group: "Platforms", label: "iOS", summary: "Native Data Protection Keychain items with a fixed device-bound, non-synchronizing accessibility policy."},
+  {source: "doc/platforms/android.md", route: "docs/platforms/android/", group: "Platforms", label: "Android", summary: "An authenticated app-private file whose store key is wrapped by Android Keystore on Android 12 and newer."},
+  {source: "doc/platforms/macos.md", route: "docs/platforms/macos/", group: "Platforms", label: "macOS", summary: "Native Data Protection Keychain items for entitled apps; an authenticated file with a login-Keychain key otherwise."},
+  {source: "doc/platforms/linux.md", route: "docs/platforms/linux/", group: "Platforms", label: "Linux", summary: "An authenticated local file whose store key is kept by an unlocked Secret Service provider."},
+  {source: "doc/architecture.md", route: "docs/architecture/", group: "Security", label: "Architecture", summary: "Two storage shapes, one automatic platform resolver, and no public backend-selection knobs."},
+  {source: "doc/design.md", route: "docs/design/", group: "Security", label: "Cryptography and design", summary: "The container format, FFI boundaries, threat model, concurrency, supply-chain controls, and design rationale."},
+  {source: "SECURITY.md", route: "docs/security/", group: "Security", label: "Security policy", summary: "The supported threat model, cryptographic primitives, dependency posture, and private vulnerability-reporting route."},
+  {source: "doc/cli-recovery.md", route: "docs/recovery/", group: "Operate", label: "CLI recovery", summary: "Preserve evidence, diagnose platform-store failures, and deliberately re-provision an unreadable local CLI store."},
+  {source: "doc/ecosystem-comparison.md", route: "docs/comparison/", group: "Decide", label: "Choosing Keybay", summary: "Choose the smallest tool that matches whether you need local storage, provider portability, team sharing, or encrypted files."},
 ].freeze
 
 def command_output(*command)
@@ -85,7 +85,9 @@ def concise(value, limit: 240)
   "#{value[0...limit].sub(/\s+\S*\z/, "")}…"
 end
 
-def document_summary(markdown)
+def document_summary(document, markdown)
+  return document[:summary] if document[:summary]
+
   markdown.split(/\n{2,}/).filter_map do |paragraph|
     stripped = paragraph.strip
     next if stripped.empty? || stripped.start_with?("#", "```", "|", ">") || stripped.include?("[![")
@@ -193,6 +195,32 @@ def page_contents_navigation(headings)
   HTML
 end
 
+def mobile_document_navigation(active_route, headings)
+  contents = if headings.empty?
+    ""
+  else
+    links = headings.map { |id, label| %(<a href="##{escape(id)}">#{escape(label)}</a>) }.join("\n")
+    <<~HTML
+      <nav class="docs-mobile-toc" aria-label="On this page">
+        <p>On this page</p>
+        #{links}
+      </nav>
+    HTML
+  end
+
+  <<~HTML
+    <details class="docs-mobile-menu">
+      <summary>Browse documentation</summary>
+      <div class="docs-mobile-menu-inner">
+        <nav aria-label="Documentation">
+          #{document_navigation(active_route)}
+        </nav>
+        #{contents}
+      </div>
+    </details>
+  HTML
+end
+
 def shared_head(title:, description:, canonical:)
   <<~HTML
     <meta charset="utf-8">
@@ -225,7 +253,7 @@ def site_footer
   <<~HTML
     <footer>
       <div class="shell footer-inner">
-        <span>keybay · local secrets, fewer moving parts</span>
+        <span>keybay · MIT</span>
         <span><a href="#{site_path("docs/")}">Documentation</a> · <a href="#{REPOSITORY}">GitHub</a></span>
       </div>
     </footer>
@@ -234,7 +262,7 @@ end
 
 def document_page(document, markdown)
   title = document_title(markdown, document[:source])
-  summary = document_summary(markdown)
+  summary = document_summary(document, markdown)
   digest = Digest::SHA256.hexdigest(markdown)
   content = strip_rendered_h1(render_markdown(markdown, document[:source]))
   headings = table_of_contents(content)
@@ -265,11 +293,14 @@ def document_page(document, markdown)
               <header class="doc-header">
                 <p class="eyebrow">#{escape(document[:group])}</p>
                 <h1>#{escape(title)}</h1>
-                <p class="doc-source">Generated from <a href="#{escape(source_url)}"><code>#{escape(document[:source])}</code></a> at <a href="#{REPOSITORY}/commit/#{COMMIT}"><code>#{escape(commit_label)}</code></a>.</p>
               </header>
+              #{mobile_document_navigation(document[:route], headings)}
               <div class="doc-content">
                 #{content}
               </div>
+              <footer class="doc-provenance">
+                <p>Source: <a href="#{escape(source_url)}"><code>#{escape(document[:source])}</code></a> at <a href="#{REPOSITORY}/commit/#{COMMIT}"><code>#{escape(commit_label)}</code></a>.</p>
+              </footer>
             </article>
           </div>
         </main>
@@ -285,9 +316,8 @@ def documentation_index(metadata)
       document = item[:document]
       <<~HTML
         <li>
-          <a href="#{site_path(document[:route])}">#{escape(item[:title])}</a>
+          <a href="#{site_path(document[:route])}">#{escape(document[:label])}</a>
           <p>#{escape(item[:summary])}</p>
-          <code>#{escape(document[:source])}</code>
         </li>
       HTML
     end.join
@@ -323,6 +353,7 @@ def documentation_index(metadata)
                 <h1>Documentation</h1>
                 <p class="doc-index-lede">Built from the repository on every deployment. Read the rendered page or follow its source link to the exact commit.</p>
               </header>
+              #{mobile_document_navigation(nil, [])}
               #{groups}
             </article>
           </div>
@@ -369,14 +400,17 @@ def sitemap
 end
 
 def artifact_target(page, target)
-  clean = CGI.unescapeHTML(target).split(/[?#]/, 2).first
-  return nil if clean.nil? || clean.empty?
-  return nil if clean.match?(%r{\A(?:[a-z][a-z0-9+.-]*:|//)}i)
+  decoded = CGI.unescapeHTML(target)
+  return [nil, nil] if decoded.match?(%r{\A(?:[a-z][a-z0-9+.-]*:|//)}i)
+
+  path, fragment = decoded.split("#", 2)
+  clean = path.to_s.split("?", 2).first.to_s
+  return [page, fragment] if clean.empty?
 
   if clean.start_with?("/")
     prefix = BASE_PATH.empty? ? "/" : "#{BASE_PATH}/"
-    return "index.html" if clean == BASE_PATH || clean == prefix
-    return nil unless clean.start_with?(prefix)
+    return ["index.html", fragment] if clean == BASE_PATH || clean == prefix
+    return [nil, nil] unless clean.start_with?(prefix)
 
     relative = clean.delete_prefix(prefix)
   else
@@ -384,7 +418,7 @@ def artifact_target(page, target)
   end
 
   relative = File.join(relative, "index.html") if clean.end_with?("/")
-  relative
+  [relative, fragment]
 end
 
 def validate_internal_links
@@ -392,11 +426,18 @@ def validate_internal_links
     page = Pathname.new(path).relative_path_from(Pathname.new(OUTPUT)).to_s
     html = File.read(path, encoding: "UTF-8")
     html.scan(/\b(?:href|src)="([^"]+)"/).flatten.each do |target|
-      artifact = artifact_target(page, target)
+      artifact, fragment = artifact_target(page, target)
       next if artifact.nil?
 
       destination = File.join(OUTPUT, artifact)
       raise "Broken generated link in #{page}: #{target}" unless File.file?(destination)
+      next if fragment.nil? || fragment.empty? || File.extname(destination) != ".html"
+
+      destination_html = File.read(destination, encoding: "UTF-8")
+      escaped_fragment = Regexp.escape(escape(CGI.unescape(fragment)))
+      unless destination_html.match?(/\bid="#{escaped_fragment}"/)
+        raise "Broken generated fragment in #{page}: #{target}"
+      end
     end
   end
 end
@@ -437,7 +478,7 @@ metadata = DOCUMENTS.map do |document|
   {
     document: document,
     title: document_title(markdown, document[:source]),
-    summary: document_summary(markdown),
+    summary: document_summary(document, markdown),
     digest: Digest::SHA256.hexdigest(markdown),
   }
 end
