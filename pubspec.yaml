@@ -1,8 +1,8 @@
 name: keybay
 description: >-
-  Secret storage for Dart without Flutter: each secret in the OS keystore
-  (macOS/iOS Keychain, Linux Secret Service, Android Keystore) or an
-  authenticated encrypted file.
+  Cross-platform secret storage for Dart without Flutter: native Data
+  Protection Keychain items on Apple platforms where available, or an
+  authenticated encrypted file with an OS-protected key.
 version: 0.1.0
 repository: https://github.com/danReynolds/keybay
 homepage: https://danreynolds.github.io/keybay/

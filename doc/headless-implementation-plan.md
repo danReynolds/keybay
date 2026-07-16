@@ -6,8 +6,10 @@ real `systemd-creds` integration coverage, then **removed from the tree**:
 unreachable code in a security package is unjustified surface (see the
 austerity principle, design.md §12). The implementation is recoverable from
 git history; this document remains the complete design so headless can be
-built without re-deriving it if demand appears. Until then, a headless box
-gets a typed, fail-closed `KeystoreUnreachable`.
+built without re-deriving it if demand appears. The current runtime has no
+headless mode or reliable headless detector. It continues normal platform
+resolution; an unavailable OS credential service surfaces a typed backend
+error, but classifying every headless environment is not a shipped contract.
 
 The encrypted-file substrate this depends on (container, `EncryptedFileBackend`,
 the POSIX shim, the per-location lock) is **already built and tested**; it lives
@@ -77,9 +79,11 @@ future macOS `dataProtection`) on it, so `headless: true, dataProtection: true`
 can never be written. (A boolean also invites `headless: someRuntimeCheck()` —
 the exact flappy-detection footgun §1 forbids.)
 
-**Self-revealing.** The plain `SecretStorage(appId:)` on a headless box throws
-`KeystoreUnreachable` with guidance pointing at `.headless()`, so an operator
-learns it exactly when needed and never carries the concept on desktop/mobile.
+**Explicit, not inferred.** The plain `SecretStorage(appId:)` would continue
+normal platform resolution; it cannot reliably classify a machine as
+headless. An unavailable desktop credential service can still surface its
+existing typed error, while an operator who wants this different storage model
+would select `.headless()` explicitly.
 
 ---
 
@@ -106,7 +110,8 @@ Verified against real `systemd-creds` in an Ubuntu 24.04 container (systemd 255)
   success; the "credential secret not on encrypted media" line is a **warning
   with exit 0** — only exit codes signal failure.
 - **`--with-key` modes** (expose as a small enum, default fail-closed):
-  - `host+tpm2` (default) — needs the TPM *and* the host key. Strongest.
+  - `host+tpm2` (default) — needs the TPM *and* the host key; of these modes,
+    it is the most resistant to either a copied disk image or TPM-only access.
   - `tpm2` — TPM only.
   - `host` — **not hardware-bound** (key derives from
     `/var/lib/systemd/credential.secret` on the same disk). *Not* offered as a

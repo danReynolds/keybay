@@ -56,12 +56,16 @@ macOS   → probe DP keychain once (cached per process):
             write+delete a probe item via SecItem
             −34018            → EncryptedFileBackend + key in login Keychain   (S3)
             success           → KeystoreBackend over the DP keychain (native
-                                items, Secure Enclave)                          (S1)
+                                items; hardware level unreported)
             any other error   → throw (typed, loud — misconfigured entitlement)
 Linux   → EncryptedFileBackend + key in Secret Service                          (S3)
-else    → throw KeystoreUnreachable with guidance (headless is out of
-          scope and fails closed; Windows is planned)
+else    → throw KeystoreUnreachable with guidance (Windows is planned)
 ```
+
+There is no dedicated headless resolver branch or reliable headless detector.
+An unavailable desktop credential service surfaces a typed backend error, but
+that is an availability result rather than a promise to classify every
+headless environment.
 
 Probe determinism: entitlements are baked into the code signature, so the
 probe is stable per binary — the store location can only change when the
@@ -81,13 +85,14 @@ we never auto-migrate).
   `SystemKeySource` shape). DP-keychain native items: service = `<appId>`,
   account = the user's key.
 
-## 4. `BackendInfo.level` (honors the README's `describe()` promise)
+## 4. `BackendInfo.level` (as built)
 
-Add one enum: `SecurityLevel { hardwareBacked, loginBound }`, set from the
-resolved scheme (DP-native → `hardwareBacked`; file+OS-keystore →
-`loginBound`), plus the existing `detail` naming the mechanism. No further
-reporting until a platform can actually vary at runtime (Android TEE/StrongBox
-— that's when the field earns refinement).
+`SecurityLevel { hardwareBacked, softwareBacked, loginBound }` is optional.
+Authenticated-file paths backed by a login credential report `loginBound`.
+Android inspects the actual KEK provider and reports hardware only for TEE or
+StrongBox. Apple native items leave the value null: the applied Data Protection
+Keychain policy is known, but Keybay has no per-item hardware attestation and
+does not infer one from unrelated device capabilities.
 
 ## 5. Reuse map (what each future platform costs)
 
@@ -102,7 +107,7 @@ part:
 | headless | — out of scope; prototype removed (design.md §12) | — | — |
 | Windows | EncryptedFileBackend | SystemKeySource + **WinCredApi** | one FFI binding |
 | iOS | KeystoreBackend | **iOS SecItem binding** (≈ keychain.dart, DP always-on) | one binding + decisions below |
-| Android | EncryptedFileBackend | **AndroidKeystoreKeySource** (jnigen) | one key source + backup rules |
+| Android | EncryptedFileBackend | **AndroidKeystoreKeySource** (pure-FFI JNI) | one key source + backup rules |
 
 ## 6. Phases
 
@@ -117,16 +122,17 @@ Verify: full unit tier + macOS integration (real round-trip via `appId`; probe
 via the `example_flutter/` harness.
 
 > **Priority (owner call, 2026-07-09): mobile before servers.** iOS and
-> Android are the platforms that unlock the "one audited store across CLI,
-> server, and Flutter app" positioning and serve the most users; Windows
+> Android are the platforms that unlock one audited store across the desktop
+> CLI and Flutter apps and serve the most users; Windows
 > follows (headless has since been descoped entirely). Order: **iOS →
 > Android → Windows.** Both mobile
 > backends are buildable *with real verification* on the current dev machine
 > (Xcode 26.6 + iPhone simulators; Android SDK + emulator; Flutter 3.44.4).
 
-**Phase 2 — iOS.** Both S1 rows share one truth: on iOS the DP keychain is the
+**Phase 2 — iOS.** Both native-item rows share one truth: on iOS the DP keychain is the
 *only* keychain (`kSecUseDataProtectionKeychain` is implied), so there is **no
-probe** — the resolver branch is unconditional native items, `hardwareBacked`.
+probe** — the resolver branch is unconditional native items. The scheme is
+reported; a hardware level is not.
 Work:
 1. **Binding variant**: today's `AppleKeychainApi` opens Security.framework by
    absolute macOS path; on iOS the symbols come from the app process
@@ -136,17 +142,15 @@ Work:
    `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` on every add (constant,
    no knob — device-bound, no iCloud/backup escrow, readable by background
    work after first unlock); `synchronizable=false` (carried over);
-   the **first-run uninstall sentinel** (keychain items survive uninstall on
-   iOS — decide: document-only for a secrets library, since "secrets survive
-   reinstall" is often *desired* for tokens; revisit if consumers ask for
-   wipe-on-fresh-install); document the ~4 KB/item envelope.
+   no first-run uninstall sentinel: Keychain items commonly persist across
+   uninstall, but Apple does not guarantee either persistence or deletion, so
+   applications must tolerate both; document the value envelope.
 3. **Test harness (new infra)**: a minimal Flutter host app under
    `example_flutter/` + `integration_test/` running the same round-trip suite
    as the macOS integration tier, executed on the iPhone simulator
    (`flutter test integration_test -d <sim>`). This also becomes the living
-   proof of the "runs inside Flutter apps" claim. Simulator caveat: the sim
-   has no real Secure Enclave (S1 is software-simulated there) — functional
-   coverage on the sim, hardware claim verified once on a device.
+   proof of the "runs inside Flutter apps" claim. The simulator validates the
+   genuine API path and item policy; it makes no physical-hardware claim.
    **No entitlement matrix on iOS**: there is no entitled/unentitled fork
    there (every iOS app has an implicit default access group; Keychain
    Sharing only matters for cross-app sharing) — one project, one
@@ -154,7 +158,7 @@ Work:
 4. **Bonus the harness unlocks — the macOS DP matrix.** The same Flutter app
    builds for macOS desktop, giving the two-config test the CLI tier can't:
    (a) **Keychain Sharing enabled + development-signed** → resolver must pick
-   native DP items, `hardwareBacked` — turning the DP **success** branch from
+   native DP items with no inferred hardware level — turning the DP **success** branch from
    a manual checklist (tool/dp_keychain_verification.md) into a scripted,
    repeatable local test; (b) **entitlement removed** → encrypted file +
    login-Keychain key, `loginBound` (−34018 inside a real app bundle). Local
@@ -165,13 +169,12 @@ Work:
    Developer PLA (the one-time blocker): the entitled overlay (team + identity +
    keychain-access-groups) signed the bundle with `application-identifier` +
    `keychain-access-groups`, `-allowProvisioningUpdates` created the profile,
-   and `flutter test … --dart-define=EXPECT_SCHEME=native
-   --dart-define=EXPECT_LEVEL=hardware` asserted `nativeItems` /
-   `hardwareBacked` with a full DP-keychain round-trip. The overlay
+   and `flutter test … --dart-define=EXPECT_SCHEME=native` asserted
+   `nativeItems`, a null level, and a full DP-keychain round-trip. The overlay
    is reverted out of the committed default (no personal team ID in the repo);
    re-run via tool/dp_keychain_verification.md.
 5. Resolver: `Platform.isIOS → KeystoreBackend(service: appId, api: iOS
-   binding, level: hardwareBacked)`. Path derivation not needed (no file).
+   binding)`. Path derivation is not needed (no file), and level remains null.
 
 **Phase 3 — Android.** The file scheme with a Keystore-wrapped key — the one
 platform where B is forced (Keystore stores keys, not blobs).
@@ -221,8 +224,8 @@ Work:
    plugin, so rules are documented, not auto-injected — say so loudly);
    typed **`KeyInvalidated`** error for the key-loss matrix (blob present
    but KEK gone/unusable — restore-to-new-device, OEM eviction, blob
-   corruption); resolver reports `hardwareBacked` (KeyInfo-based
-   TEE/StrongBox refinement is a recorded follow-up).
+   corruption); diagnostics inspect `KeyInfo.getSecurityLevel()` and report
+   `hardwareBacked` only for TEE/StrongBox, otherwise `softwareBacked`.
 5. **Test harness**: same Flutter host app, Android emulator leg (local-first
    like the DP leg; CI emulator via android-emulator-runner is a recorded
    follow-up). The standalone JNI probe that first proved the mechanism was

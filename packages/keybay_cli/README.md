@@ -1,7 +1,8 @@
 # keybay CLI
 
-Five commands for local, run-scoped secret injection. No account, server,
-daemon, network access, shell hook, or plaintext secret file.
+Five commands for local, run-scoped secret injection on macOS and Linux
+desktop. No account, Keybay server, resident Keybay process, network access,
+or shell hook. Keybay writes no plaintext secret file.
 
 Keybay keeps non-secret configuration literal in a committed manifest and
 stores secret values behind explicit `kb://` references:
@@ -50,7 +51,8 @@ notice if its install-bin directory is not already on `PATH`.
 On Linux, Keybay requires the `secret-tool` client and an unlocked desktop
 Secret Service provider. Homebrew installs its `libsecret` dependency; distro
 or Dart/archive installs should install `libsecret-tools` (Debian/Ubuntu) or
-the equivalent package. A headless session still fails closed by design.
+the equivalent package. Headless deployment is unsupported; without a
+reachable, unlocked desktop Secret Service provider, operations fail typed.
 
 Under `dart run`, the shared Dart VM—not Keybay alone—is the macOS keychain
 trust unit. `keybay doctor` makes the runtime distinction visible.
@@ -134,8 +136,9 @@ actually a secret; that classification remains visible in review.
 ## Security boundary
 
 Keybay keeps referenced values out of repositories, argv, its own output, and
-interactive shell state. It injects only variables named by the selected
-manifest, resolves all references before launch, and has no network code.
+interactive shell state. It preserves the parent environment, overlays only
+variables named by the selected manifest, resolves all references before
+launch, and has no network code.
 
 After injection, values are normal child environment variables. They can be
 inherited by descendants and may be visible to same-user process inspection,
@@ -143,8 +146,8 @@ crash dumps, or the child itself. Running a manifest trusts both its references
 and the launched code. Direct use of the `keybay` Dart library is preferable
 when an application can avoid environment injection entirely.
 
-macOS and Linux desktop are supported. Headless/CI environments fail closed;
-use the CI platform's secret store there. See the
+macOS and Linux desktop are supported. Headless/CI environments have no
+supported availability contract; use the CI platform's secret store there. See the
 [recovery procedure](https://github.com/danReynolds/keybay/blob/main/doc/cli-recovery.md)
 before abandoning an unreadable store.
 

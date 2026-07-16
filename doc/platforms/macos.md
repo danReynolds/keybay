@@ -38,27 +38,24 @@ which the OS walls off rather than resurfaces.)
 
 ## Signed apps (entitled)
 
-Each secret is a **native item in the Data Protection keychain**, encrypted by
-the OS with **AES-256-GCM** and gated by the **Secure Enclave**. There is no
-separate key and no file — the keychain item *is* the storage. Items are marked
-non-synchronizable, so they never escrow to iCloud.
+Each secret is a **native item in the Data Protection Keychain**. There is no
+Keybay container or separate Keybay store key on this path. Items use
+`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` and are non-synchronizing.
 
-**What this resists.** The key material is sealed in secure hardware and bound
-to the device: a stolen disk, laptop, or backup is useless offline — an
-attacker needs that exact machine, unlocked.
+**What this policy means.** The item does not migrate to a different device.
+`AfterFirstUnlock` remains compatible with background work: after the first
+unlock following a reboot, it remains accessible when the machine relocks.
+Keybay does not add biometric or current-unlock gating.
 
-`describe().level` is **measured**: the library probes for a usable Secure
-Enclave (it attempts to create an ephemeral SE key) and reports `hardwareBacked`
-only if that succeeds. On Apple-silicon and T2 Macs it does; on a **pre-T2 Intel
-Mac**, where the Data Protection keychain falls back to software, the probe
-fails and the level is honestly `softwareBacked` — no over-claim. The probe is
-fail-safe (any error → `softwareBacked`, the pessimistic direction).
+`describe().scheme` reports `nativeItems`. `describe().level` is null: Keybay
+applies the documented Data Protection Keychain policy but does not infer or
+attest a hardware-backing level for the stored items.
 
 **Validation.** The refusal path (−34018 → the file scheme, with nothing
 written as a fallback) is CI-tested on every push. The success path needs a
 signed, provisioned bundle CI can't produce; it is validated end-to-end by the
 `example_flutter/` host app (Keychain Sharing + a development team → the
-resolver picks native items and reports hardware-backed). That leg is local —
+resolver picks native items and completes a round trip). That leg is local —
 the repeatable recipe is [tool/dp_keychain_verification.md](../../tool/dp_keychain_verification.md).
 
 ## Command-line and unentitled
@@ -68,14 +65,15 @@ Every secret lives in **one authenticated encrypted file** at
 atomically). The file is sealed with **XChaCha20-Poly1305** under an
 HKDF-SHA256-derived key with a key-commitment header (a wrong key fails closed
 *before* decryption, distinct from tampering). The 32-byte file key is stored
-in the **login Keychain** via the `SecItem` API — the key never touches disk;
-only the encrypted file does.
+in the **login Keychain** via the `SecItem` API. Keybay writes no plaintext copy
+of that key beside the container; the operating system owns how the credential
+store persists it.
 
 **What this resists.** The file key sits in the login Keychain under a
 login-password-derived key: safe from other local users and casual theft.
-Against a stolen disk it is only as strong as the login password — but the data
-itself is still modern AEAD, *stronger* at rest than the 3DES the login
-Keychain would apply to a secret stored in it directly.
+Against a stolen disk it is only as strong as the login password. The
+authenticated container adds tamper detection and separates the portable data
+file from its key; it does not turn a login-bound key into hardware protection.
 
 **Validation.** Real login-Keychain round-trips run in CI on every push; the
 file scheme is additionally exercised inside a real sandboxed `.app` by the

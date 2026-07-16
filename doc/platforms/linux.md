@@ -4,15 +4,15 @@ Every secret lives in **one authenticated encrypted file** at
 `${XDG_DATA_HOME:-~/.local/share}/<appId>/secrets.enc` (mode `0600`, written
 atomically), sealed with **XChaCha20-Poly1305** under an HKDF-SHA256-derived key
 with a key-commitment header. The 32-byte file key is stored in the **Secret
-Service** (GNOME Keyring or KWallet) via `secret-tool`; the key never touches
-disk, only the encrypted file does.
+Service** (GNOME Keyring or KWallet) via `secret-tool`. Keybay writes no
+plaintext copy of that key beside the container; the service owns how it
+persists credential data.
 
 **What this resists.** The file key sits in the Secret Service under a
 login-derived key: safe from other local users and casual theft. Against a
-stolen disk it is only as strong as the login/keyring password — but the data
-itself is still modern AEAD, *stronger* at rest than the legacy cipher the
-keyring would apply to a secret stored in it directly (GNOME Keyring:
-AES-128-CBC; KWallet: Blowfish).
+stolen disk it is only as strong as the login/keyring password. The
+authenticated container adds tamper detection and separates the portable data
+file from its key; it does not turn a login-bound key into hardware protection.
 
 **Transport.** The secret crosses to `secret-tool` on **stdin** (never argv,
 which is visible in `ps`), base64-encoded so binary and newlines survive. Every

@@ -3,8 +3,9 @@
 ## 0.1.0
 
 First release. A bytes-first, async secret store for Dart — no Flutter, no
-platform channels, no native build step — that keeps each secret in the
-strongest place the OS offers and fails closed when there is none.
+platform channels, no native build step — that applies one documented,
+OS-backed storage policy for the current runtime and fails closed when that
+policy cannot be upheld.
 
 Ships as `keybay`: the package was developed under the working name
 `secret_store` and renamed before this first publish (nothing was ever
@@ -19,34 +20,38 @@ are frozen protocol constants, deliberately not rebranded (doc/design.md §7).
   home. `SecretStorage.withBackend(...)` is the test hatch.
 - Bytes-first (`Uint8List`) with `readString`/`writeString` convenience; an
   optional non-secret `label:` for keystore UIs; `readAll`/`deleteAll` guarded
-  by a `capabilities.enumeration` flag; and a `describe()` diagnostics call
-  (resolved scheme, security level, reachable/locked) that never throws.
+  by a `capabilities.enumeration` flag; and a `describe()` diagnostics call for
+  the resolved scheme, observed protection signal, and reachable/locked state.
 - `appId` and `key` are validated identifiers — `appId` is traversal-proof by
   grammar, since it names the data directory and the keystore service. A sealed
   `SecretStoreException` taxonomy carries stable codes and key *names*, never
   values and never raw subprocess output.
 
-### Platforms — each validated end-to-end against the real keystore
+### Platforms — genuine paths exercised with native and simulator harnesses
 
-- **macOS** — native Data Protection keychain items (Secure Enclave) for an
-  entitled app, chosen by a once-per-process probe; `errSecMissingEntitlement`
-  (the normal CLI result) quietly selects the encrypted-file scheme with its key
-  in the login Keychain; any other DP failure throws rather than downgrade.
-- **iOS** — native Data Protection keychain items (Secure Enclave), device-bound
-  (`…AfterFirstUnlockThisDeviceOnly`, `synchronizable=false`).
+- **macOS** — native Data Protection Keychain items for an entitled app, chosen
+  by a once-per-process probe; `errSecMissingEntitlement` (the normal CLI
+  result) selects the authenticated encrypted-file scheme with its key in the
+  login Keychain; any other Data Protection Keychain failure throws rather than
+  downgrade. Keybay does not claim or report hardware backing for these items.
+- **iOS** — native Data Protection Keychain items with a fixed, device-bound
+  policy (`…AfterFirstUnlockThisDeviceOnly`, `synchronizable=false`); hardware
+  backing is not attested.
 - **Linux** — the encrypted file with its key in the Secret Service (GNOME
   Keyring / KWallet) via `secret-tool`; secrets travel on stdin, never argv.
 - **Android (12 / API 31+)** — the encrypted file with its key wrapped by an
-  AES-256-GCM AndroidKeyStore KEK (StrongBox where present, TEE otherwise),
-  driven by a hand-rolled `dart:ffi` JNI shim: no plugin, no platform channel,
-  no `package:jni`, zero new dependencies — so Flutter-less programs can still
-  depend on it. A write-time wrap/unwrap self-test refuses a broken Keystore
-  instead of silently falling back to software.
-- Windows and headless servers are not supported yet and fail closed with a
-  typed `KeystoreUnreachable`.
+  AES-256-GCM Android Keystore KEK. StrongBox is requested; when unavailable,
+  the normal provider is retried and may be TEE-backed or software-backed. The
+  hand-rolled `dart:ffi` JNI shim needs no plugin, platform channel, or
+  `package:jni`, so Flutter-less programs can still depend on it. A write-time
+  wrap/unwrap self-test refuses a broken Keystore without a plaintext store-key
+  fallback.
+- Windows is unsupported and resolves to typed `KeystoreUnreachable`. Headless
+  operation has no dedicated backend or supported availability contract; an
+  absent or locked desktop credential service fails typed.
 - Security level is **measured, not assumed** (`describe().level`): Android reads
-  the KEK's `KeyInfo`, Apple probes for a usable Secure Enclave — so a pre-T2
-  Intel Mac or a software Keystore honestly reports `softwareBacked`.
+  the KEK's `KeyInfo`; desktop file-key paths report login binding. Apple native
+  items leave the value null rather than infer hardware backing.
 
 ### Cryptographic container
 

@@ -1,8 +1,8 @@
 /// Direct OS-keystore backend (see doc/design.md): each secret is its own
 /// keystore item. Thin over the [KeystoreApi] seam. The resolver selects it
-/// where a hardware store holds arbitrary secrets per item — the Apple Data
-/// Protection keychain (`AppleKeychainApi.dataProtection()`), on iOS
-/// unconditionally and on entitled macOS apps.
+/// for the Apple Data Protection Keychain
+/// (`AppleKeychainApi.dataProtection()`), on iOS unconditionally and on
+/// entitled macOS apps.
 library;
 
 import 'dart:typed_data';
@@ -14,17 +14,17 @@ final class KeystoreBackend implements SecretBackend {
   KeystoreBackend({
     required this.service,
     required KeystoreApi api,
-    this.level = SecurityLevel.loginBound,
+    this.level,
   }) : _api = api;
 
   /// The service all this backend's items share.
   final String service;
   final KeystoreApi _api;
 
-  /// Offline-protection level of the underlying keystore, set by the resolver
-  /// (login keychain → [SecurityLevel.loginBound]; Data Protection keychain →
-  /// [SecurityLevel.hardwareBacked]).
-  final SecurityLevel level;
+  /// Observed protection level when the backing store exposes one that Keybay
+  /// can inspect. Apple Data Protection Keychain items leave this null: Keybay
+  /// applies a fixed item policy but does not attest their hardware backing.
+  final SecurityLevel? level;
 
   @override
   BackendCapabilities get capabilities =>

@@ -126,7 +126,7 @@ CliFailure failureForSecretStore(SecretStoreException error) {
     KeyInvalidated() => CliFailure(
       exitCode: 69,
       lines: <String>[
-        'error: the hardware-held key for this store is no longer usable.',
+        'error: the OS-keystore key for this store is no longer usable.',
         'The store cannot be decrypted; follow the platform recovery procedure '
             'before re-provisioning.',
         'Recovery procedure: $recoveryUrl',

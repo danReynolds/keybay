@@ -6,15 +6,19 @@
 Every secret lives in **one authenticated encrypted file** in the app-private
 files directory (`<dataDir>/files/<appId>/secrets.enc`), sealed with
 **XChaCha20-Poly1305** under an HKDF-SHA256-derived key with a key-commitment
-header. The 32-byte file key is itself wrapped by an **AES-256-GCM key that
-lives inside AndroidKeyStore** (hardware-backed — StrongBox where present, the
-TEE otherwise) and never leaves hardware. Only the *wrapped* key blob
-(`store-key.wrapped`, a small versioned `SKW1` format) sits beside the
-container; the raw file key never touches disk.
+header. The 32-byte file key is wrapped by an **AES-256-GCM key created in
+Android Keystore**. Keybay requests StrongBox, then retries without that request
+when StrongBox is unavailable. The resulting provider can be StrongBox, TEE, or
+software-backed; `describe().level` inspects and reports which level Android
+returns. Only the *wrapped* key blob (`store-key.wrapped`, a small versioned
+`SKW1` format) sits beside the container; Keybay writes no plaintext copy of the
+file key there.
 
-**What this resists.** The wrapping key is sealed in secure hardware and never
-leaves the device. A stolen disk image, a cloud backup, or a transfer to
-another device cannot decrypt the store — the hardware key stays behind.
+**What this resists.** A copied container and wrapped-key blob cannot be opened
+without a Keystore provider able to use the corresponding wrapping key. A
+restore or transfer that lacks that key fails as `KeyInvalidated` rather than
+silently creating a new store. Hardware resistance applies only when Android
+reports TEE or StrongBox.
 
 ## Why this is pure Dart (no plugin, no `package:jni`)
 
@@ -24,8 +28,9 @@ would break every Flutter-less server that depends on this package. keybay
 avoids that: Android exports `JNI_GetCreatedJavaVMs` from `libnativehelper` to
 apps at **API 31+**, so a hand-rolled `dart:ffi` shim can discover the JVM and
 call framework classes directly — **no plugin, no platform channels, no
-Flutter-SDK dependency**. The full decision record and the alternatives that
-were rejected are in [design.md §12](../design.md).
+Flutter-SDK dependency**. The maintained platform policy is in
+[the security design](../design.md#9-platform-policy); deeper chronology remains
+in that file's source history.
 
 ## Reliability
 
@@ -35,8 +40,9 @@ best-case reliability profile and to fail loudly, never silently:
 - The wrapping key is generated `setUserAuthenticationRequired(false)` — not
   invalidated by biometric-enrollment changes; the gate is device-level and the
   container adds its own AEAD.
-- **StrongBox is attempted, with a TEE fallback** on
-  `StrongBoxUnavailableException` (most devices lack StrongBox).
+- **StrongBox is attempted, with a normal Android Keystore retry** on
+  `StrongBoxUnavailableException`. The retry is not assumed to be hardware;
+  its actual level is inspected.
 - Every store creation runs a **wrap → unwrap self-test** through the real
   Keystore before anything is persisted — a device with a broken Keystore fails
   at setup, not later at read time.

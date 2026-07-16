@@ -1,46 +1,39 @@
-# keybay — design
+# Keybay security design
 
-The canonical design document for `keybay`. It reflects the package as it
-is, with the reasoning behind the choices that aren't obvious. (It originated as
-RFC 0005 in the dune_cli repo — the pathfinding consumer — and moved here when
-the package was extracted.)
-
----
+The current security and implementation design for `keybay`, including the
+choices that are not obvious from the API alone.
 
 ## 1. Motivation
 
-Storing credential material from a Dart program means handing it to the OS
-keystore — macOS Keychain, Linux Secret Service — or, failing that, to an
-encrypted file. The community answer, `flutter_secure_storage`, is a Flutter
-plugin (platform channels): unusable from a CLI or a server. Python, Go, and
-Rust each have a `keyring` library; Dart did not.
+Keybay uses two fixed storage shapes: native Data Protection Keychain items on
+supported Apple app paths, or an authenticated encrypted file whose key is
+protected by the platform credential store. The community answer,
+`flutter_secure_storage`, is a Flutter plugin (platform channels): unusable
+from a standalone Dart CLI. Python, Go, and Rust each have a `keyring` library;
+Dart did not.
 
-`keybay` fills that gap: pure Dart + FFI, no platform channels, so it runs
-in CLIs, servers, and Flutter apps alike. It ships backends for macOS, Linux,
-iOS, and Android (12 / API 31+).
+`keybay` fills that gap: pure Dart + FFI, no platform channels, so one package
+runs in desktop CLIs and Flutter apps. It ships backends for macOS, Linux
+desktop, iOS, and Android (12 / API 31+). Headless operation is deliberately
+out of scope.
 
-### Why build rather than adopt (surveyed 2026-07-05)
+### Why a dedicated package
 
-| Candidate | Verdict |
-|---|---|
-| `flutter_secure_storage` + kin | Flutter plugins — platform channels; unusable off Flutter. |
-| `dbus_secrets` | The only pure-Dart Secret Service client: 2 likes, ~141 downloads, unmaintained, plaintext bus session. A useful reference, not infrastructure for DB keys. |
-| `keyring` (pub) | Days-old Rust-FFI umbrella, no releases/CI, unspecified native-binary distribution. On the watch-list. |
-| macOS Keychain from pure Dart | Nothing exists. |
-
-The gap is real; the build is thin glue over vetted infrastructure
-(`package:cryptography`, libc, the OS keystores), not a new subsystem.
+The missing shape was a Flutter-independent Dart API with a small, auditable
+platform boundary. The implementation is thin glue over
+`package:cryptography`, libc, and OS credential stores rather than a new secret
+service. For category-level alternatives, read [Choosing Keybay](ecosystem-comparison.md).
 
 ## 2. Goals / non-goals
 
 **Goals** — `flutter_secure_storage`-class storage without Flutter (macOS,
-Linux, iOS, Android); usable from CLIs, servers, and Flutter apps; backends as
+Linux desktop, iOS, Android); usable from CLIs and Flutter apps; backends as
 the extension seam with honest capability reporting; zero native build artifacts
 (subprocess + system-framework FFI only, no toolchain); a minimal,
 fully-enumerated dependency and API surface.
 
-**Non-goals (v1)** — Windows backend (§9 sketches the path); headless/server
-operation (out of scope — a headless box fails closed; §12); biometric prompts;
+**Non-goals (v1)** — Windows backend (§9 sketches the path); a dedicated
+headless/server backend or availability contract; biometric prompts;
 change listeners; web; our own crypto primitives; rollback protection (§8 — a
 keystore-anchored counter is a possible v2, not carried today).
 
@@ -60,7 +53,7 @@ SecretBackend  (seam)    KeystoreBackend | EncryptedFileBackend
 KeystoreApi (seam)            │              Container (AEAD+TLV)
   AppleKeychainApi (SecItem FFI)│              KeySource:
   SecretToolApi (secret-tool) │                SystemKeySource (key in OS keystore)
-  Jni shim (Android, pure FFI)│                AndroidKeystoreKeySource (HW KEK)
+  Jni shim (Android, pure FFI)│                AndroidKeystoreKeySource (measured KEK)
                               └── SecureFileSystem (POSIX FFI: 0600, fsync, atomic)
 ```
 
@@ -89,7 +82,7 @@ There is **one constructor with one input**, plus the test hatch:
 ```dart
 // The whole production surface. appId is validated traversal-proof (it names
 // the derived data directory and the keystore service); the scheme — native
-// Secure-Enclave items vs encrypted-file-with-keystore-key — is resolved per
+// Data-Protection-Keychain items vs encrypted-file-with-keystore-key — is resolved per
 // platform, with the macOS entitled/unentitled split decided by a
 // once-per-process DP probe (−34018 → file, quietly; success → native items;
 // anything else → loud typed error).
@@ -142,8 +135,8 @@ abstract interface class SecretBackend {
 
 | Backend | Where the resolver uses it | Mechanism |
 |---|---|---|
-| `KeystoreBackend` (native items — Model A) | iOS; entitled macOS (DP probe succeeds) | `AppleKeychainApi` — direct `SecItem` CoreFoundation FFI against the **Data Protection** keychain (Secure Enclave). `kSecAttrSynchronizable: false` (a synchronizable item would escrow the key to iCloud). Secrets move as `CFData` — no text protocol on this path; enumeration via `SecItemCopyMatching`. |
-| `EncryptedFileBackend` (Model B) | unentitled macOS / CLI; Linux; Android | An authenticated container (§7) whose 32-byte key is held by a `KeySource` in the platform keystore — **the keystore holds only the key, never the secrets**, so login Keychain / Secret Service are *not* native-item backends here. Key-storage bindings: `AppleKeychainApi` on the classic login keychain (`kSecUseDataProtectionKeychain: false`); `SecretToolApi` on the Secret Service (`secret-tool` over an injectable, timeout-guarded `ProcessRunner`, the key crossing on **stdin** never argv, base64 so binary/newlines survive); `AndroidKeystoreKeySource` (hardware-wrapped key via the pure-FFI JNI shim). |
+| `KeystoreBackend` (native items — Model A) | iOS; entitled macOS (DP probe succeeds) | `AppleKeychainApi` — direct `SecItem` CoreFoundation FFI against the **Data Protection Keychain**. Items are `AfterFirstUnlockThisDeviceOnly` and non-synchronizing. Secrets move as `CFData`; enumeration uses `SecItemCopyMatching`. Hardware backing is not attested or reported. |
+| `EncryptedFileBackend` (Model B) | unentitled macOS / CLI; Linux; Android | An authenticated container (§7) whose 32-byte key is held by a `KeySource` in the desktop credential store or wrapped by Android Keystore. Login Keychain / Secret Service hold only that file key, not every secret. Android requests StrongBox and inspects the resulting level; it may report software-backed. |
 
 **The keystore seam is async.** A keystore is an IO boundary: the macOS binding
 resolves immediately (synchronous FFI wrapped in a future), the Linux binding
@@ -184,12 +177,13 @@ typed error beats a prompt that may hang forever; one behavior for every
 caller. (This was briefly a `nonInteractive:` flag; the knob was cut.)
 
 **Default resolution** (`SecretStorage(appId:)`): macOS → the once-per-process
-DP probe picks native Secure-Enclave items (entitled) or the encrypted file +
+DP probe picks native Data Protection Keychain items (entitled) or the encrypted file +
 login-Keychain key (−34018, the normal CLI result), with any other DP failure
 thrown loud; Linux with a reachable Secret Service → the encrypted file +
-Secret Service key; Android 12+ → the encrypted file + a hardware Keystore
-key; otherwise **throw with guidance** — never silently degrade to weaker
-storage. Headless is out of scope (§12) and fails closed.
+Secret Service key; Android 12+ → the encrypted file + an Android Keystore
+wrapping key whose security level is inspected; otherwise **throw with
+guidance** — never silently degrade to plaintext or a plaintext-key-on-disk path.
+Headless deployment has no dedicated backend or supported availability contract.
 
 ## 6. Two composition models
 
@@ -199,8 +193,8 @@ the caller's — the resolver selects A or B per platform (§9); no public
 constructor reaches either directly.
 
 **A — direct items.** Each secret is its own keystore item. The
-`flutter_secure_storage` shape; the resolver selects it where a hardware store
-holds arbitrary secrets per item (the Apple Data Protection keychain).
+`flutter_secure_storage` shape; the resolver selects it where the Apple Data
+Protection Keychain holds arbitrary secret items.
 
 **B — wrapped key + container.** One keystore item holds a random 32-byte store
 key; the secrets live in an encrypted container sealed by that key. The
@@ -208,14 +202,14 @@ resolver composes it (derived path, `SystemKeySource` over the platform
 binding); there is no public constructor for it — B is a scheme the library
 selects, not one the caller assembles.
 
-**When to prefer B.** Model A is strictly the smaller surface — no crypto, no
-parser, one keystore round-trip per secret, hardware-backed where available.
+**When to prefer B.** Model A is strictly the smaller Keybay surface — no
+Keybay crypto or parser, and one keychain round-trip per secret.
 Reach for B when you have many secrets (Model A's per-item keychain prompts recur
 per binary-identity change, e.g. once per SDK upgrade under `dart run`), when you
 want one backup unit, or when the platform's keystore stores *keys*, not blobs
 (Android — B is forced there). Historically the decisive B case was headless
 (swap in a TPM `KeySource`, everything else unchanged) — headless is out of
-scope for now (§12), but the seam it validated is the same one Android's
+scope, but the seam it validated is the same one Android's
 hardware key source now ships on.
 
 **B changes the at-rest story on the legacy native stores — but be precise
@@ -255,12 +249,11 @@ nothing when both sit on the same stolen disk. The real confidentiality
 from the container's cipher.
 
 So the rule: on a legacy file-based store (our CLI/`dart run` case, all
-mainstream Linux), prefer B for **integrity, one portable backup unit, and as
-the seam to a hardware key** — not on the belief that it out-encrypts the login
-keychain for a full-disk attacker. And B is a *downgrade* versus Model A on the
-**DP keychain + Secure Enclave** (an entitled, signed app), where per-item
-hardware gating — non-exportable key, rate-limited, no offline attack — beats
-any software container; prefer native A there.
+mainstream Linux), use B for **integrity, one portable backup unit, and the seam
+to a separately protected key** — not on the belief that it out-encrypts the
+login keychain for a full-disk attacker. On iOS and entitled macOS, prefer the
+native Data Protection Keychain because it already supplies per-item storage
+and accessibility policy without adding Keybay's container and key lifecycle.
 
 ## 7. Container format (`EncryptedFileBackend`)
 
@@ -408,116 +401,70 @@ app — unavailable to `dart run` or unsigned CLIs). Production guidance:
 `dart compile exe` and sign with a stable Developer ID, so the ACL binds to
 *your* application, survives upgrades, and prompts don't recur per rebuild.
 
-**No key escrow, by design.** Losing the keystore item loses the store; recovery,
-if needed, belongs a layer up. Secrets never touch environment variables or argv.
+**No key escrow, by design.** On the encrypted-file path, losing the single
+store-key item makes that container unreadable; recovery belongs a layer up.
+The SDK storage path does not use environment variables or argv; CLI injection
+has its own explicit process boundary.
 
 The bar is ssh-agent / aws-vault, not an HSM. The `KeySource` seam is where a
-TPM / Secure Enclave attaches later without redesign.
+future key home can attach without redesign.
 
-## 9. Platform expansion path
+## 9. Platform policy
 
 iOS ships, reusing the macOS `SecItem` C API almost verbatim (loaded from the
 process image rather than by absolute-path `dlopen`). Android ships too and was
 the hard one — Keystore has no NDK C API, so JNI is unavoidable; the no-Flutter
 route is a **hand-rolled ~24-function JNI shim over `dart:ffi`** that discovers
 the VM via `libnativehelper`'s `JNI_GetCreatedJavaVMs` (app-exported at API 31+)
-— *not* `package:jni`/`jnigen`, which §12 proved unusable off Flutter. Windows
+— *not* `package:jni`/`jnigen`, whose Flutter dependency was rejected. Windows
 remains DPAPI/wincred (clean FFI), planned. Because this is pure Dart + FFI with
 no plugin registration, it also runs inside Flutter apps — the long-term option
 to retire `flutter_secure_storage` and share one audited store across surfaces.
 
-### Backend catalog & per-platform security levels
+### Backend catalog and platform policy
 
-The whole surface is three composable layers, then one policy that picks a
-default per platform:
+The whole surface is three composable layers, then one fixed policy per
+runtime. `SecurityLevel` is an observed signal, not a marketing rank: Android
+reports hardware only for a TEE or StrongBox wrapping key; desktop file paths
+report login binding. Apple native items leave it null because Keybay cannot
+attest their hardware backing.
 
-**Security tiers** (effective confidentiality of a stored secret *at rest*,
-against an offline/stolen-disk attacker; integrity noted separately because
-Model B always adds it):
-
-| Tier | Key protection | Offline-attack resistance |
+| Runtime | Selected shape | Protection and status |
 |---|---|---|
-| **S1 hardware** | key non-exportable in secure hardware (Secure Enclave, StrongBox, TEE, TPM) | infeasible — key never leaves hardware, unwrap is rate-limited |
-| **S2 software-AEAD, strong key** | modern AEAD; key is full-entropy and held apart (hardware, or a strong external secret) | bounded by that key/secret |
-| **S3 legacy keystore** | OS keystore, login-password-derived (macOS 3DES; gnome AES-128-CBC; KWallet Blowfish; Windows DPAPI) | bounded by login password + a weak KDF |
-| **S4 key-on-disk** | `0600` file beside the container | ≈ filesystem permissions |
-| **S5 ephemeral** | process memory only | n/a — not persisted |
+| **macOS, entitled app** | Native Data Protection Keychain items | Fixed `AfterFirstUnlockThisDeviceOnly`, non-synchronizing policy; hardware backing not attested; signed harness exercises the success path |
+| **macOS, CLI or unentitled app** | Authenticated file | Store key in login Keychain; confidentiality remains login-password-bound; real Keychain integration runs in CI |
+| **Linux desktop** | Authenticated file | Store key in an unlocked Secret Service provider; confidentiality remains login-bound; real gnome-keyring integration runs in CI |
+| **iOS** | Native Data Protection Keychain items | Same fixed item policy; hardware backing not attested; simulator exercises the genuine API path |
+| **Android 12+** | Authenticated file | Store key wrapped by Android Keystore; StrongBox requested, actual provider level inspected; emulator exercises fallback and self-test paths |
+| **Windows** | Unsupported | Fails closed; a DPAPI/Credential Manager binding remains future work |
 
-**Building blocks.** Two backends: `KeystoreBackend` (**Model A** — each secret
-its own OS-keystore item) and `EncryptedFileBackend` (**Model B** — all secrets
-in one XChaCha20-Poly1305 container sealed by a `KeySource` key). One
-**binding per OS** — `AppleKeychainApi` (macOS + iOS), `SecretToolApi`, the
-Android JNI shim, `WinCredApi` (planned) — and the internal `KeySource`s for
-Model B (`SystemKeySource`, `AndroidKeystoreKeySource`; `DpapiKeySource`
-planned). `InMemoryKeySource` and `FileKeySource` exist but are
-**internal, not exported** — non-persistent / insecure respectively; a caller
-who needs bring-your-own-key or an on-disk key implements `KeySource` directly.
+Three invariants matter:
 
-**Per-platform matrix — what we promote, and its tier:**
+1. **The policy does not multiply the platform surface.** Native items and the
+   file key reuse the same small OS binding where possible; Android adds one
+   specialized wrapping-key source because its Keystore is a key store, not an
+   arbitrary-secret store.
+2. **Container confidentiality is bounded by key protection, not cipher
+   branding.** On login-bound macOS and Linux stores, the container's concrete
+   wins are authenticated encryption, one portable backup unit, and a key
+   stored separately—not hardware resistance.
+3. **Fail closed, never substitute an insecure home.** An unsupported runtime,
+   unreachable credential store, invalidated key, or corrupt container returns
+   a typed error. There is no plaintext store-key fallback.
 
-| Platform | Promoted default | Tier | Opt-in alternatives | Status |
-|---|---|---|---|---|
-| **macOS** | resolver: entitled → A on **DP keychain** (`AppleKeychainApi.dataProtection()`, **S1**); else B + `SystemKeySource` (key in login Keychain) — **S3 + AEAD integrity + portable file** | **S1 / S3** | none (no public composition) | file scheme shipped + CI-validated; DP success validated via the Flutter harness |
-| **Linux** | resolver: B + `SystemKeySource` (key in Secret Service) — **S3 + AEAD integrity + portable file** | **S3** | none (no public composition) | shipped + CI-validated against real gnome-keyring |
-| **iOS** | A — DP-keychain items + Secure Enclave | **S1** (per-item access control) | B + `SystemKeySource` → S1 key but whole-store granularity (rarely worth it) | shipped; round-trip validated on the iOS simulator (Secure-Enclave hardware check pending on-device) |
-| **Android** (API 31+) | **B** + `AndroidKeystoreKeySource` (no Model A — Keystore has no general secret-item API); pure-FFI JNI, no plugin (§12) | **S1** key + AEAD container | none — key loss is loud (`KeyInvalidated`), no software fallback | shipped; emulator-validated incl. StrongBox fallback + write-time self-test |
-| **Windows** | A — Credential Manager (DPAPI) *or* B (TBD) | **S3** either way | the other of A/B; B + a caller's on-disk `KeySource` → S4 | planned |
-
-Three things this table encodes:
-
-1. **Best-per-platform does *not* multiply the platform surface.** The
-   platform-specific code is the `KeystoreApi` binding, and **both models use
-   the same binding** — Model A directly, Model B through `SystemKeySource`.
-   So promoting A on entitled-Apple and B elsewhere is the *same* set of
-   bindings composed two ways, not two bespoke stacks. The only genuinely
-   extra per-platform code Model B adds is a specialized `KeySource` where the
-   wrapping key can't live in the standard keystore: `AndroidKeystoreKeySource`
-   (Android is B-only), `DpapiKeySource` (Windows, planned). Net divergence:
-   the bindings we need regardless + one platform-independent container + ~2
-   specialized key sources — justified, not a maintenance explosion.
-2. **Confidentiality is bounded by key protection, not the container cipher.**
-   On the legacy software keystores (macOS/Linux/Windows) A and B are *both*
-   login-password/DPAPI-bounded (S3); B's real wins there are AEAD **integrity**
-   and a **portable** encrypted file, and its only route to **S1** is a
-   **hardware** `KeySource` (TPM/Secure Enclave). S1 is native on iOS and via
-   the Keystore on Android. (This corrects the earlier §6 overstatement that B
-   "neutralizes the weak KDF" — it does not when key and container share a
-   stolen disk.)
-3. **Fail-closed, never auto-downgrade.** The resolver selects the promoted
-   config; off a supported platform, or when the keystore is unreachable
-   (e.g. a headless box), it **throws typed guidance**. It never silently
-   drops to a weaker tier, and there is no public composition to fall back
-   onto — an unsupported environment is an error, not a knob.
-
-**Android reliability note (for when that backend lands).** Android Keystore
-keys can vanish, and the design must assume it — but our model B wrapping key
-is in the *best-case* profile. It is **not** auth-bound
-(`setUserAuthenticationRequired` false), so it structurally avoids
-`KeyPermanentlyInvalidatedException`, the invalidation-on-lock-reset /
-biometric-re-enrollment failure that hits biometric-gated apps. That leaves two
-exposures: (1) backup/restore delivering the container's ciphertext to a new
-device without the device-bound wrapping key — *fully preventable* by excluding
-the container and the wrapped key from Auto Backup / D2D transfer; and (2) a
-small spontaneous-OEM-corruption tail (~sub-1% of installs, ~99% Samsung,
-correlated with specific firmware and usually OEM-fixed). Both are handled by
-the same discipline the whole ecosystem converged on and that our typed-error
-stance already fits: surface key loss as a **typed, recoverable** error
-(mirroring Android's own `KeyStoreException.isTransientFailure()`), wipe and
-re-provision rather than crash or silently wipe, optionally run a Tink-style
-live encrypt/decrypt **self-test** and report an `isKeystoreHealthy()` signal,
-and document that stored secrets are device-bound and may need re-provisioning.
-(Evaluate Google **Block Store** — Play Services, end-to-end-encryptable,
-survives device-to-device restore — as an optional home for the *wrapping key*
-so a migrated device can recover the container instead of re-provisioning;
-cost is a Play Services dependency, so it stays opt-in, not the default.)
-The one contract that separates apps that survive from apps that don't:
-**never let the keystore be the sole home of irreplaceable data** — which for a
-credential store means the caller must have a re-fetch/re-login source of truth.
+**Android reliability note.** Android Keystore keys can be lost or become
+unusable. Keybay generates its wrapping key without per-use authentication,
+requests StrongBox and retries through the normal provider when unavailable,
+then performs a real wrap/unwrap self-test before persisting anything. A
+present wrapped-key blob with a missing or unusable Keystore key returns typed
+`KeyInvalidated`; it is never silently replaced. Applications should exclude
+the store directory from backup/transfer and be able to re-provision credential
+material. The exact rules are in [the Android platform guide](platforms/android.md).
 
 ## 10. Supply chain & security engineering
 
-- **One third-party runtime dependency**, exact-pinned: `cryptography` (verified
-  publisher, ~423k weekly downloads), plus `ffi` (dart-lang official, for the
+- **One third-party runtime dependency**, exact-pinned: `cryptography`, plus
+  `ffi` (dart-lang official, for the
   POSIX shim). The entire runtime closure is `{cryptography, ffi, collection,
   crypto, meta, typed_data}` — everything but `cryptography` is dart-lang
   official. A `dart pub deps --json` snapshot test fails CI if the tree changes;
@@ -525,23 +472,18 @@ credential store means the caller must have a re-fetch/re-login source of truth.
 - **Vector firewall.** The pinned crypto is checked against published standard
   vectors (XChaCha20-Poly1305 draft-arciszewski A.3.1, ChaCha20-Poly1305
   RFC 8439 §2.8.2, HKDF-SHA256 RFC 5869, plus empty-AAD/empty-plaintext/
-  block-boundary edge properties) in our own suite, so a silently-buggy or
-  compromised dependency update can't pass.
+  block-boundary edge properties) in our own suite, so incompatible primitive
+  behavior is caught before the exact pin moves. These tests do not prove a
+  dependency uncompromised.
 - **Narrowed crypto contract.** We call the AEAD with a caller-supplied key
   (HKDF output) and caller-supplied nonce (`Random.secure()`); the dependency's
   own keygen/RNG paths are unused, and the concrete `Dart*` implementations are
   constructed directly so the global `Cryptography.instance` locator can't swap
-  them (§7). A 2026-07 source review of the shipped 2.9.0 artifact found the
-  ChaCha/Poly1305/HKDF paths sound (donna-16 Poly1305, constant-time tag
-  compare, `List<int>` key hygiene end-to-end); the package's known security
-  issues live in AES paths this library never calls. Contingency: if
-  maintenance decays further, vendor XChaCha20-Poly1305 + HKDF under the same
-  vector suite (~600–800 lines against `package:crypto`'s SHA-256). A CI
-  canary fails when pub.dev publishes a newer release, so the pin only ever
-  moves by reviewed decision — OSV/GHSA coverage of pub.dev is too sparse to
-  outsource that judgment to.
-- **FFI is the safest category** — fixed-arity libc / Security.framework calls
-  over ints and byte buffers, behind seams with fakes. Guard clauses in FFI use
+  them (§7). A CI canary reports when pub.dev publishes a newer release, so a
+  pin change remains an explicit review decision.
+- **The FFI boundary is deliberately narrow** — fixed-arity libc /
+  Security.framework calls over ints and byte buffers, behind seams with fakes.
+  Guard clauses in FFI use
   braces unconditionally (the "goto fail" bug class is a braceless `if` in
   security C).
 - **`dart analyze --fatal-infos` clean**, `strict-casts`/`strict-inference`/
@@ -592,221 +534,3 @@ Non-obvious things the build settled:
   wouldn't decode usefully if they were (base64, not plaintext), and vice
   versa. We take bytes-safety and no-`String` over cross-tool interop; a caller
   who needs interop should use one of those libraries, not fight ours.
-
-## 12. Decision log
-
-- Standalone package (name `secret_store`; `lockbox` was the runner-up).
-  (Renamed `keybay` 2026-07-15, pre-publish — never released as `secret_store`;
-  naming record in cli-implementation-plan.md Appendix B. The container's HKDF
-  info strings keep the frozen `secret_store:` wire prefix — §7.)
-- macOS = direct `SecItem` FFI (an earlier `security`-CLI sketch was dropped: its
-  stdin protocol was injectable and its stderr echoed values — both classes
-  vanish with the direct API; ecosystem precedent — git/docker credential
-  helpers, aws-vault — is unanimously direct-API).
-- macOS keychain mode = classic login keychain, explicitly
-  (`kSecUseDataProtectionKeychain: false`). Researched 2026-07: the SecItem
-  path against the file-based keychain is NOT deprecated (only the
-  `SecKeychain*` management family is, with no removal timeline), and the Data
-  Protection keychain hard-requires provisioning-profile-authorized
-  entitlements (`errSecMissingEntitlement` −34018 otherwise) — unusable from
-  `dart run` or unsigned CLIs, i.e. most of this library's consumers. An
-  aws-vault-style dedicated keychain (own password + auto-lock) and a
-  DP-keychain opt-in for signed apps are recorded follow-ups, not defaults.
-- Linux = `secret-tool` for v1 (its transport is already stdin); a native D-Bus
-  client with the encrypted `dh-ietf1024` session is a recorded follow-up,
-  promoted to the 1.0 plan (it also fixes the probe's inability to distinguish
-  a fast-failing locked headless collection).
-- Container: XChaCha20-Poly1305 with an HKDF-derived key-commitment header
-  field, versioned header, HKDF domain separation, profile-bound AAD, binary
-  TLV, `Random.secure()` only, fail-closed resolution.
-- Concurrency = isolate-local FIFO mutex **plus** an exclusive advisory `flock`
-  around every mutating read-modify-write, so writers are serialized across
-  isolates and processes alike; reads stay lock-free (atomic replace — §7).
-- **Intent-first public API (2026-07, tightened twice).** The concrete
-  backends are *not* exported; A-vs-B is the library's per-platform decision,
-  not the caller's. First iteration kept three constructors (`service:` +
-  `api:` override, `encryptedFile(path:, keySource:)`, `withBackend`); the
-  final austerity pass collapsed to **one production constructor,
-  `SecretStorage(appId:)`** — path, keystore identity, and scheme all derived
-  — plus `withBackend` (tests) and a then-planned `.headless(appId:)` (since
-  descoped — see the headless entry below). Cut with
-  it: the `api:` knob, the public `encryptedFile` composition, `contextSalt`,
-  the `nonInteractive` flag (now unconditionally on: a locked keychain fails
-  typed instead of raising a GUI prompt), and the exported key-source/binding
-  surface. Rationale: every removed knob was a way to hold the library wrong.
-  `appId` is validated **traversal-proof** (no `/`, must contain an
-  alphanumeric — so `.`/`..` are unrepresentable), because it now names a
-  derived directory.
-- **macOS DP = auto-probe with fail-loud (2026-07; supersedes the earlier
-  "explicit opt-in" decision).** First ruling rejected auto-detection because
-  an *entitlement-claim* check is necessary-not-sufficient and a
-  detection-driven store location risks silent scheme flips. Revisited and
-  reversed on the owner's call — "use the Secure Enclave where possible; if
-  the DP write fails, fail loud" — because the probe as built avoids both
-  original objections: it tests the **actual capability** (a real DP write,
-  not an entitlement-claim read), it is **deterministic per binary**
-  (entitlements are baked into the code signature; the result is cached
-  per-process), and it is **three-way precise** on the raw OSStatus: −34018 →
-  file scheme, quietly (the normal CLI branch, CI-tested live); success →
-  native DP items; anything else → loud typed error, never a silent
-  downgrade. Accepted residual, documented: an app that *gains* the
-  entitlement between versions moves its store (one-time re-provision) —
-  deliberate-developer-action, recoverable, and preferred over carrying a
-  public knob. No access group is required (the app's implicit default group
-  suffices; Xcode's Keychain Sharing capability provides the entitlement).
-- **Austerity pass (2026-07).** Cut, on first-principles review against "no
-  code for speculative or nice-to-have security": the **generation counter**
-  (inert — provided no rollback protection on its own; re-add as a v2 field if
-  enforcement is built), the **cross-process `flock`** (*later reinstated* —
-  the first-write key race it prevents proved cheap to close and easy to hit
-  with a spawned isolate; see §7), the **hand-rolled bytes-only base64 codec**
-  (a maintained crypto-adjacent artifact to shave one `String` copy the GC
-  can't zero anyway → `dart:convert`), and the **Unicode format/bidi label
-  validation** (heavier than the keystore-UI-spoofing threat → plain
-  control-char + length check). Kept and reframed: key commitment (cheap
-  defense-in-depth + the error distinction), the String conveniences (dropping
-  them adds friction for ~zero hygiene gain — the caller's `String` exists
-  regardless).
-- **Public key-source surface = secure-only (2026-07).** `SystemKeySource` and
-  `TpmKeySource` were the exported sources at the time; both secure. (Both
-  since un-exported by the appId surface; `TpmKeySource` later removed with
-  headless's descoping — see below.) `FileKeySource`
-  (plaintext key on disk — a benign name that invites an accidental insecure
-  pick) and `InMemoryKeySource` (non-persistent) were **un-exported**: they
-  stay in `src/` as the reference impl and the test double. Bring-your-own-key
-  / on-disk needs are served by the public `KeySource` interface + exported
-  `SecureFileSystem` — so the insecure choice is one a caller writes
-  deliberately, never grabs from autocomplete. Also renamed
-  `KeystoreKeySource` → `SystemKeySource` (dropped the `Key…Key` stutter).
-- **Android = pure-FFI JNI in core, no `package:jni`, no companion package
-  (2026-07-10; supersedes both the jnigen plan and an interim "federation is
-  forced" recommendation).** The chain of evidence: Android Keystore is
-  Java-only (no NDK C API — android/ndk#1284 unfulfilled), so JNI is
-  unavoidable; `package:jni` requires the Flutter SDK to resolve (proven in
-  Flutter-less Docker: "version solving failed") and cannot drop that
-  constraint (pub's publish validator forces `environment: flutter:` onto any
-  package with a plugin section — proven by dry-run publish; jni needs its
-  plugin section for its Java bootstrap); pub has no optional/conditional
-  dependencies. The near-miss: we almost shipped a `secret_store_android`
-  companion. The owner challenged it; deep research + local probes found the
-  escape: **API 31+ officially exports `JNI_GetCreatedJavaVMs` from
-  `libnativehelper` to apps** (android/ndk#1320), so a dlopen'd pure-`dart:ffi`
-  caller discovers the VM with no `JNI_OnLoad`/Java/plugin, and every class
-  Keystore needs is on the **boot classpath** — sidestepping the
-  app-classloader blocker that stalls the Dart team's own de-Flutter migration
-  of package:jni (dart-lang/native#2997 / #1350; they ship custom Java, we
-  ship none). Proven end-to-end on an API 33 emulator by a standalone probe,
-  deleted once the production shim shipped (one JNI implementation only — the
-  harness suite now exercises the full chain every run). Consequences:
-  **min API 31** on Android (below → typed fail-closed error), a ~24-function
-  hand-rolled JNI shim in the CF-binding austerity class (hand-roll over
-  vendoring jni's ~230-function generated layer: smaller, and consistent with
-  the base64/CF precedent — prefer SDK-maintained, else own the smallest
-  surface), and a recorded **off-ramp**: re-evaluate official jni when
-  dart-lang/native#2997 lands. Rejected en route: linker-namespace bypass via
-  `dl_iterate_phdr` ELF-scanning (platform-hardening circumvention — wrong
-  posture for a security package), `app_process` child JVM (SELinux/OEM
-  roulette), keystore2-AIDL-direct (private platform surface).
-- **Headless/TPM = out of scope; prototype removed (2026-07-10, owner call).**
-  A `TpmKeySource` (store key wrapped by `systemd-creds`, host/TPM2 binding,
-  fail-closed without a TPM) was built and validated against the real binary
-  in Docker/CI, staged for a `SecretStorage.headless(appId:)` entry point.
-  With headless descoped, it sat in `lib/` **unreachable from any public
-  path** — and the austerity audit's own rule applied: unreachable code in a
-  security package is unjustified surface. Removed from the tree (source,
-  tests, CI leg); the design survives in headless-implementation-plan.md and
-  the implementation in git history. Headless boxes fail closed with typed
-  guidance. Re-adding is a contained change on the same `KeySource` seam
-  Android now ships on.
-- **Review hardening (2026-07-11).** An external review found lifecycle and
-  reporting defects (the crypto core held up); fixes, each now tested:
-  - *Truthful security level.* `describe().level` is **measured**, not assumed.
-    Added `SecurityLevel.softwareBacked`; the level moved onto the `KeySource`
-    (it knows where the key lives). Android reads `KeyInfo.getSecurityLevel()`
-    → `hardwareBacked` only for TEE/StrongBox, else `softwareBacked`. Apple
-    **native items** are also **measured**, not assumed: a fail-safe probe
-    tries to create an ephemeral Secure-Enclave key and reports
-    `hardwareBacked` only on success. The real over-claim this fixes is an
-    entitled app on a **pre-T2 Intel Mac** (no SE → software fallback), which
-    now honestly reports `softwareBacked`. (An earlier attempt to detect the
-    iOS Simulator via `SIMULATOR_*` env vars failed — they're absent under
-    `flutter test` — and it turned out moot: the modern Simulator *emulates*
-    the SE, so the probe succeeds there and reports `hardwareBacked`, matching
-    a real device.)
-  - *No silent store migration on macOS.* No marker file: the encrypted-file
-    scheme leaves its own trace (the container), so an entitled resolve that
-    finds a pre-existing container throws typed `MigrationRequired`
-    (`encryptedFile → nativeItems`) rather than presenting an empty store. A
-    never-written store has no container, so it never false-fires; the reverse
-    (lost entitlement) is not detectable from an unentitled process, which
-    can't read the OS-walled DP items. (An interim `.scheme` marker was tried
-    and removed — it could false-fire on a never-written store and threw
-    untyped on a corrupt/loose marker.)
-  - *No bricking, no lost updates.* `write` rejects an oversized sealed
-    container (`StoreTooLarge`) **before** replacing the prior one; the
-    read-modify-write mutex is keyed by container **path** so two backend
-    instances for one store serialize.
-  - *Smaller blast radius on the edges.* The DP probe uses a dedicated internal
-    service (outside the `appId` grammar) and deletes only its own item;
-    `secret-tool` gets a `--` terminator so a dash-leading `appId` is data not
-    a flag; the XDG data hierarchy is created `0700` on a clean account; the
-    POSIX errno symbol is resolved across libcs (glibc/musl `__errno_location`,
-    bionic `__errno`).
-- Crypto dependency: stay exact-pinned on `cryptography 2.9.0` (2026-07 review:
-  latest release; our two primitives are its healthiest code; every known vuln
-  is in unused AES paths), construct the `Dart*` implementations directly, CI
-  canary forces reviewed bumps, vendoring is the prepared exit.
-- Pure Dart, not native: native crypto doesn't compose on an all-Dart secret
-  lifecycle and would re-add a toolchain + a second FFI seam. Swap/core-dump
-  belong at the OS level in the consuming process (`setrlimit`, encrypted swap).
-- Per-platform model = **best-per-platform, not one model everywhere** (see the
-  §9 matrix): A on macOS/Linux/iOS (native items), B-only on Android (no
-  general Keystore secret-item API), A-or-B on Windows. Justified because both
-  models share the same per-OS `KeystoreApi` binding — choosing best-per-platform
-  composes the *same* bindings two ways rather than forking a bespoke stack per
-  OS, so the divergence is ~3 specialized `KeySource`s, not N stacks. B is also
-  offered as an opt-in everywhere (integrity + one portable backup unit + the
-  seam to a hardware key). Corrected 2026-07: on the legacy software keystores
-  A and B are the *same* confidentiality tier (S3, login-password-bounded) — B's
-  edge there is integrity/portability, and S1 comes only from a hardware
-  `KeySource`, not from the container cipher.
-
-## 13. Follow-ups (recorded, non-blocking)
-
-Native D-Bus Secret Service client (promoted: planned for 1.0) · strict euid
-dir-owner check · rollback protection *if warranted* (a **v2** format with a
-keystore-anchored monotonic counter — the generation field was cut, so this is
-a deliberate format bump, not a latent switch) · `rotateStoreKey()` · a
-`SecretBuffer` type (mlock'd, zero-on-dispose native
-memory) as the store key's canonical home · macOS dedicated-keychain mode
-(aws-vault style: own password + auto-lock) · a manual/notarized-CI job that
-exercises the DP-keychain **success** path (the −34018 refusal path is already
-CI-covered; the store-and-read path needs a signed, entitled bundle) ·
-attributes-only `contains` (avoid materializing the
-value) and keys-only enumeration · Windows/iOS/Android backends · the
-`secret-tool` locked/headless exit-code matrix (the probe still can't
-distinguish a fast-failing locked collection) · pub publication (trusted
-publishing + provenance).
-
-*(Shipped this pass: the Linux `secret-tool` integration test under
-`dbus-run-session`, verified against the real binaries in Docker. A
-`TpmKeySource` was also built and validated here, then removed when headless
-was descoped — see §12.)*
-
-**From the 2026-07 ecosystem benchmark** (see
-[doc/ecosystem-comparison.md](ecosystem-comparison.md) for the full analysis;
-these are the API-surface gaps the benchmark found; since-closed ones are
-marked "(shipped)"): security-**backing** reporting in `BackendInfo` (software
-/ OS-keystore / TEE / StrongBox / Secure Enclave / TPM — the
-`getSecurityLevel()` / `storage`-field pattern) (shipped: the measured
-`SecurityLevel` on `BackendInfo`) · a typed **`KeyInvalidated`** error plus a
-per-platform key-loss and uninstall/restore documentation matrix (the
-ecosystem's #1 production data-loss source) (shipped: `KeyInvalidated` + the
-doc/platforms/ matrix) · **accessibility tier required at construction** for
-the future iOS / DP-keychain backend (Valet's model; pinned per-store, never
-per-call — per-call accessibility becomes a keychain search filter and orphans
-items) · a documented **value-size envelope** per backend (don't hard-enforce
-a wrong number — Expo's removed 2048-byte limit is the cautionary tale) ·
-`Ambiguous`/multiple-match handling on the Secret Service path (another app can
-write a colliding `service`+`account`) · a per-store serial execution queue for
-SecItem calls (ends the duplicate-item race class).

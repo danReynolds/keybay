@@ -156,11 +156,12 @@ final class FileKeySource implements KeySource {
       );
 }
 
-/// Wraps the store key in the OS keystore — the default secure Model-B source.
-/// The key itself never touches disk; only the AEAD-encrypted container does.
-/// [api] is the platform keystore (`AppleKeychainApi` / `SecretToolApi`), wired by
-/// the resolver or passed explicitly. [account] is the item name under
-/// [service].
+/// Stores the file's key in the OS credential store — the default Model-B
+/// source. Keybay writes no plaintext copy beside the authenticated container;
+/// persistence inside the OS service is controlled by that service. [api] is
+/// the platform credential-store binding (`AppleKeychainApi` /
+/// `SecretToolApi`), wired by the resolver or passed explicitly. [account] is
+/// the item name under [service].
 final class SystemKeySource implements KeySource {
   SystemKeySource({
     required this.service,

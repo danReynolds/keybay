@@ -8,19 +8,19 @@
 /// - **Login keychain** (`AppleKeychainApi()`, macOS only): the classic
 ///   file-based keychain (`kSecUseDataProtectionKeychain = false`). Works for
 ///   any process — unsigned CLIs, `dart run`, signed apps — with no entitlement.
-/// - **Data Protection keychain** (`AppleKeychainApi.dataProtection()`):
-///   AES-256-GCM + Secure Enclave. On macOS this needs a signed app carrying
+/// - **Data Protection Keychain** (`AppleKeychainApi.dataProtection()`):
+///   native item protection with a fixed accessibility policy. On macOS this needs a signed app carrying
 ///   the Keychain Sharing entitlement — an unentitled process gets
 ///   `errSecMissingEntitlement` (−34018) → [KeystoreUnreachable] with guidance,
 ///   never a silent fallback. On iOS it is the only keychain and every app can
 ///   use it (the implicit default access group). DP items are created
-///   `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`: device-bound (never
-///   restored to another device), readable by background work after first
-///   unlock — the constant-not-knob accessibility decision
+///   `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`: device-bound (does not
+///   migrate to another device on restore), readable by background work after
+///   first unlock — the constant-not-knob accessibility decision
 ///   (doc/implementation-plan.md Phase 2).
 ///
-/// Both modes set `kSecAttrSynchronizable = false` (a synchronizable item would
-/// escrow the key to iCloud Keychain).
+/// Both modes set `kSecAttrSynchronizable = false`; the item is not synchronized
+/// through iCloud Keychain.
 ///
 /// Symbol loading: macOS `dlopen`s the frameworks by absolute path (a plain
 /// Dart VM links neither); on iOS every app process already has
@@ -81,7 +81,7 @@ final class AppleKeychainApi implements KeystoreApi {
   /// The classic file-based login keychain (macOS; no entitlement required).
   AppleKeychainApi() : this._(dataProtection: false);
 
-  /// The Data Protection keychain + Secure Enclave. On macOS: for a signed app
+  /// The Data Protection Keychain. On macOS: for a signed app
   /// carrying the Keychain Sharing entitlement — fails with
   /// [KeystoreUnreachable] (−34018) on an unentitled process rather than
   /// degrading to the login keychain. On iOS: the only keychain; always
@@ -132,20 +132,12 @@ final class AppleKeychainApi implements KeystoreApi {
   late final Pointer<Void> Function(Pointer<Void>, Pointer<Void>)
       _cfDictionaryGetValue;
 
-  late final Pointer<Void> Function(Pointer<Void>, int, Pointer<Void>)
-      _cfNumberCreate;
-
   // Security
   late final int Function(Pointer<Void>, Pointer<Pointer<Void>>) _secItemAdd;
   late final int Function(Pointer<Void>, Pointer<Pointer<Void>>)
       _secItemCopyMatching;
   late final int Function(Pointer<Void>, Pointer<Void>) _secItemUpdate;
   late final int Function(Pointer<Void>) _secItemDelete;
-
-  /// `SecKeyCreateRandomKey(params, error)` — used only by the Secure-Enclave
-  /// presence probe.
-  late final Pointer<Void> Function(Pointer<Void>, Pointer<Pointer<Void>>)
-      _secKeyCreateRandomKey;
 
   // Constant CFStringRef / CFBooleanRef symbols.
   late final Pointer<Void> _keyCallbacks;
@@ -168,15 +160,7 @@ final class AppleKeychainApi implements KeystoreApi {
       _kSecUseAuthenticationUI,
       _kSecUseAuthenticationUIFail,
       _kCFBooleanTrue,
-      _kCFBooleanFalse,
-      // Secure-Enclave presence probe.
-      _kSecAttrKeyType,
-      _kSecAttrKeyTypeECSECPrimeRandom,
-      _kSecAttrKeySizeInBits,
-      _kSecAttrTokenID,
-      _kSecAttrTokenIDSecureEnclave,
-      _kSecPrivateKeyAttrs,
-      _kSecAttrIsPermanent;
+      _kCFBooleanFalse;
 
   void _bind() {
     _cfStringCreateWithBytes = _cf.lookupFunction<
@@ -214,11 +198,6 @@ final class AppleKeychainApi implements KeystoreApi {
         Pointer<Void> Function(Pointer<Void>, Pointer<Void>),
         Pointer<Void> Function(
             Pointer<Void>, Pointer<Void>)>('CFDictionaryGetValue');
-    _cfNumberCreate = _cf.lookupFunction<
-        Pointer<Void> Function(Pointer<Void>, Int32, Pointer<Void>),
-        Pointer<Void> Function(
-            Pointer<Void>, int, Pointer<Void>)>('CFNumberCreate');
-
     _secItemAdd = _sec.lookupFunction<
         Int32 Function(Pointer<Void>, Pointer<Pointer<Void>>),
         int Function(Pointer<Void>, Pointer<Pointer<Void>>)>('SecItemAdd');
@@ -231,11 +210,6 @@ final class AppleKeychainApi implements KeystoreApi {
         int Function(Pointer<Void>, Pointer<Void>)>('SecItemUpdate');
     _secItemDelete = _sec.lookupFunction<Int32 Function(Pointer<Void>),
         int Function(Pointer<Void>)>('SecItemDelete');
-    _secKeyCreateRandomKey = _sec.lookupFunction<
-        Pointer<Void> Function(Pointer<Void>, Pointer<Pointer<Void>>),
-        Pointer<Void> Function(
-            Pointer<Void>, Pointer<Pointer<Void>>)>('SecKeyCreateRandomKey');
-
     _keyCallbacks = _cf.lookup<Void>('kCFTypeDictionaryKeyCallBacks');
     _valueCallbacks = _cf.lookup<Void>('kCFTypeDictionaryValueCallBacks');
     _kCFBooleanTrue = _cfConst(_cf, 'kCFBooleanTrue');
@@ -260,61 +234,11 @@ final class AppleKeychainApi implements KeystoreApi {
     _kSecUseAuthenticationUI = _cfConst(_sec, 'kSecUseAuthenticationUI');
     _kSecUseAuthenticationUIFail =
         _cfConst(_sec, 'kSecUseAuthenticationUIFail');
-    _kSecAttrKeyType = _cfConst(_sec, 'kSecAttrKeyType');
-    _kSecAttrKeyTypeECSECPrimeRandom =
-        _cfConst(_sec, 'kSecAttrKeyTypeECSECPrimeRandom');
-    _kSecAttrKeySizeInBits = _cfConst(_sec, 'kSecAttrKeySizeInBits');
-    _kSecAttrTokenID = _cfConst(_sec, 'kSecAttrTokenID');
-    _kSecAttrTokenIDSecureEnclave =
-        _cfConst(_sec, 'kSecAttrTokenIDSecureEnclave');
-    _kSecPrivateKeyAttrs = _cfConst(_sec, 'kSecPrivateKeyAttrs');
-    _kSecAttrIsPermanent = _cfConst(_sec, 'kSecAttrIsPermanent');
-  }
-
-  /// Whether this device has a **usable Secure Enclave**, probed by attempting
-  /// to create an *ephemeral* (non-persistent) EC key in it. Success proves an
-  /// SE mediates the Data Protection keychain's protection here; failure — no
-  /// SE (the iOS Simulator, a pre-T2 Intel Mac) or any error — means the DP
-  /// keychain falls back to software. The Apple analogue of Android's
-  /// `KeyInfo.getSecurityLevel()`.
-  ///
-  /// **Fail-safe:** any failure returns `false`, so the reported level is
-  /// pessimistic ([SecurityLevel.softwareBacked]) rather than an over-claim.
-  /// Never throws. The probe key is non-persistent (`kSecAttrIsPermanent`
-  /// false), so nothing is stored and there is nothing to clean up.
-  bool hasSecureEnclave() {
-    const kCFNumberSInt32Type = 3;
-    final refs = <Pointer<Void>>[];
-    final sizePtr = malloc<Int32>()..value = 256;
-    try {
-      final size =
-          _cfNumberCreate(_nullRef, kCFNumberSInt32Type, sizePtr.cast());
-      if (size == nullptr) return false;
-      refs.add(size);
-      final priv = _dict([(_kSecAttrIsPermanent, _kCFBooleanFalse)]);
-      refs.addAll(priv.owned);
-      final params = _dict([
-        (_kSecAttrKeyType, _kSecAttrKeyTypeECSECPrimeRandom),
-        (_kSecAttrKeySizeInBits, size),
-        (_kSecAttrTokenID, _kSecAttrTokenIDSecureEnclave),
-        (_kSecPrivateKeyAttrs, priv.dict),
-      ]);
-      refs.addAll(params.owned);
-      final key = _secKeyCreateRandomKey(params.dict, nullptr);
-      if (key == nullptr) return false;
-      _cfRelease(key);
-      return true;
-    } catch (_) {
-      return false;
-    } finally {
-      malloc.free(sizePtr);
-      _releaseAll(refs);
-    }
   }
 
   /// Accessibility for DP-keychain item creation:
-  /// `AfterFirstUnlockThisDeviceOnly` — device-bound (never restored to a
-  /// different device or backup), readable by background work after first
+  /// `AfterFirstUnlockThisDeviceOnly` — device-bound (does not migrate to a
+  /// different device on restore), readable by background work after first
   /// unlock. Constant, not a knob. Never set on the file-based login keychain
   /// (accessibility is a DP-keychain concept; the legacy store rejects it).
   List<(Pointer<Void>, Pointer<Void>)> get _accessibilityPairs =>
