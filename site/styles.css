@@ -214,19 +214,22 @@ footer a:hover,
   min-width: 0;
 }
 
-.hero-example pre + .code-label {
-  margin-top: 20px;
-  padding-top: 18px;
-  border-top: 1px solid var(--dark-line);
+.hero-example .interface-label {
+  margin-bottom: 12px;
+  color: #456f23;
 }
 
-.code-panel {
-  padding: 22px 24px 24px;
+.workflow-example {
+  padding: 18px 20px 20px;
   border: 1px solid var(--dark-line);
-  border-top: 3px solid var(--accent);
+  border-top: 2px solid var(--accent);
   border-radius: 4px;
   background: var(--dark);
   color: #e6ebe2;
+}
+
+.workflow-example + .workflow-example {
+  margin-top: 12px;
 }
 
 .interface-label {
@@ -238,12 +241,42 @@ footer a:hover,
   text-transform: uppercase;
 }
 
-.code-panel .code-label {
-  margin-bottom: 10px;
-  color: #9aa495;
+.example-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--dark-line);
 }
 
-.code-panel pre {
+.example-title,
+.example-context {
+  margin: 0;
+}
+
+.example-title {
+  color: #f3f5f0;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.example-title code {
+  font-size: inherit;
+}
+
+.example-context {
+  color: #9aa495;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.workflow-example pre {
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -253,14 +286,14 @@ footer a:hover,
   line-height: 1.6;
 }
 
-.code-panel .text-link {
-  margin-top: 16px;
-  color: #f3f5f0;
+.hero-example > .text-link {
+  margin-top: 12px;
+  color: var(--ink);
 }
 
 .terminal-note {
-  margin: 16px 0 0;
-  color: var(--dark-copy);
+  margin: 14px 0 0;
+  color: var(--muted);
   font-size: 0.75rem;
   line-height: 1.5;
 }
@@ -632,17 +665,17 @@ pre .err {
   color: #a33b32;
 }
 
-/* Primary CLI sample: restrained dark syntax palette with AA contrast. */
-.code-panel pre .k {
+/* Primary CLI samples: restrained dark syntax palette with AA contrast. */
+.workflow-example pre .k {
   color: #d1b4eb;
 }
 
-.code-panel pre .nt {
+.workflow-example pre .nt {
   color: #9fd8bc;
 }
 
-.code-panel pre .nb,
-.code-panel pre .nv {
+.workflow-example pre .nb,
+.workflow-example pre .nv {
   color: var(--accent);
 }
 
@@ -1261,12 +1294,12 @@ pre .err {
     font-size: 0.84rem;
   }
 
-  .code-panel,
+  .workflow-example,
   .sdk-example {
     padding: 16px;
   }
 
-  .code-panel pre {
+  .workflow-example pre {
     font-size: 0.82rem;
   }
 
