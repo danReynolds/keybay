@@ -4,23 +4,23 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f4f3ed">
-    <meta name="description" content="OS-backed secret storage for Dart and Flutter across iOS, Android 12+, macOS, and Linux desktop, plus a small local-process CLI.">
+    <meta name="description" content="An OS-backed five-command CLI for local secrets on macOS and Linux desktop, plus a Dart and Flutter API across four platforms.">
     <link rel="canonical" href="https://danreynolds.github.io/keybay/">
     <meta property="og:type" content="website">
-    <meta property="og:title" content="Keybay — secrets, OS-backed">
-    <meta property="og:description" content="One Dart API across iOS, Android 12+, macOS, and Linux desktop. One small CLI for local processes on macOS and Linux desktop.">
+    <meta property="og:title" content="Keybay — OS-backed secrets for local processes">
+    <meta property="og:description" content="Store local secrets behind the OS credential store, commit non-secret config and references, and launch any process with its resolved environment.">
     <meta property="og:url" content="https://danreynolds.github.io/keybay/">
     <meta property="og:image" content="https://opengraph.githubassets.com/keybay-site/danReynolds/keybay">
     <meta property="og:image:alt" content="Keybay repository preview">
     <meta name="twitter:card" content="summary_large_image">
-    <title>Keybay — secrets, OS-backed</title>
+    <title>Keybay — OS-backed secrets for local processes</title>
     <link rel="stylesheet" href="./styles.css">
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@type": "SoftwareSourceCode",
         "name": "Keybay",
-        "description": "OS-backed secret storage for Dart and Flutter with a small macOS and Linux CLI.",
+        "description": "An OS-backed five-command CLI for local secrets on macOS and Linux desktop, plus a Dart and Flutter API across four platforms.",
         "codeRepository": "https://github.com/danReynolds/keybay",
         "license": "https://opensource.org/licenses/MIT",
         "programmingLanguage": "Dart",
@@ -34,8 +34,8 @@
     <header class="site-header">
       <div class="shell header-inner">
         <a class="brand" href="#top" aria-label="Keybay home"><span aria-hidden="true">k/</span> keybay</a>
-        <nav aria-label="Main navigation">
-          <a href="#platforms">Storage</a>
+        <nav class="home-nav" aria-label="Main navigation">
+          <a href="./docs/cli/">CLI</a>
           <a href="#security">Security</a>
           <a href="./docs/">Docs</a>
           <a href="https://github.com/danReynolds/keybay">GitHub ↗</a>
@@ -47,25 +47,16 @@
       <section class="hero" id="top">
         <div class="shell hero-grid">
           <div>
-            <p class="eyebrow">iOS · Android 12+ · macOS · Linux desktop</p>
+            <p class="eyebrow">CLI · macOS · Linux desktop</p>
             <h1>Secrets,<br>OS-backed.</h1>
-            <p class="lede">One Dart API across four platforms. One five-command CLI for local processes on macOS and Linux desktop. The runtime selects the documented OS storage path.</p>
+            <p class="lede">Keep secret values protected behind the OS credential store, commit a manifest of non-secret config and <code>kb://</code> references, then launch any local process with its resolved environment. Five commands; no account, server, daemon, or shell hook.</p>
 
-            <p class="release-note"><strong>0.1.0 pre-release.</strong> <a href="./docs/guide/#sdk-quickstart">Evaluate the SDK</a> or <a href="./docs/cli/#install">CLI</a> from a reviewed checkout; pub.dev and Homebrew are not live yet.</p>
-
-            <div class="hero-sdk" id="use">
-              <p class="code-label">Dart / Flutter</p>
-              <pre><code class="language-dart" data-language="dart">import 'package:keybay/keybay.dart';
-
-final store = SecretStorage(appId: 'com.example.app');
-await store.writeString('api-token', tokenFromOAuth);
-final stored = await store.readString('api-token');</code></pre>
-              <a class="text-link" href="./docs/guide/#sdk-quickstart">SDK quickstart →</a>
-            </div>
+            <p class="release-note"><strong>0.1.0 pre-release.</strong> Evaluate the <a href="./docs/cli/#install">CLI</a> or <a href="./docs/guide/#sdk-quickstart">SDK</a> from a reviewed checkout; published channels are not live yet.</p>
           </div>
 
-            <div class="hero-example" aria-label="Keybay CLI workflow">
-              <p class="code-label">.secrets.env · commit this</p>
+          <div class="hero-example code-panel" id="cli" aria-label="Keybay CLI workflow">
+            <p class="interface-label">keybay CLI · macOS / Linux</p>
+            <p class="code-label">Committed manifest</p>
             <pre><code class="language-shell" data-language="shell">API_URL=https://staging.example.com
 OPENAI_API_KEY=kb://acme-example/openai-api-key</code></pre>
             <p class="code-label">Terminal</p>
@@ -77,8 +68,27 @@ $ keybay run -- ./app.sh
 Keybay example app started.
   API_URL: https://staging.example.com
   OPENAI_API_KEY: available (value not printed)</code></pre>
-            <p class="terminal-note">References resolve from one per-user CLI store. Identical full keys share across repositories; namespaces identify values, not authorize access. <code>run</code> replaces itself with the child, where resolved values become ordinary process memory and environment.</p>
-            <a class="text-link" href="./docs/cli/">CLI quickstart →</a>
+            <p class="terminal-note">References resolve from one per-user store; namespaces identify values, not access boundaries. <code>run</code> places resolved values in the launched process environment.</p>
+            <a class="text-link" href="./docs/cli/">Full CLI guide →</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="sdk-section" id="sdk" aria-labelledby="sdk-title">
+        <div class="shell sdk-strip">
+          <div class="sdk-copy">
+            <p class="eyebrow">Dart / Flutter SDK</p>
+            <h2 id="sdk-title">Read secrets directly.</h2>
+            <p><code>SecretStorage(appId:)</code> applies Keybay's fixed runtime policy across iOS, Android 12+, macOS, and Linux desktop.</p>
+            <a class="text-link" href="./docs/guide/#sdk-quickstart">SDK quickstart →</a>
+          </div>
+          <div class="sdk-example" aria-label="Keybay Dart SDK example">
+            <p class="code-label">Dart</p>
+            <pre><code class="language-dart" data-language="dart">import 'package:keybay/keybay.dart';
+
+final store = SecretStorage(appId: 'com.example.app');
+await store.writeString('api-token', tokenFromOAuth);
+final stored = await store.readString('api-token');</code></pre>
           </div>
         </div>
       </section>
@@ -143,13 +153,13 @@ Keybay example app started.
         <div class="shell source-grid">
           <div>
             <h2 id="scope-title">Local by design.</h2>
-            <p>The SDK stores values in a local store named by <code>appId</code>; the CLI stores per-user developer values. Keybay provides no synchronization, team administration, hosted control plane, or production-secret provisioning.</p>
+            <p>The CLI stores per-user developer values; the SDK stores values in a local store named by <code>appId</code>. Keybay provides no synchronization, team administration, hosted control plane, or production-secret provisioning.</p>
             <a class="text-link" href="./docs/comparison/">Choose the right category →</a>
           </div>
           <div>
             <p class="source-note">One exact-pinned third-party runtime dependency. Documentation is generated from repository sources at every deploy.</p>
             <div class="source-links">
-              <a href="./docs/"><strong>Use Keybay →</strong><span>SDK and CLI quickstarts.</span></a>
+              <a href="./docs/"><strong>Use Keybay →</strong><span>CLI and SDK quickstarts.</span></a>
               <a href="./docs/architecture/"><strong>Understand it →</strong><span>Storage shapes and resolver.</span></a>
               <a href="./docs/design/"><strong>Audit it →</strong><span>Cryptography, concurrency, and limits.</span></a>
             </div>

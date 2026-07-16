@@ -42,8 +42,9 @@ pre {
   overflow: auto;
   margin: 0;
   border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #ecece5;
+  border-top: 2px solid var(--ink);
+  border-radius: 4px;
+  background: var(--panel);
   color: #20251e;
   font-size: 0.84rem;
   line-height: 1.65;
@@ -172,9 +173,9 @@ footer a:hover,
 
 .hero-grid {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(420px, 1.1fr);
+  grid-template-columns: minmax(0, 0.8fr) minmax(460px, 1.2fr);
   align-items: start;
-  gap: 56px;
+  gap: 48px;
   padding-bottom: 58px;
 }
 
@@ -202,31 +203,6 @@ footer a:hover,
   font-size: clamp(1.08rem, 2vw, 1.28rem);
 }
 
-.hero-sdk {
-  padding-top: 16px;
-  border-top: 2px solid var(--ink);
-}
-
-.hero-sdk .code-label,
-.hero-example .code-label {
-  margin-bottom: 10px;
-}
-
-.hero-sdk pre,
-.hero-example pre {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  padding: 0;
-  font-size: 0.8rem;
-  line-height: 1.58;
-}
-
-.hero-sdk .text-link,
-.hero-example .text-link {
-  margin-top: 16px;
-}
-
 .release-note {
   margin: 0 0 24px;
   color: var(--muted);
@@ -235,19 +211,107 @@ footer a:hover,
 }
 
 .hero-example {
-  border-top: 3px solid var(--ink);
-  padding-top: 16px;
+  min-width: 0;
 }
 
 .hero-example pre + .code-label {
-  margin-top: 24px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--dark-line);
+}
+
+.code-panel {
+  padding: 22px 24px 24px;
+  border: 1px solid var(--dark-line);
+  border-top: 3px solid var(--accent);
+  border-radius: 4px;
+  background: var(--dark);
+  color: #e6ebe2;
+}
+
+.interface-label {
+  margin-bottom: 24px;
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 760;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.code-panel .code-label {
+  margin-bottom: 10px;
+  color: #9aa495;
+}
+
+.code-panel pre {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #e6ebe2;
+  padding: 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.code-panel .text-link {
+  margin-top: 16px;
+  color: #f3f5f0;
 }
 
 .terminal-note {
   margin: 16px 0 0;
-  color: var(--muted);
+  color: var(--dark-copy);
   font-size: 0.75rem;
   line-height: 1.5;
+}
+
+.sdk-section {
+  padding: 46px 0;
+  border-top: 1px solid var(--line);
+}
+
+.sdk-strip {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.75fr) minmax(0, 1.25fr);
+  align-items: center;
+  gap: 64px;
+}
+
+.sdk-copy h2 {
+  margin-bottom: 14px;
+  font-size: clamp(2.15rem, 4vw, 2.8rem);
+}
+
+.sdk-copy > p:not(.eyebrow) {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.sdk-copy .text-link {
+  margin-top: 18px;
+}
+
+.sdk-example {
+  min-width: 0;
+  padding: 18px 20px 20px;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--ink);
+  border-radius: 4px;
+  background: var(--panel);
+}
+
+.sdk-example .code-label {
+  margin-bottom: 10px;
+}
+
+.sdk-example pre {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 0.82rem;
+  line-height: 1.6;
 }
 
 .section {
@@ -470,7 +534,7 @@ pre .c,
 pre .c1,
 pre .cm,
 pre .cs {
-  color: #6f776b;
+  color: #646c60;
   font-style: italic;
 }
 
@@ -566,6 +630,20 @@ pre .mo {
 .highlight .err,
 pre .err {
   color: #a33b32;
+}
+
+/* Primary CLI sample: restrained dark syntax palette with AA contrast. */
+.code-panel pre .k {
+  color: #d1b4eb;
+}
+
+.code-panel pre .nt {
+  color: #9fd8bc;
+}
+
+.code-panel pre .nb,
+.code-panel pre .nv {
+  color: var(--accent);
 }
 
 /* Generated documentation. */
@@ -933,6 +1011,13 @@ pre .err {
   color: var(--muted);
 }
 
+@media (max-width: 900px) {
+  .hero-grid {
+    grid-template-columns: 1fr;
+    gap: 42px;
+  }
+}
+
 @media (max-width: 760px) {
   :root {
     --shell: min(100% - 28px, 640px);
@@ -940,6 +1025,10 @@ pre .err {
 
   .site-header nav a:not(:nth-last-child(-n + 2)) {
     display: none;
+  }
+
+  .site-header .home-nav a:first-child {
+    display: inline;
   }
 
   .docs-main {
@@ -1037,6 +1126,7 @@ pre .err {
   }
 
   .hero-grid,
+  .sdk-strip,
   .compact-heading,
   .security-layout,
   .source-grid {
@@ -1058,6 +1148,15 @@ pre .err {
 
   .section {
     padding: 52px 0;
+  }
+
+  .sdk-section {
+    padding: 44px 0;
+  }
+
+  .sdk-strip {
+    align-items: start;
+    gap: 30px;
   }
 
   .compact-heading {
@@ -1162,8 +1261,13 @@ pre .err {
     font-size: 0.84rem;
   }
 
-  .hero-example pre {
-    font-size: 0.84rem;
+  .code-panel,
+  .sdk-example {
+    padding: 16px;
+  }
+
+  .code-panel pre {
+    font-size: 0.82rem;
   }
 
   .docs-mobile-menu-inner {
