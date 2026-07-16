@@ -43,11 +43,12 @@ final token = await store.readString('api_token');   // 's3cr3t'
 await store.delete('api_token');
 ```
 
-`appId` is the only knob — it names the logical store and derives its path or
-service identity; the runtime selects the fixed platform scheme. The storage
-path and mechanism are deliberately not configurable. Values are bytes
-(`Uint8List`) at the core, with
-`readString`/`writeString` for convenience.
+`SecretStorage(appId:)` has one production knob: `appId` names the logical
+store and derives its path or service identity; the runtime selects the fixed
+platform scheme. `SecretStorage.withBackend` is the explicit test/custom
+integration hatch for callers that construct a backend themselves, not a
+weaker mode selected by configuration. Values are bytes (`Uint8List`) at the
+core, with `readString`/`writeString` for convenience.
 
 ## CLI quickstart
 

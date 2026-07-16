@@ -18,17 +18,37 @@ REPOSITORY = "https://github.com/danReynolds/keybay"
 PUBLIC_FILES = %w[index.html styles.css 404.html robots.txt].freeze
 
 DOCUMENTS = [
-  {source: "README.md", route: "docs/guide/", group: "Start", label: "Dart & Flutter SDK", summary: "Install the SDK, open a store with one appId, and understand the supported runtime and threat-model boundaries."},
-  {source: "packages/keybay_cli/README.md", route: "docs/cli/", group: "Start", label: "CLI", summary: "Commit a small manifest, store project-qualified values locally, and launch exactly one process with resolved environment variables."},
-  {source: "doc/platforms/ios.md", route: "docs/platforms/ios/", group: "Platforms", label: "iOS", summary: "Native Data Protection Keychain items with a fixed device-bound, non-synchronizing accessibility policy."},
-  {source: "doc/platforms/android.md", route: "docs/platforms/android/", group: "Platforms", label: "Android", summary: "An authenticated app-private file whose store key is wrapped by Android Keystore on Android 12 and newer."},
-  {source: "doc/platforms/macos.md", route: "docs/platforms/macos/", group: "Platforms", label: "macOS", summary: "Native Data Protection Keychain items for entitled apps; an authenticated file with a login-Keychain key otherwise."},
-  {source: "doc/platforms/linux.md", route: "docs/platforms/linux/", group: "Platforms", label: "Linux", summary: "An authenticated local file whose store key is kept by an unlocked Secret Service provider."},
-  {source: "doc/architecture.md", route: "docs/architecture/", group: "Security", label: "Architecture", summary: "Two storage shapes, one automatic platform resolver, and no public backend-selection knobs."},
-  {source: "doc/design.md", route: "docs/design/", group: "Security", label: "Cryptography and design", summary: "The container format, FFI boundaries, threat model, concurrency, supply-chain controls, and design rationale."},
-  {source: "SECURITY.md", route: "docs/security/", group: "Security", label: "Security policy", summary: "The supported threat model, cryptographic primitives, dependency posture, and private vulnerability-reporting route."},
-  {source: "doc/cli-recovery.md", route: "docs/recovery/", group: "Operate", label: "CLI recovery", summary: "Preserve evidence, diagnose platform-store failures, and deliberately re-provision an unreadable local CLI store."},
-  {source: "doc/ecosystem-comparison.md", route: "docs/comparison/", group: "Decide", label: "Choosing Keybay", summary: "Choose the smallest tool that matches whether you need local storage, provider portability, team sharing, or encrypted files."},
+  {source: "README.md", route: "docs/guide/", label: "Dart & Flutter SDK", summary: "Install the SDK, open a store with one appId, and understand the supported runtime and threat-model boundaries."},
+  {source: "packages/keybay_cli/README.md", route: "docs/cli/", label: "CLI", summary: "Commit a small manifest, store project-qualified values locally, and launch exactly one process with resolved environment variables."},
+  {source: "doc/platforms/ios.md", route: "docs/platforms/ios/", label: "iOS", summary: "Native Data Protection Keychain items with a fixed device-bound, non-synchronizing accessibility policy."},
+  {source: "doc/platforms/android.md", route: "docs/platforms/android/", label: "Android", summary: "An authenticated app-private file whose store key is wrapped by Android Keystore on Android 12 and newer."},
+  {source: "doc/platforms/macos.md", route: "docs/platforms/macos/", label: "macOS", summary: "Native Data Protection Keychain items for entitled apps; an authenticated file with a login-Keychain key otherwise."},
+  {source: "doc/platforms/linux.md", route: "docs/platforms/linux/", label: "Linux", summary: "An authenticated local file whose store key is kept by an unlocked Secret Service provider."},
+  {source: "doc/architecture.md", route: "docs/architecture/", label: "Architecture", summary: "Two storage shapes, one automatic production resolver, and an explicit test-backend hatch."},
+  {source: "doc/design.md", route: "docs/design/", label: "Cryptography and design", summary: "The container format, FFI boundaries, threat model, concurrency, supply-chain controls, and design rationale."},
+  {source: "SECURITY.md", route: "docs/security/", label: "Security policy", summary: "The supported threat model, cryptographic primitives, dependency posture, and private vulnerability-reporting route."},
+  {source: "doc/cli-recovery.md", route: "docs/recovery/", label: "CLI recovery", summary: "Preserve evidence, diagnose platform-store failures, and deliberately re-provision an unreadable local CLI store."},
+  {source: "doc/ecosystem-comparison.md", route: "docs/comparison/", label: "Choosing Keybay", summary: "Choose the smallest tool that matches whether you need local storage, provider portability, team sharing, or encrypted files."},
+].freeze
+
+# Every source above remains rendered and linkable. The permanent navigation is
+# intentionally smaller: source-backed does not mean globally prominent.
+PRIMARY_NAVIGATION = [
+  {
+    group: "Use",
+    links: [
+      {label: "Dart & Flutter SDK", route: "docs/guide/", fragment: "sdk-quickstart"},
+      {label: "CLI", route: "docs/cli/"},
+    ],
+  },
+  {
+    group: "Understand",
+    links: [
+      {label: "Storage by platform", route: "docs/", fragment: "platforms"},
+      {label: "Architecture", route: "docs/architecture/"},
+      {label: "Security design", route: "docs/design/"},
+    ],
+  },
 ].freeze
 
 def command_output(*command)
@@ -169,14 +189,15 @@ def table_of_contents(html)
 end
 
 def document_navigation(active_route = nil)
-  DOCUMENTS.group_by { |document| document[:group] }.map do |group, documents|
-    links = documents.map do |document|
-      current = document[:route] == active_route ? ' aria-current="page"' : ""
-      %(<a href="#{site_path(document[:route])}"#{current}>#{escape(document[:label])}</a>)
+  PRIMARY_NAVIGATION.map do |section|
+    links = section[:links].map do |link|
+      current = link[:route] == active_route ? ' aria-current="page"' : ""
+      fragment = link[:fragment] ? "##{link[:fragment]}" : ""
+      %(<a href="#{site_path(link[:route])}#{fragment}"#{current}>#{escape(link[:label])}</a>)
     end.join("\n")
     <<~HTML
       <div class="docs-nav-section">
-        <p>#{escape(group)}</p>
+        <p>#{escape(section[:group])}</p>
         #{links}
       </div>
     HTML
@@ -241,7 +262,7 @@ def site_header
         <a class="brand" href="#{site_path}" aria-label="Keybay home"><span aria-hidden="true">k/</span> keybay</a>
         <nav aria-label="Main navigation">
           <a href="#{site_path}">Overview</a>
-          <a href="#{site_path("docs/")}">Documentation</a>
+          <a href="#{site_path("docs/")}">Docs</a>
           <a href="#{REPOSITORY}">GitHub ↗</a>
         </nav>
       </div>
@@ -254,7 +275,7 @@ def site_footer
     <footer>
       <div class="shell footer-inner">
         <span>keybay · MIT</span>
-        <span><a href="#{site_path("docs/")}">Documentation</a> · <a href="#{REPOSITORY}">GitHub</a></span>
+        <span><a href="#{site_path("docs/")}">Docs</a> · <a href="#{site_path("docs/security/")}#reporting">Report a vulnerability</a> · <a href="#{REPOSITORY}">GitHub</a></span>
       </div>
     </footer>
   HTML
@@ -291,7 +312,6 @@ def document_page(document, markdown)
             </aside>
             <article class="doc" data-source="#{escape(document[:source])}" data-source-digest="#{digest}">
               <header class="doc-header">
-                <p class="eyebrow">#{escape(document[:group])}</p>
                 <h1>#{escape(title)}</h1>
               </header>
               #{mobile_document_navigation(document[:route], headings)}
@@ -311,23 +331,19 @@ def document_page(document, markdown)
 end
 
 def documentation_index(metadata)
-  groups = metadata.group_by { |item| item[:document][:group] }.map do |group, items|
-    entries = items.map do |item|
+  by_route = metadata.to_h { |item| [item[:document][:route], item] }
+  list = lambda do |routes|
+    routes.map do |route|
+      item = by_route.fetch(route)
       document = item[:document]
       <<~HTML
         <li>
-          <a href="#{site_path(document[:route])}">#{escape(document[:label])}</a>
+          <a href="#{site_path(route)}">#{escape(document[:label])}</a>
           <p>#{escape(item[:summary])}</p>
         </li>
       HTML
     end.join
-    <<~HTML
-      <section class="doc-index-group">
-        <h2>#{escape(group)}</h2>
-        <ul>#{entries}</ul>
-      </section>
-    HTML
-  end.join
+  end
 
   <<~HTML
     <!doctype html>
@@ -338,25 +354,30 @@ def documentation_index(metadata)
       <body>
         #{site_header}
         <main id="main" class="docs-main">
-          <div class="shell docs-layout">
-            <aside class="docs-sidebar">
-              <div class="docs-menu">
-                <p class="docs-menu-title">Documentation</p>
-                <nav aria-label="Documentation">
-                  #{document_navigation}
-                </nav>
-              </div>
-            </aside>
-            <article class="doc doc-index">
-              <header class="doc-header">
-                <p class="eyebrow">Canonical sources</p>
-                <h1>Documentation</h1>
-                <p class="doc-index-lede">Built from the repository on every deployment. Read the rendered page or follow its source link to the exact commit.</p>
-              </header>
-              #{mobile_document_navigation(nil, [])}
-              #{groups}
-            </article>
-          </div>
+          <article class="shell doc doc-index">
+            <header class="doc-header">
+              <h1>Documentation</h1>
+              <p class="doc-index-lede">Choose the path that matches what you need to do.</p>
+            </header>
+
+            <nav class="doc-starts" aria-label="Start with Keybay">
+              <a href="#{site_path("docs/guide/")}#sdk-quickstart"><strong>Dart & Flutter SDK →</strong><span>Store and read secrets directly.</span></a>
+              <a href="#{site_path("docs/cli/")}"><strong>Local-process CLI →</strong><span>Resolve a committed manifest into one process.</span></a>
+              <a href="#{site_path("docs/design/")}"><strong>Evaluate security →</strong><span>Inspect the cryptography, threat model, and limits.</span></a>
+            </nav>
+
+            <section class="doc-index-group" id="platforms">
+              <h2>Storage by platform</h2>
+              <ul>#{list.call(%w[docs/platforms/ios/ docs/platforms/android/ docs/platforms/macos/ docs/platforms/linux/])}</ul>
+            </section>
+
+            <section class="doc-index-group">
+              <h2>Reference</h2>
+              <ul>#{list.call(%w[docs/architecture/ docs/recovery/ docs/comparison/ docs/security/])}</ul>
+            </section>
+
+            <p class="doc-index-provenance">Every page is generated from its repository source and links to the exact deployed commit.</p>
+          </article>
         </main>
         #{site_footer}
       </body>
