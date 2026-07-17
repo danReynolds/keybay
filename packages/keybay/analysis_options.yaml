@@ -1,9 +1,9 @@
-# Repo-level analysis for the workspace root and tool/. Each package
-# (packages/keybay, packages/keybay_cli) carries its own analysis_options.yaml,
-# which the analyzer uses for that subtree; this covers everything else.
 include: package:lints/recommended.yaml
 
 analyzer:
+  # These are separate Flutter packages with their own analysis options. The
+  # root `dart analyze` job resolves only this Dart package (no Flutter SDK),
+  # so analyze each with `flutter analyze` from its own directory.
   exclude:
     - example_flutter/**
     - packages/keybay_cli/example/flutter/**

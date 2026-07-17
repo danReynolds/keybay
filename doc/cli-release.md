@@ -115,19 +115,16 @@ pull request rather than a half-finished release.
    git push origin v0.1.0
    ```
 
-   The bootstrap guard in `publish.yml` validates the signed tag and exact
-   archive but deliberately skips OIDC because pub.dev does not permit
-   automated first publication. After that workflow succeeds, check out the
-   exact tag in a clean checkout and publish the core manually:
+   The bootstrap guard in `publish.yml` validates the signed tag but
+   deliberately skips OIDC because pub.dev does not permit automated first
+   publication. After that workflow succeeds, check out the exact tag in a clean
+   checkout and publish the core manually — directly from its own directory (the
+   core is a plain workspace member, `packages/keybay`, so no staging is needed):
 
    ```sh
    git checkout --detach v0.1.0
-   ./tool/validate_publish.sh . cryptography ffi
-   core_stage="$(mktemp -d)"
-   rmdir "$core_stage"
-   ./tool/stage_core_publish.sh "$core_stage"
-   (cd "$core_stage" && dart pub publish)
-   rm -rf "$core_stage"
+   ./tool/validate_publish.sh packages/keybay cryptography ffi
+   dart pub -C packages/keybay publish
    ```
 
    Review the archive before confirming. Then enable GitHub trusted publishing
@@ -176,7 +173,7 @@ on 2026-07-13; offline-first installer distribution is not a v1 requirement.
    ```sh
    ./tool/test.sh
    ./tool/test_linux.sh
-   ./tool/validate_publish.sh . cryptography ffi
+   ./tool/validate_publish.sh packages/keybay cryptography ffi
    ./tool/validate_publish.sh packages/keybay_cli ffi keybay
    ```
 

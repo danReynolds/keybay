@@ -82,7 +82,7 @@ packages:
     source: hosted
     version: "3.0.7"
   cryptography:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: cryptography
       sha256: "3eda3029d34ec9095a27a198ac9785630fe525c0eb6a49f3d575272f8e792ef0"
@@ -90,7 +90,7 @@ packages:
     source: hosted
     version: "2.9.0"
   ffi:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: ffi
       sha256: "6d7fd89431262d8f3125e81b50d3847a091d846eafcd4fdb88dd06f36d705a45"
@@ -146,7 +146,7 @@ packages:
     source: hosted
     version: "1.0.5"
   lints:
-    dependency: "direct dev"
+    dependency: transitive
     description:
       name: lints
       sha256: c35bb79562d980e9a453fc715854e1ed39e24e7d0297a880ef54e17f9874a9d7
@@ -314,7 +314,7 @@ packages:
     source: hosted
     version: "1.2.2"
   test:
-    dependency: "direct dev"
+    dependency: transitive
     description:
       name: test
       sha256: "0d5ba5602ec3baa28c8ce365e1efc5575969c765f45c554a3e167dc7945b9c30"

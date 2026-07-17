@@ -1,0 +1,35 @@
+name: keybay
+description: >-
+  Cross-platform secret storage for Dart without Flutter: native Data
+  Protection Keychain items on Apple platforms where available, or an
+  authenticated encrypted file with an OS-protected key.
+version: 0.1.0
+repository: https://github.com/danReynolds/keybay
+homepage: https://danreynolds.github.io/keybay/
+issue_tracker: https://github.com/danReynolds/keybay/issues
+topics:
+  - security
+  - secrets
+  - keychain
+  - keystore
+  - credentials
+
+environment:
+  sdk: ^3.6.0
+
+resolution: workspace
+
+# Dependency policy (doc/design.md §10): exactly one third-party runtime dependency,
+# exact-pinned, its transitive closure entirely dart-lang official. A
+# dart pub deps snapshot test (test/dependency_closure_test.dart) fails CI if
+# this tree changes. Do not widen a pin or add a dependency without the RFC's
+# review bar.
+dependencies:
+  cryptography: 2.9.0 # exact pin — vector-firewalled in test/
+  # dart-lang official; needed for the POSIX file shim (0600-from-birth + fsync,
+  # which dart:io cannot express). Already in cryptography's transitive closure.
+  ffi: 2.2.0
+
+dev_dependencies:
+  lints: ^5.0.0
+  test: ^1.25.0

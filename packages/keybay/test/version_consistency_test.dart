@@ -20,7 +20,7 @@ String? _match(RegExp pattern, String path) =>
 void main() {
   // Present in the workspace checkout (CI); absent in the published core
   // package, where this whole guard is moot.
-  final inWorkspace = File('packages/keybay_cli/pubspec.yaml').existsSync();
+  final inWorkspace = File('../keybay_cli/pubspec.yaml').existsSync();
 
   test('the two packages carry one lockstep version across all references', () {
     if (!inWorkspace) {
@@ -29,11 +29,10 @@ void main() {
     }
     final references = <String, String?>{
       'core pubspec version': _match(_version, 'pubspec.yaml'),
-      'cli pubspec version':
-          _match(_version, 'packages/keybay_cli/pubspec.yaml'),
-      'cli keybay pin': _match(_keybayPin, 'packages/keybay_cli/pubspec.yaml'),
+      'cli pubspec version': _match(_version, '../keybay_cli/pubspec.yaml'),
+      'cli keybay pin': _match(_keybayPin, '../keybay_cli/pubspec.yaml'),
       'cliVersion constant':
-          _match(_cliConst, 'packages/keybay_cli/lib/src/command.dart'),
+          _match(_cliConst, '../keybay_cli/lib/src/command.dart'),
     };
 
     for (final entry in references.entries) {
@@ -61,10 +60,9 @@ void main() {
       reason: 'core CHANGELOG.md has no "## $version" section',
     );
     expect(
-      heading.hasMatch(
-          File('packages/keybay_cli/CHANGELOG.md').readAsStringSync()),
+      heading.hasMatch(File('../keybay_cli/CHANGELOG.md').readAsStringSync()),
       isTrue,
-      reason: 'packages/keybay_cli/CHANGELOG.md has no "## $version" section',
+      reason: '../keybay_cli/CHANGELOG.md has no "## $version" section',
     );
   });
 }

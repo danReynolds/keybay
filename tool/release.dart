@@ -5,7 +5,7 @@
 // tag-triggered GitHub Actions. Four references must agree on the release
 // version:
 //
-//   pubspec.yaml                              version:     (core)
+//   packages/keybay/pubspec.yaml              version:     (core)
 //   packages/keybay_cli/pubspec.yaml          version:     (cli)
 //   packages/keybay_cli/pubspec.yaml          keybay:      (cli's exact core pin)
 //   packages/keybay_cli/lib/src/command.dart  cliVersion            (`--version`)
@@ -162,13 +162,13 @@ String insertChangelogStub(String content, String version) {
 // ---------------------------------------------------------------------------
 
 const Map<VersionField, String> _fieldFiles = <VersionField, String>{
-  VersionField.corePubspecVersion: 'pubspec.yaml',
+  VersionField.corePubspecVersion: 'packages/keybay/pubspec.yaml',
   VersionField.cliPubspecVersion: 'packages/keybay_cli/pubspec.yaml',
   VersionField.cliKeybayPin: 'packages/keybay_cli/pubspec.yaml',
   VersionField.cliVersionConst: 'packages/keybay_cli/lib/src/command.dart',
 };
 
-const String _coreChangelog = 'CHANGELOG.md';
+const String _coreChangelog = 'packages/keybay/CHANGELOG.md';
 const String _cliChangelog = 'packages/keybay_cli/CHANGELOG.md';
 
 String _repoRoot() {

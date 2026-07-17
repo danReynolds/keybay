@@ -20,7 +20,7 @@ name: release on merge
 on:
   push:
     branches: [main]
-    paths: ['pubspec.yaml']
+    paths: ['packages/keybay/pubspec.yaml']
 
 permissions:
   contents: read
@@ -35,7 +35,7 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_TAG_TOKEN }}
         run: |
           set -euo pipefail
-          version="$(awk '$1 == "version:" { print $2 }' pubspec.yaml)"
+          version="$(awk '$1 == "version:" { print $2 }' packages/keybay/pubspec.yaml)"
           test -n "$version"
           core_tag="v$version"
 

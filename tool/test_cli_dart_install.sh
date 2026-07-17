@@ -13,10 +13,10 @@ trap 'rm -rf "$tmp"' EXIT
 cp -R "$repo/packages/keybay_cli" "$tmp/keybay_cli"
 rm -rf "$tmp/keybay_cli/.dart_tool"
 
-awk -v root="$repo" '
+awk -v core="$repo/packages/keybay" '
   $0 == "  keybay: 0.1.0" {
     print "  keybay:"
-    print "    path: " root
+    print "    path: " core
     next
   }
   { print }
