@@ -35,7 +35,9 @@ jobs:
       - run: dart format --output=none --set-exit-if-changed .
       - run: dart analyze --fatal-infos
       - run: dart test -x integration
-      - run: dart test packages/keybay_cli/test -x integration
+        working-directory: packages/keybay
+      - run: dart test -x integration
+        working-directory: packages/keybay_cli
       - run: ./tool/test_cli.sh
       - run: ./tool/validate_publish.sh packages/keybay_cli ffi keybay
 

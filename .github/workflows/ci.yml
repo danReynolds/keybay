@@ -44,16 +44,20 @@ jobs:
       - run: dart format --output=none --set-exit-if-changed .
       - run: dart analyze --fatal-infos
       # Unit tier (hermetic): crypto vectors, container/fuzz, POSIX perms,
-      # backend logic over fakes, and the dependency-closure firewall.
+      # backend logic over fakes, and the dependency-closure firewall. Each
+      # package's tests run from its own directory (they read cwd-relative
+      # package files).
       - run: dart test -x integration
-      - run: dart test packages/keybay_cli/test -x integration
+        working-directory: packages/keybay
+      - run: dart test -x integration
+        working-directory: packages/keybay_cli
       - run: ./tool/test_cli.sh
       # Exercise the exact package archive and warning contract before a tag.
       # The 3.10 floor predates --ignore-warnings, so this belongs on the
       # current-SDK Linux lane rather than cli-minimum-sdk.
       - if: runner.os == 'Linux'
         run: |
-          ./tool/validate_publish.sh . cryptography ffi
+          ./tool/validate_publish.sh packages/keybay cryptography ffi
           ./tool/validate_publish.sh packages/keybay_cli ffi keybay
 
   cli-minimum-sdk:
@@ -74,7 +78,8 @@ jobs:
       # The CLI's documented SDK floor is a tested product channel, including
       # AOT/exec/PTY behavior, not only a pubspec constraint. Dart 3.10's
       # hosted-only install proof follows first publication (release runbook).
-      - run: dart test packages/keybay_cli/test -x integration
+      - run: dart test -x integration
+        working-directory: packages/keybay_cli
       - run: KEYBAY_SKIP_DART_INSTALL=1 ./tool/test_cli.sh
 
   integration-macos:
@@ -86,6 +91,7 @@ jobs:
       - run: dart pub get --enforce-lockfile
       # Real login Keychain round-trip.
       - run: KEYBAY_INTEGRATION=1 dart test test/keychain_integration_test.dart
+        working-directory: packages/keybay
       - run: ./tool/test_cli_storage.sh
       # Package, verify, extract, and execute the exact README onboarding loop
       # against the fixed-appId product. GitHub-hosted runners are disposable
@@ -110,7 +116,7 @@ jobs:
           dbus-run-session -- bash -c '
             eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
             export GNOME_KEYRING_CONTROL
-            KEYBAY_INTEGRATION=1 dart test test/secret_service_integration_test.dart
+            (cd packages/keybay && KEYBAY_INTEGRATION=1 dart test test/secret_service_integration_test.dart)
             ./tool/test_cli_storage.sh
             KEYBAY_QUICKSTART=1 ./tool/test_cli_quickstart.sh
             KEYBAY_BENCHMARK=1 KEYBAY_BENCHMARK_ITERATIONS=100 \
@@ -135,7 +141,7 @@ jobs:
           dbus-run-session -- bash -c '
             eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
             export GNOME_KEYRING_CONTROL
-            KEYBAY_INTEGRATION=1 KEYBAY_LOCKED_TEST=1 dart test test/secret_service_locked_integration_test.dart
+            (cd packages/keybay && KEYBAY_INTEGRATION=1 KEYBAY_LOCKED_TEST=1 dart test test/secret_service_locked_integration_test.dart)
           '
       # The CLI has its own locked-store contract: exit 69, actionable text,
       # and no secret in diagnostics. Keep it in a third disposable session

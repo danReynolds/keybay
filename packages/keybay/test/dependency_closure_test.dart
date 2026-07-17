@@ -70,9 +70,4 @@ void main() {
     // pubspec_overrides.yaml silently overrides the pinned resolution.
     expect(File('pubspec_overrides.yaml').existsSync(), isFalse);
   });
-
-  test('pubignore does not hide the separately published CLI package', () {
-    final pubignore = File('.pubignore').readAsStringSync();
-    expect(pubignore, isNot(contains(RegExp(r'^packages/$', multiLine: true))));
-  });
 }

@@ -14,22 +14,13 @@ package_directory="$1"
 shift
 expected_warning_count="$#"
 output="$(mktemp "${TMPDIR:-/tmp}/keybay-publish.XXXXXX")"
-core_stage=""
 cleanup() {
   rm -f "$output"
-  if [[ -n "$core_stage" ]]; then
-    rm -rf "$core_stage"
-  fi
 }
 trap cleanup EXIT
 
-if [[ "$package_directory" == "." ]]; then
-  core_stage="$(mktemp -d "${TMPDIR:-/tmp}/keybay-core-publish.XXXXXX")"
-  rmdir "$core_stage"
-  ./tool/stage_core_publish.sh "$core_stage"
-  package_directory="$core_stage"
-fi
-
+# Both packages publish directly from their own workspace directory
+# (packages/keybay, packages/keybay_cli) — no staging.
 dart pub -C "$package_directory" publish --dry-run --ignore-warnings \
   2>&1 | tee "$output"
 

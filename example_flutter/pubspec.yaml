@@ -14,7 +14,7 @@ dependencies:
   flutter:
     sdk: flutter
   keybay:
-    path: ../
+    path: ../packages/keybay
 
 dev_dependencies:
   flutter_test:

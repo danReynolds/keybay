@@ -15,11 +15,11 @@ dart format --output=none --set-exit-if-changed .
 echo "==> analyze (--fatal-infos)"
 dart analyze --fatal-infos
 echo "==> unit tier"
-dart test -x integration
-dart test packages/keybay_cli/test -x integration
+(cd packages/keybay && dart test -x integration)
+(cd packages/keybay_cli && dart test -x integration)
 ./tool/test_cli.sh
 echo "==> native OS-keystore integration tier (real keychain/secret-service)"
-KEYBAY_INTEGRATION=1 dart test -t integration
+(cd packages/keybay && KEYBAY_INTEGRATION=1 dart test -t integration)
 ./tool/test_cli_storage.sh
 
 echo

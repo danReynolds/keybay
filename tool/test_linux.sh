@@ -43,7 +43,7 @@ dbus-run-session -- bash -c '
   set -euo pipefail
   eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
   export GNOME_KEYRING_CONTROL
-  KEYBAY_INTEGRATION=1 dart test test/secret_service_integration_test.dart
+  (cd packages/keybay && KEYBAY_INTEGRATION=1 dart test test/secret_service_integration_test.dart)
   ./tool/test_cli_storage.sh
   CI=true KEYBAY_QUICKSTART=1 ./tool/test_cli_quickstart.sh
   KEYBAY_BENCHMARK=1 KEYBAY_BENCHMARK_ITERATIONS=100 \
@@ -57,7 +57,7 @@ dbus-run-session -- bash -c '
   set -euo pipefail
   eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
   export GNOME_KEYRING_CONTROL
-  KEYBAY_INTEGRATION=1 KEYBAY_LOCKED_TEST=1 dart test test/secret_service_locked_integration_test.dart
+  (cd packages/keybay && KEYBAY_INTEGRATION=1 KEYBAY_LOCKED_TEST=1 dart test test/secret_service_locked_integration_test.dart)
 '
 
 # The CLI guidance is a separate contract from the library's raw API behavior.

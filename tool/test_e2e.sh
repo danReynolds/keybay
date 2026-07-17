@@ -164,11 +164,14 @@ trap cleanup_e2e EXIT
 
 leg_unit() {
   cd "$REPO" && dart format --output=none --set-exit-if-changed . &&
-    dart analyze --fatal-infos && dart test -x integration &&
-    dart test packages/keybay_cli/test -x integration && ./tool/test_cli.sh
+    dart analyze --fatal-infos &&
+    (cd packages/keybay && dart test -x integration) &&
+    (cd packages/keybay_cli && dart test -x integration) && ./tool/test_cli.sh
 }
 leg_macos_cli() {
-  cd "$REPO" && KEYBAY_INTEGRATION=1 dart test test/keychain_integration_test.dart &&
+  cd "$REPO" &&
+    (cd packages/keybay &&
+      KEYBAY_INTEGRATION=1 dart test test/keychain_integration_test.dart) &&
     ./tool/test_cli_storage.sh
 }
 leg_linux() { cd "$REPO" && ./tool/test_linux.sh; }
