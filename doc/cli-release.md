@@ -83,10 +83,25 @@ The separate no-bypass ruleset keeps even the owner from moving or deleting a
 tag after creation. Repository administration remains the unavoidable GitHub
 root of trust; the frozen SSH signature adds local intent and an auditable key.
 
-GitHub does not reveal stored secret values. During migration, re-enter each
-value into its narrower environment, merge the hardened workflows, verify the
-new names, and only then delete the old all-purpose `release` environment.
-Never delete the old environment first.
+GitHub does not reveal stored secret values, so names alone do not prove a safe
+migration. Complete this gate before creating any `v*` or `keybay_cli-v*` tag:
+
+1. Merge the hardened workflows first; do not put credentials into jobs from an
+   older commit.
+2. Obtain the canonical credentials or issue fresh ones. In disposable local
+   state, prove that the P12/password imports as exactly one Developer ID
+   Application identity for Team `5AHFA9FUZG`; the P8/key ID/issuer tuple can
+   authenticate `xcrun notarytool history`; and the Homebrew token is restricted
+   to `danReynolds/homebrew-tap` with only Metadata read and Contents read/write.
+3. Enter those values into the three narrow environments above, verify every
+   name and deployment tag restriction, and remove the disposable local copies.
+4. Only after those checks pass, delete the old all-purpose `release`
+   environment.
+
+This is a pre-tag gate, not cleanup after a test release. The core tag can
+publish successfully through OIDC before absent or incorrect CLI credentials
+are discovered, and a bad Homebrew token is reached only after GitHub has
+published the immutable CLI release. Never delete the old environment first.
 
 ## Prepare and authorize a release
 
@@ -137,7 +152,9 @@ keybay-release publish cli --dry-run
 `publish.yml` rejects a lightweight, unverified, wrong-version, or stale-main
 tag. A no-credential job runs formatting, analysis, tests, and pub archive
 validation. Only the small final job receives `id-token: write`, checks out the
-same commit afresh, and publishes `packages/keybay` through pub.dev OIDC.
+same commit afresh, and publishes `packages/keybay` through pub.dev OIDC. A
+retry reconstructs the package archive and accepts an already-hosted version
+only when every path, type, mode, and file byte matches that tagged source.
 
 ### CLI tag
 
@@ -215,6 +232,10 @@ a same-run round trip independently proves cross-release upgrade continuity.
   transient Homebrew or pub.dev failures. If a lost response makes the publish
   job rerun, it accepts the existing release only after proving it is immutable
   and every asset byte exactly matches this workflow run; it never alters it.
+- A pub.dev retry likewise rebuilds the exact package archive. If the version
+  already exists, it succeeds only after comparing every package path, type,
+  mode, and file byte; a mismatch fails closed. Otherwise it uploads that same
+  locally validated archive, so publication cannot race a second archive build.
 - Never move a release tag, replace an asset, use `--clobber`, or repair a public
   release in place. If published bytes are wrong, cut a new patch version.
 - A skipped architecture, rejected Apple log, failed public-channel receipt, or

@@ -10,11 +10,10 @@ and Linux desktop, `SecretStorage(appId:)` automatically applies one documented,
 OS-backed storage policy for the current runtime. No Flutter dependency,
 account, Keybay server, resident process, or network path is required.
 
-> `0.1.0` is published on pub.dev. Add the SDK with `dart pub add keybay`; the
-> CLI ships through Homebrew and `dart install keybay_cli`. The 0.1.0 GitHub
-> release predates immutable-release verification, and its macOS
-> native/Homebrew binary is not a current channel on macOS 26; see the [CLI
-> install warning](../packages/keybay_cli/README.md#install).
+> The SDK is available on pub.dev; add it with `dart pub add keybay`. The legacy
+> 0.1.0 GitHub/Homebrew release predates immutable-release verification, and its
+> macOS binary is not a current channel on macOS 26. Require Keybay CLI 0.1.1 or
+> newer; see the [CLI install warning](../packages/keybay_cli/README.md#install).
 
 <span id="cli-quickstart"></span>
 The CLI now has a dedicated [guide](../packages/keybay_cli/README.md).
@@ -149,11 +148,11 @@ real keystore **code path** end-to-end, not that physical silicon mediated it.
 
 ## Status
 
-`0.1.0` is published on pub.dev. The API and on-disk container format may still
+Keybay is published on pub.dev. The API and on-disk container format may still
 change; a future `0.2.0` may carry breaking changes under pub's pre-1.0
-semantics. Implemented and
-validated end-to-end against the genuine platform path: macOS (CLI and
-entitled), Linux, iOS, and Android 12+. Windows is unsupported and fails typed.
+semantics. It is implemented and validated end-to-end against the genuine
+platform path: macOS (CLI and entitled), Linux, iOS, and Android 12+. Windows is
+unsupported and fails typed.
 Headless operation has no supported backend or availability contract.
 Report vulnerabilities per [SECURITY.md](../SECURITY.md); design rationale is in
 [design.md](design.md) and [architecture.md](architecture.md), with the current

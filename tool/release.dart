@@ -24,10 +24,11 @@
 // `publish` is the only outward-facing verb. It creates a *signed* git tag on
 // HEAD and pushes it, which triggers `publish.yml` (core, tag `vX.Y.Z`) or
 // `release_cli.yml` (cli, tag `keybay_cli-vX.Y.Z`). It refuses unless every
-// reference agrees, the tree is clean, the matching CHANGELOG carries the
-// version, and the tag does not already exist. Core must be tagged from the
-// current `origin/main` tip. CLI must be tagged later from that exact core-tag
-// commit, after the core workflow succeeds and the version is live on pub.dev.
+// reference agrees, tracked files are clean, the matching CHANGELOG carries
+// the version, and the tag does not already exist. Core must be tagged from
+// the current `origin/main` tip. CLI must be tagged later from that exact
+// core-tag commit, after the core workflow succeeds and the version is live on
+// pub.dev.
 library;
 
 import 'dart:io';
@@ -171,6 +172,13 @@ const Map<VersionField, String> _fieldFiles = <VersionField, String>{
 
 const String _coreChangelog = 'packages/keybay/CHANGELOG.md';
 const String _cliChangelog = 'packages/keybay_cli/CHANGELOG.md';
+const List<String> _releaseFiles = <String>[
+  'packages/keybay/pubspec.yaml',
+  'packages/keybay_cli/pubspec.yaml',
+  'packages/keybay_cli/lib/src/command.dart',
+  _coreChangelog,
+  _cliChangelog,
+];
 const String _releaseTagSignerFingerprint =
     'SHA256:4ozSnfVaMzZ/qrzo51I8FPKawmZSIojAB5Ll+qhguFM';
 
@@ -289,7 +297,7 @@ void _publish(String root, String target,
   }
   final version = _agreedVersion(_readAll(root)); // fails closed on drift
 
-  _requireCleanTree(root);
+  _requireCleanTrackedTree(root);
   final head = _gitOut(root, <String>['rev-parse', 'HEAD']);
   if (target == 'core') {
     _requireCurrentMainHead(root, head);
@@ -359,11 +367,14 @@ void _releaseCommand(String root, String arg, {required bool dryRun}) {
   final next = RegExp(r'^\d+\.\d+\.\d+$').hasMatch(arg)
       ? Version.parse(arg)
       : current.bump(arg);
+  if (next.compareTo(current) <= 0) {
+    _fail('release version must increase from $current (got $next)');
+  }
   final version = next.toString();
   final branch = 'release/v$version';
 
   if (!dryRun) {
-    _requireCleanTree(root);
+    _requireCleanTrackedTree(root);
     final onBranch =
         _gitOut(root, <String>['rev-parse', '--abbrev-ref', 'HEAD']);
     if (onBranch != 'main') {
@@ -402,7 +413,8 @@ void _releaseCommand(String root, String arg, {required bool dryRun}) {
   }
 
   _gitCheck(root, <String>['checkout', '-b', branch], 'create branch');
-  _gitCheck(root, <String>['add', '-A'], 'stage changes');
+  _gitCheck(
+      root, <String>['add', '--', ..._releaseFiles], 'stage release files');
   _gitCheck(root, <String>['commit', '-m', 'Release $version'], 'commit');
   _gitCheck(root, <String>['push', '-u', 'origin', branch], 'push branch');
   final pr = Process.runSync(
@@ -481,9 +493,13 @@ void _gitCheck(String root, List<String> args, String what) {
   }
 }
 
-void _requireCleanTree(String root) {
-  if (_gitOut(root, <String>['status', '--porcelain']).isNotEmpty) {
-    _fail('working tree is not clean; commit or stash before releasing');
+void _requireCleanTrackedTree(String root) {
+  if (_gitOut(
+    root,
+    <String>['status', '--porcelain', '--untracked-files=no'],
+  ).isNotEmpty) {
+    _fail('tracked working tree is not clean; commit or restore tracked '
+        'changes before releasing');
   }
 }
 

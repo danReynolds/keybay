@@ -37,10 +37,25 @@ void main() {
       const <String>['publish', 'both', '--dry-run'],
       'publish target must be core or cli',
     );
+    final unrelated = File('${checkout.path}/UNTRACKED.md')
+      ..writeAsStringSync('local taskboard data\n');
     _expectSuccess(
       checkout.path,
       const <String>['publish', 'core', '--dry-run'],
       'tag v1.2.3',
+    );
+    if (!unrelated.existsSync()) {
+      _fail('publish disturbed an unrelated untracked file');
+    }
+    _expectFailure(
+      checkout.path,
+      const <String>['release', '1.2.3', '--dry-run'],
+      'release version must increase from 1.2.3',
+    );
+    _expectFailure(
+      checkout.path,
+      const <String>['release', '1.2.2', '--dry-run'],
+      'release version must increase from 1.2.3',
     );
     _expectFailure(
       checkout.path,

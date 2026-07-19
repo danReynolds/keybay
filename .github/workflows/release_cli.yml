@@ -194,6 +194,8 @@ jobs:
           export KEYBAY_BINARY="$binary"
           export KEYBAY_QUICKSTART_DIR="$GITHUB_WORKSPACE/packages/keybay_cli/example/quickstart"
           export KEYBAY_QUICKSTART=1
+          # The quoted variables expand inside the deliberately separate shell.
+          # shellcheck disable=SC2016
           dbus-run-session -- bash -c '
             eval "$(printf release-candidate | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
             export GNOME_KEYRING_CONTROL
@@ -687,6 +689,8 @@ jobs:
           export KEYBAY_BINARY="$binary"
           export KEYBAY_QUICKSTART_DIR="$RUNNER_TEMP/keybay-release/extracted/example/quickstart"
           export KEYBAY_QUICKSTART=1
+          # The quoted variables expand inside the deliberately separate shell.
+          # shellcheck disable=SC2016
           dbus-run-session -- bash -c '
             eval "$(printf release-acceptance | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
             export GNOME_KEYRING_CONTROL
@@ -798,6 +802,5 @@ jobs:
           sdk: ${{ env.RELEASE_DART_SDK }}
       - run: dart pub get --enforce-lockfile
         working-directory: packages/keybay_cli
-      - name: publish to pub.dev through GitHub OIDC
-        run: dart pub publish --force
-        working-directory: packages/keybay_cli
+      - name: publish or reconcile the exact pub.dev archive through OIDC
+        run: ./tool/publish_pubdev.sh packages/keybay_cli

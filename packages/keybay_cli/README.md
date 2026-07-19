@@ -30,11 +30,20 @@ macOS code identity is part of the login-Keychain access contract:
 > The entire 0.1.0 GitHub release predates immutable-release verification. Its
 > macOS binary also fails strict code-signature verification and launch on
 > macOS 26. Do not treat any 0.1.0 GitHub asset as satisfying the verification
-> contract below, and do not use its macOS binary; wait for the patch release.
+> contract below. Do not use its macOS binary; require Keybay CLI 0.1.1 or
+> newer.
+
+The promoted Homebrew channel requires 0.1.1 or newer. Check the tapped formula
+before installing:
 
 ```sh
-brew install danreynolds/tap/keybay
+brew tap danreynolds/tap
+brew info danreynolds/tap/keybay
 ```
+
+Only when that reports 0.1.1 or newer, run
+`brew install danreynolds/tap/keybay`. Until then, use the Dart or source
+channel below instead.
 
 Or install the native `keybay` executable through Dart:
 

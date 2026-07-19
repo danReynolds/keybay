@@ -54,6 +54,10 @@ jobs:
       - run: ./tool/test_cli.sh
       - if: runner.os == 'Linux'
         run: dart run tool/test_release.dart
+      - if: runner.os == 'Linux'
+        run: python3 tool/test_pub_archives.py
+      - if: runner.os == 'Linux'
+        run: ./tool/lint_workflows.sh
       # Exercise the exact package archive and warning contract before a tag.
       # The 3.10 floor predates --ignore-warnings, so this belongs on the
       # current-SDK Linux lane rather than cli-minimum-sdk.
@@ -114,6 +118,8 @@ jobs:
       # ~/.local/share is intentionally NOT pre-created — the resolver e2e test
       # exercises the clean-account path where the library creates it (0700).
       - run: |
+          # The quoted variables expand inside the deliberately separate shell.
+          # shellcheck disable=SC2016
           KEYBAY_BENCHMARK_OUTPUT="$RUNNER_TEMP/cli-benchmark-linux.json" \
           dbus-run-session -- bash -c '
             eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
@@ -140,6 +146,8 @@ jobs:
       # login keyring — only throwaway sessions (here, tool/test_linux.sh) set
       # it.
       - run: |
+          # The quoted variables expand inside the deliberately separate shell.
+          # shellcheck disable=SC2016
           dbus-run-session -- bash -c '
             eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
             export GNOME_KEYRING_CONTROL
@@ -149,6 +157,8 @@ jobs:
       # and no secret in diagnostics. Keep it in a third disposable session
       # because this test also leaves the login collection locked.
       - run: |
+          # The quoted variables expand inside the deliberately separate shell.
+          # shellcheck disable=SC2016
           dbus-run-session -- bash -c '
             eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
             export GNOME_KEYRING_CONTROL

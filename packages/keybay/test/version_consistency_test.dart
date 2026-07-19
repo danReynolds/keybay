@@ -52,8 +52,15 @@ void main() {
       return;
     }
     final version = _match(_version, 'pubspec.yaml')!;
-    final heading =
-        RegExp('^##[ \\t]+${RegExp.escape(version)}\\b', multiLine: true);
+    final heading = RegExp(
+      '^##[ \\t]+${RegExp.escape(version)}[ \\t]*\$',
+      multiLine: true,
+    );
+    expect(
+      heading.hasMatch('## $version-beta'),
+      isFalse,
+      reason: 'a prerelease heading must not satisfy a stable release',
+    );
     expect(
       heading.hasMatch(File('CHANGELOG.md').readAsStringSync()),
       isTrue,
