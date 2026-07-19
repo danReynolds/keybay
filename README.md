@@ -16,8 +16,11 @@ on macOS, Linux desktop, iOS, and Android 12+.
 No Keybay account or hosted service. No Keybay daemon, network path, or shell
 hook.
 
-> **Pre-release (0.1.0).** Keybay is not yet available from pub.dev, GitHub
-> Releases, or Homebrew. Evaluate it from a reviewed source checkout.
+> **Pre-1.0.** The `keybay` and `keybay_cli` packages are available on pub.dev.
+> The legacy 0.1.0 GitHub/Homebrew release predates immutable-release
+> verification, and its macOS binary does not pass strict code-signature
+> verification or launch on macOS 26. Do not use that macOS artifact. Require
+> Keybay CLI 0.1.1 or newer, or evaluate from a reviewed source checkout.
 
 ## CLI
 
