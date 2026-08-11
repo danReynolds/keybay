@@ -1,19 +1,21 @@
 # Platform e2e receipts
 
-Dated records of `tool/test_e2e.sh` runs against real platform keystores.
-Each entry names the exact commit, host, and per-leg result so downstream
-consumers can pin their trust to evidence instead of assumption. CI covers
-the unit, macOS-CLI, and Linux legs on every push; the mobile legs run on a
-developer machine and are recorded here.
+Dated records of `tool/test_e2e.sh` runs against platform keystore APIs,
+including simulator/emulator paths where named. Each entry names the exact
+commit, host, and per-leg result so downstream consumers can distinguish local,
+CI, skipped, and unexecuted evidence. CI covers the unit, macOS-CLI, and Linux
+legs on every push; the mobile legs run on a developer machine and are recorded
+here.
 
-## 2026-08-10 — full matrix, commit e1313c3
+## 2026-08-10 — platform matrix attempt, commit e1313c3
 
 - **Host:** macOS (Darwin 25.2.0, Apple Silicon), Flutter 3.44.4, Xcode with
   iPhone 17 Pro simulator runtime, Android SDK with AVD `Keybay_API_33`
   (pixel_6, arm64-v8a, API 33 default image), CocoaPods 1.17.0.
 - **Code identity:** `packages/keybay/lib` at this commit is byte-identical
-  to the published `keybay 0.1.0` (`diff -rq` against the pub cache), so this
-  run certifies the exact code that pinning consumers resolve.
+  to the published `keybay 0.1.0` (`diff -rq` against the pub cache), so the
+  exercised Keybay runtime library is the code that pinning consumers resolve.
+  The Flutter harness and matrix tooling are repository-only test code.
 - **Command:** `./tool/test_e2e.sh` (without `--entitled`).
 
 | Leg | Result | Notes |
