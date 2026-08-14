@@ -97,8 +97,9 @@ await store.delete('token');
 await store.containsKey('token');
 
 if (store.backend.capabilities.enumeration) {
-  await store.readAll(); await store.deleteAll();
+  await store.readAll();
 }
+await store.deleteAll(); // atomic on production backends; custom backends opt in
 final info = await store.backend.describe();      // which mechanism? reachable? locked?
 ```
 

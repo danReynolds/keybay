@@ -20,6 +20,7 @@ class FakeKeystoreApi implements KeystoreApi {
   final Map<String, Map<String, Uint8List>> _store = {};
   bool locked = false;
   bool available = true;
+  int setCalls = 0;
 
   @override
   Future<Uint8List?> get(String service, String account) async {
@@ -37,6 +38,7 @@ class FakeKeystoreApi implements KeystoreApi {
   Future<void> set(String service, String account, Uint8List value,
       {String? label}) async {
     _checkReachable();
+    setCalls++;
     (_store[service] ??= {})[account] = Uint8List.fromList(value);
   }
 
@@ -44,6 +46,12 @@ class FakeKeystoreApi implements KeystoreApi {
   Future<void> delete(String service, String account) async {
     _checkReachable();
     _store[service]?.remove(account);
+  }
+
+  @override
+  Future<void> clear(String service) async {
+    _checkReachable();
+    _store.remove(service);
   }
 
   @override
@@ -84,6 +92,9 @@ void main() {
 
       await be.delete('k');
       expect(await be.contains('k'), isFalse);
+
+      await be.deleteAll();
+      expect(await be.readAll(), isEmpty);
     });
 
     test('capabilities: enumerates and is persistent', () {
@@ -151,6 +162,39 @@ void main() {
       await expectLater(be.write('k', b([1])), throwsA(isA<KeystoreLocked>()));
     });
 
+    test('one identity lock coordinates first writes across container roots',
+        () async {
+      final api = FakeKeystoreApi();
+      final dir = Directory.systemTemp.createTempSync('ss_split_root_');
+      Process.runSync('chmod', <String>['700', dir.path]);
+      final rootA = Directory('${dir.path}/a')..createSync();
+      final rootB = Directory('${dir.path}/b')..createSync();
+      Process.runSync('chmod', <String>['700', rootA.path]);
+      Process.runSync('chmod', <String>['700', rootB.path]);
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final identityLock = '${dir.path}/identity/app.store-key.lock';
+      EncryptedFileBackend backend(String root) => EncryptedFileBackend(
+            path: '$root/secrets.enc',
+            keySource: SystemKeySource(
+              service: 'same-app',
+              api: api,
+              coordinationLockPath: identityLock,
+            ),
+          );
+      final first = backend(rootA.path);
+      final second = backend(rootB.path);
+
+      await Future.wait(<Future<void>>[
+        first.write('a', b(<int>[1])),
+        second.write('b', b(<int>[2])),
+      ]);
+
+      expect(api.setCalls, 1,
+          reason: 'only the identity-lock winner may create the shared key');
+      expect(await first.read('a'), <int>[1]);
+      expect(await second.read('b'), <int>[2]);
+    });
+
     test('SystemKeySource.describe checks presence without reading the key',
         () async {
       final src =
@@ -169,7 +213,21 @@ void main() {
       final status = await src.describe(); // must not throw
       expect(status.present, isFalse);
       expect(status.available, isTrue);
+      expect(status.locked, isTrue);
       expect(status.detail, contains('locked during presence check'));
+    });
+
+    test('SystemKeySource.describe downgrades a failed presence check',
+        () async {
+      final src = SystemKeySource(
+        service: 'svc',
+        api: _ExistsUnavailableApi(),
+      );
+      final status = await src.describe();
+      expect(status.present, isFalse);
+      expect(status.available, isFalse);
+      expect(status.locked, isFalse);
+      expect(status.detail, contains('presence backend unavailable'));
     });
   });
 }
@@ -190,6 +248,13 @@ class _ExistsFailsApi extends FakeKeystoreApi {
   @override
   Future<bool> exists(String service, String account) async {
     throw const KeystoreLocked('locked during presence check');
+  }
+}
+
+class _ExistsUnavailableApi extends FakeKeystoreApi {
+  @override
+  Future<bool> exists(String service, String account) async {
+    throw const KeystoreUnreachable('presence backend unavailable');
   }
 }
 

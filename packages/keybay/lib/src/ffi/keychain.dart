@@ -573,6 +573,27 @@ final class AppleKeychainApi implements KeystoreApi {
   }
 
   @override
+  Future<void> clear(String service) async {
+    final refs = <Pointer<Void>>[];
+    try {
+      final svc = _cfString(service)..let(refs.add);
+      final q = _dict([
+        (_kSecClass, _kSecClassGenericPassword),
+        (_kSecAttrService, svc),
+        (_kSecUseDataProtectionKeychain, _dpValue),
+        ..._uiPairs,
+      ]);
+      refs.addAll(q.owned);
+      final status = _secItemDelete(q.dict);
+      if (status != _errSecSuccess && status != _errSecItemNotFound) {
+        _fail(status, 'clear');
+      }
+    } finally {
+      _releaseAll(refs);
+    }
+  }
+
+  @override
   Future<Map<String, Uint8List>> getAll(String service) async {
     // The legacy (file) keychain rejects kSecMatchLimitAll + kSecReturnData
     // together (OSStatus -50). Enumerate *attributes only* to collect the

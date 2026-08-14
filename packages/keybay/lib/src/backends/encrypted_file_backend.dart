@@ -47,7 +47,7 @@ import '../key_source.dart';
 /// orders of magnitude above any realistic store.
 const int maxContainerBytes = 16 * 1024 * 1024;
 
-final class EncryptedFileBackend implements SecretBackend {
+final class EncryptedFileBackend implements AtomicDeleteAllBackend {
   EncryptedFileBackend({
     required this.path,
     required KeySource keySource,
@@ -142,6 +142,14 @@ final class EncryptedFileBackend implements SecretBackend {
   /// than a key-without-container orphan. Call only under an exclusive
   /// [_serialized].
   Future<void> _save(Map<String, ContainerEntry> entries) async {
+    final source = _keySource;
+    if (source is CreationCoordinatedKeySource) {
+      return source.withCreationLock(() => _saveWithStableKey(entries));
+    }
+    return _saveWithStableKey(entries);
+  }
+
+  Future<void> _saveWithStableKey(Map<String, ContainerEntry> entries) async {
     var key = await _keySource.read();
     final createdFreshKey = key == null;
     key ??= await _keySource.create();
@@ -192,6 +200,19 @@ final class EncryptedFileBackend implements SecretBackend {
         final entries = await _load(healOrphanedKey: true);
         if (entries.remove(key) != null) {
           await _save(entries);
+        }
+      });
+
+  @override
+  Future<void> deleteAll() => _serialized(
+      exclusive: true,
+      body: () async {
+        final entries = await _load(healOrphanedKey: true);
+        if (entries.isNotEmpty) {
+          // One authenticated-container replacement is the transaction: a
+          // concurrent writer takes the same lock before its read-modify-write,
+          // so it is ordered wholly before or wholly after this clear.
+          await _save(<String, ContainerEntry>{});
         }
       });
 

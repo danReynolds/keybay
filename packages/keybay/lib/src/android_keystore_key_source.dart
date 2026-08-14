@@ -249,16 +249,45 @@ final class AndroidKeystoreKeySource implements KeySource {
 
   @override
   Future<KeySourceStatus> describe() async {
-    final present = _fs.existsSync(blobPath);
+    final blobPresent = _fs.existsSync(blobPath);
     final Jni jni;
     try {
       jni = Jni.instance();
     } on SecretStoreException catch (e) {
       return KeySourceStatus(
           name: 'android-keystore',
-          present: present,
+          present: blobPresent,
           available: false,
           detail: e.message);
+    }
+    // A wrapped blob is usable only while its matching AndroidKeyStore KEK is
+    // still present. Do this attributes/key-handle check before measuring the
+    // security level so null cannot ambiguously mean both "fresh install" and
+    // "restored blob whose non-migrating key is gone".
+    late final bool kekPresent;
+    try {
+      kekPresent = jni.withFrame((f) {
+        final ks = _loadKeystore(f);
+        if (blobPresent) {
+          _kekOrInvalidated(f, ks);
+          return true;
+        }
+        return _getKek(f, ks) != nullptr;
+      });
+    } on KeyInvalidated catch (e) {
+      return KeySourceStatus(
+        name: 'android-keystore',
+        present: true,
+        available: false,
+        detail: e.message,
+      );
+    } on Object {
+      return KeySourceStatus(
+        name: 'android-keystore',
+        present: blobPresent,
+        available: false,
+        detail: 'AndroidKeyStore key check failed',
+      );
     }
     // Report the level the hardware actually claims — measured from the KEK's
     // KeyInfo, never assumed from "Keystore is present". Null until a key
@@ -272,12 +301,14 @@ final class AndroidKeystoreKeySource implements KeySource {
     }
     return KeySourceStatus(
         name: 'android-keystore',
-        present: present,
+        present: blobPresent,
         available: true,
         securityLevel: level,
-        detail: level == null
+        detail: !kekPresent
             ? 'AndroidKeyStore (no key yet)'
-            : 'AndroidKeyStore AES-256-GCM KEK — ${level.name}');
+            : level == null
+                ? 'AndroidKeyStore AES-256-GCM KEK — level unavailable'
+                : 'AndroidKeyStore AES-256-GCM KEK — ${level.name}');
   }
 
   /// The KEK's security level per `KeyInfo.getSecurityLevel()` (API 31+):

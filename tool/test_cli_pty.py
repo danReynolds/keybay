@@ -164,6 +164,30 @@ def check_quit_is_fail_safe(executable: str) -> None:
     os.close(master)
 
 
+def check_background_job_is_refused(executable: str) -> None:
+    # Keep the PTY session leader in the terminal's foreground process group,
+    # then exec the prompt harness in a distinct background group. The harness
+    # must reject before disabling echo; otherwise its read receives SIGTTIN
+    # and strands the terminal with echo off while the worker is stopped.
+    pid, master = pty.fork()
+    if pid == 0:
+        worker = os.fork()
+        if worker == 0:
+            os.setpgid(0, 0)
+            os.execl(executable, executable)
+        _, status = os.waitpid(worker, 0)
+        os._exit(os.waitstatus_to_exitcode(status))
+
+    output = wait_for(master, b"foreground TTY")
+    if not echo_enabled(master):
+        raise AssertionError("background prompt disabled terminal echo")
+    wait_exit(pid, 2)
+    output += read_remaining(master)
+    if SECRET in output:
+        raise AssertionError("secret appeared during background-job refusal")
+    os.close(master)
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(f"usage: {sys.argv[0]} PROMPT_HARNESS", file=sys.stderr)
@@ -179,6 +203,7 @@ def main() -> int:
         check_termination(executable, sig, status)
     check_quit_is_fail_safe(executable)
     check_suspend_is_fail_safe(executable)
+    check_background_job_is_refused(executable)
     print("PTY prompt checks passed")
     return 0
 

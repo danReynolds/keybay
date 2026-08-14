@@ -44,6 +44,10 @@ abstract interface class KeystoreApi {
   /// Deletes (service, account). Idempotent (missing is not an error).
   Future<void> delete(String service, String account);
 
+  /// Deletes every account under [service] in one provider operation.
+  /// Idempotent (an empty service is not an error).
+  Future<void> clear(String service);
+
   /// Every (account → value) under [service].
   Future<Map<String, Uint8List>> getAll(String service);
 

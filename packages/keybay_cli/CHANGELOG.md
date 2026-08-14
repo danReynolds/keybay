@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Require Dart 3.11 or newer so the Dart-native install path uses the patched
+  pub archive extractor; the minimum-SDK CI lane now enforces the lockfile.
+- Refuse interactive secret input from a background process group before
+  changing terminal echo, with SIGTTIN/SIGTTOU race protection and a real PTY
+  regression test.
+
 ## 0.1.0
 
 - Initial five-command CLI: `run`, `set`, `rm`, `list`, and `doctor`.

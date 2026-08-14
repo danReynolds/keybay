@@ -158,6 +158,35 @@ void main() {
     });
 
     test(
+      'interactive mode refuses a background TTY before changing echo',
+      () async {
+        final terminal = _FakeTerminal(
+          hasTerminal: true,
+          isForeground: false,
+          echoMode: true,
+        );
+        final reader = SecretInputReader(
+          input: const Stream<List<int>>.empty(),
+          terminal: terminal,
+          stderr: StringBuffer(),
+        );
+
+        await expectLater(
+          reader.read(key: 'acme/key', fromStdin: false),
+          throwsA(
+            isA<SecretInputException>().having(
+              (error) => error.message,
+              'guidance',
+              contains('foreground'),
+            ),
+          ),
+        );
+        expect(terminal.setCalls, isEmpty);
+        expect(terminal.echoMode, isTrue);
+      },
+    );
+
+    test(
       'interactive mode hides input and restores the exact prior mode',
       () async {
         const sentinel = 'hidden-value';
@@ -276,12 +305,15 @@ void main() {
 final class _FakeTerminal implements TerminalControl {
   _FakeTerminal({
     required this.hasTerminal,
+    this.isForeground = true,
     required bool echoMode,
     this.failOnSetCall,
   }) : _echoMode = echoMode;
 
   @override
   final bool hasTerminal;
+  @override
+  final bool isForeground;
   bool _echoMode;
   final int? failOnSetCall;
   final List<bool> setCalls = <bool>[];

@@ -20,6 +20,7 @@ final class SecretInputException implements Exception {
 
 abstract interface class TerminalControl {
   bool get hasTerminal;
+  bool get isForeground;
   bool get echoMode;
   set echoMode(bool value);
 }
@@ -67,6 +68,19 @@ final class SecretInputReader {
       throw const SecretInputException(
         'interactive set requires a TTY; pipe the value to keybay set '
         '--stdin instead',
+      );
+    }
+    // A background job still has a TTY, but it does not own that TTY's
+    // foreground process group. If it disables echo and then attempts to read,
+    // the kernel stops it with SIGTTIN, stranding the shared terminal with echo
+    // off until somebody foregrounds or kills the job. Refuse before touching
+    // terminal state. SIGTTIN/SIGTTOU are also ignored during the short hidden
+    // window below to close the race where a foreground prompt is backgrounded
+    // after this check; the read then fails and `finally` restores echo.
+    if (!terminal.isForeground) {
+      throw const SecretInputException(
+        'interactive set must own the foreground TTY; foreground the job and '
+        'retry, or pipe the value to keybay set --stdin',
       );
     }
 
@@ -211,6 +225,9 @@ final class _StdinTerminalControl implements TerminalControl {
   bool get hasTerminal => stdin.hasTerminal;
 
   @override
+  bool get isForeground => _tcgetpgrp(0) == _getpgrp();
+
+  @override
   bool get echoMode => stdin.echoMode;
 
   @override
@@ -224,12 +241,13 @@ final class _PromptSignalGuard {
   final bool previousEchoMode;
   final List<StreamSubscription<ProcessSignal>> _subscriptions =
       <StreamSubscription<ProcessSignal>>[];
-  late final _IgnoredSignalGuard _failSafeSignalGuard = _IgnoredSignalGuard(
-    <int>[
-      ProcessSignal.sigquit.signalNumber,
-      ProcessSignal.sigtstp.signalNumber,
-    ],
-  );
+  late final _IgnoredSignalGuard _failSafeSignalGuard =
+      _IgnoredSignalGuard(<int>[
+        ProcessSignal.sigquit.signalNumber,
+        ProcessSignal.sigtstp.signalNumber,
+        _sigTtin,
+        _sigTtou,
+      ]);
 
   void start() {
     _watchTermination(ProcessSignal.sigint, 130);
@@ -265,6 +283,24 @@ final class _PromptSignalGuard {
 
 typedef _NativeSignal = Pointer<Void> Function(Int32, Pointer<Void>);
 typedef _DartSignal = Pointer<Void> Function(int, Pointer<Void>);
+typedef _NativeGetProcessGroup = Int32 Function();
+typedef _DartGetProcessGroup = int Function();
+typedef _NativeGetTerminalProcessGroup = Int32 Function(Int32);
+typedef _DartGetTerminalProcessGroup = int Function(int);
+
+final DynamicLibrary _libc = DynamicLibrary.process();
+final _DartGetProcessGroup _getpgrp = _libc
+    .lookupFunction<_NativeGetProcessGroup, _DartGetProcessGroup>('getpgrp');
+final _DartGetTerminalProcessGroup _tcgetpgrp = _libc
+    .lookupFunction<
+      _NativeGetTerminalProcessGroup,
+      _DartGetTerminalProcessGroup
+    >('tcgetpgrp');
+
+// POSIX job-control signal numbers are 21/22 on every supported host
+// (Darwin, Linux/glibc, and Android/bionic).
+const int _sigTtin = 21;
+const int _sigTtou = 22;
 
 /// Dart does not expose SIGQUIT or job-control signal streams on macOS.
 /// Ignoring them only while the prompt owns the terminal is the fail-safe
@@ -279,8 +315,7 @@ final class _IgnoredSignalGuard {
   final Map<int, Pointer<Void>> _previous = <int, Pointer<Void>>{};
 
   void start() {
-    final signal = DynamicLibrary.process()
-        .lookupFunction<_NativeSignal, _DartSignal>('signal');
+    final signal = _libc.lookupFunction<_NativeSignal, _DartSignal>('signal');
     _signal = signal;
     for (final signalNumber in signalNumbers) {
       _previous[signalNumber] = signal(

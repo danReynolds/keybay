@@ -133,7 +133,7 @@ void _writeFixture(String root) {
 name: keybay_release_fixture
 publish_to: none
 environment:
-  sdk: ^3.10.0
+  sdk: ^3.11.0
 ''');
   Directory('$root/tool').createSync(recursive: true);
   File('tool/release.dart').copySync('$root/tool/release.dart');

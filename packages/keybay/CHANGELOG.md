@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- Make `deleteAll()` a single backend transaction. Production backends clear
+  natively or replace the encrypted container once; custom backends must opt in
+  through `AtomicDeleteAllBackend` or the call fails closed.
+- Bound and cancel Linux `secret-tool` output capture, and make diagnostics
+  reject ambiguous probe/presence failures instead of reporting a healthy
+  backend.
+- Make Linux `getAll()` accept exit 1 only for a byte-silent legacy no-match;
+  provider or D-Bus diagnostics now fail typed instead of returning an empty
+  store.
+- Coordinate first store-key creation by keystore identity across different
+  HOME/XDG container roots, without changing existing key or container names.
+- Harden POSIX reads and lock files with `O_NOFOLLOW`, non-blocking type checks,
+  descriptor-pinned bounded reads, and private-mode enforcement.
+- Report an Android wrapped-key blob with a missing Keystore KEK as unavailable
+  rather than as a healthy store with no key yet.
+
 ## 0.1.0
 
 First release. A bytes-first, async secret store for Dart — no Flutter, no
@@ -19,8 +37,8 @@ are frozen protocol constants, deliberately not rebranded (doc/design.md §7).
   scheme per platform; the caller never picks a mechanism, a path, or a key
   home. `SecretStorage.withBackend(...)` is the test hatch.
 - Bytes-first (`Uint8List`) with `readString`/`writeString` convenience; an
-  optional non-secret `label:` for keystore UIs; `readAll`/`deleteAll` guarded
-  by a `capabilities.enumeration` flag; and a `describe()` diagnostics call for
+  optional non-secret `label:` for keystore UIs; `readAll` guarded by a
+  `capabilities.enumeration` flag; and a `describe()` diagnostics call for
   the resolved scheme, observed protection signal, and reachable/locked state.
 - `appId` and `key` are validated identifiers — `appId` is traversal-proof by
   grammar, since it names the data directory and the keystore service. A sealed

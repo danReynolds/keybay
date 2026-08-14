@@ -128,6 +128,14 @@ void main() {
       expect(await s.readAll(), isEmpty);
     });
 
+    test('deleteAll refuses a backend without atomic bulk deletion', () async {
+      final s = SecretStorage.withBackend(_NonAtomicBackend());
+      await expectLater(
+        s.deleteAll(),
+        throwsA(isA<UnsupportedCapability>()),
+      );
+    });
+
     test('readAll throws UnsupportedCapability when not supported', () async {
       final s = SecretStorage.withBackend(_NoEnumBackend());
       expect(s.readAll, throwsA(isA<UnsupportedCapability>()));
@@ -136,7 +144,7 @@ void main() {
 }
 
 /// Minimal in-memory backend for front-API tests (no disk, no crypto).
-class _MemBackend implements SecretBackend {
+class _MemBackend implements AtomicDeleteAllBackend {
   final Map<String, Uint8List> _m = {};
 
   @override
@@ -157,6 +165,9 @@ class _MemBackend implements SecretBackend {
   Future<void> delete(String key) async => _m.remove(key);
 
   @override
+  Future<void> deleteAll() async => _m.clear();
+
+  @override
   Future<Map<String, Uint8List>> readAll() async => Map.of(_m);
 
   @override
@@ -172,4 +183,36 @@ class _NoEnumBackend extends _MemBackend {
   @override
   BackendCapabilities get capabilities =>
       const BackendCapabilities(enumeration: false, persistent: true);
+}
+
+class _NonAtomicBackend implements SecretBackend {
+  @override
+  BackendCapabilities get capabilities =>
+      const BackendCapabilities(enumeration: true, persistent: false);
+
+  @override
+  Future<bool> contains(String key) async => false;
+
+  @override
+  Future<void> delete(String key) async {}
+
+  @override
+  Future<BackendInfo> describe() async => const BackendInfo(
+        scheme: StorageScheme.encryptedFile,
+        available: true,
+        locked: false,
+        capabilities: BackendCapabilities(
+          enumeration: true,
+          persistent: false,
+        ),
+      );
+
+  @override
+  Future<Uint8List?> read(String key) async => null;
+
+  @override
+  Future<Map<String, Uint8List>> readAll() async => <String, Uint8List>{};
+
+  @override
+  Future<void> write(String key, Uint8List value, {String? label}) async {}
 }

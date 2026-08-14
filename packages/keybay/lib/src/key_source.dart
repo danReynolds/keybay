@@ -83,6 +83,13 @@ abstract interface class KeySource {
   Future<KeySourceStatus> describe();
 }
 
+/// Internal capability for key sources whose identity is shared independently
+/// of the container path. It lets the encrypted backend hold one global lock
+/// across the read/create/container-write transaction on first use.
+abstract interface class CreationCoordinatedKeySource implements KeySource {
+  Future<T> withCreationLock<T>(Future<T> Function() body);
+}
+
 /// Holds the key in process memory only. Not persistent. **Internal / not
 /// exported** — used by the test suite; bring-your-own-key callers implement
 /// [KeySource] directly.
@@ -162,18 +169,37 @@ final class FileKeySource implements KeySource {
 /// the platform credential-store binding (`AppleKeychainApi` /
 /// `SecretToolApi`), wired by the resolver or passed explicitly. [account] is
 /// the item name under [service].
-final class SystemKeySource implements KeySource {
+final class SystemKeySource implements CreationCoordinatedKeySource {
   SystemKeySource({
     required this.service,
     required KeystoreApi api,
     this.account = 'store-key',
     this.label,
-  }) : _api = api;
+    this.coordinationLockPath,
+    SecureFileSystem fs = const SecureFileSystem(),
+  })  : _api = api,
+        _fs = fs;
 
   final String service;
   final String account;
   final String? label;
+  final String? coordinationLockPath;
   final KeystoreApi _api;
+  final SecureFileSystem _fs;
+
+  @override
+  Future<T> withCreationLock<T>(Future<T> Function() body) {
+    final lockPath = coordinationLockPath;
+    if (lockPath == null) return body();
+    final i = lockPath.lastIndexOf('/');
+    final parent = i <= 0 ? '.' : lockPath.substring(0, i);
+    _fs.ensurePrivateDirSync(parent);
+    return _fs.withExclusiveLock(
+      lockPath,
+      timeout: const Duration(seconds: 10),
+      body: body,
+    );
+  }
 
   @override
   Future<Uint8List?> read() async {
@@ -200,23 +226,33 @@ final class SystemKeySource implements KeySource {
   Future<KeySourceStatus> describe() async {
     final p = await _api.probe(service);
     var present = false;
+    var available = p.available;
+    var locked = p.locked;
     var detail = p.detail;
     if (p.available && !p.locked) {
       try {
         // Diagnostics need only existence. Keep the key out of process memory
         // and avoid prompting hardware-gated keychains to decrypt it.
         present = await _api.exists(service, account);
-      } on SecretStoreException catch (e) {
+      } on KeystoreLocked catch (e) {
         // Diagnostics never throw: the keystore can lock between the probe and
-        // this attributes-only check, so report the failure in `detail`.
+        // this attributes-only check. Preserve reachability but downgrade the
+        // health snapshot to locked.
+        locked = true;
+        detail = detail == null ? e.message : '$detail; ${e.message}';
+      } on SecretStoreException catch (e) {
+        // A probe followed by a failed attributes-only operation is not a
+        // healthy backend. Mark it unavailable so `doctor` cannot exit 0 while
+        // real operations are already failing.
+        available = false;
         detail = detail == null ? e.message : '$detail; ${e.message}';
       }
     }
     return KeySourceStatus(
       name: 'keystore',
       present: present,
-      available: p.available,
-      locked: p.locked,
+      available: available,
+      locked: locked,
       // The OS keystore holds the key under a login-derived key.
       securityLevel: SecurityLevel.loginBound,
       detail: detail,
