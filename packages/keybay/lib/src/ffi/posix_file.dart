@@ -49,11 +49,21 @@ final int Function(int, Pointer<Uint8>, int) _write = _libc.lookupFunction<
     IntPtr Function(Int32, Pointer<Uint8>, IntPtr),
     int Function(int, Pointer<Uint8>, int)>('write');
 
+final int Function(int, Pointer<Uint8>, int) _read = _libc.lookupFunction<
+    IntPtr Function(Int32, Pointer<Uint8>, IntPtr),
+    int Function(int, Pointer<Uint8>, int)>('read');
+
 final int Function(int) _fsync =
     _libc.lookupFunction<Int32 Function(Int32), int Function(int)>('fsync');
 
 final int Function(int) _close =
     _libc.lookupFunction<Int32 Function(Int32), int Function(int)>('close');
+
+final int Function() _geteuid =
+    _libc.lookupFunction<Uint32 Function(), int Function()>('geteuid');
+
+/// Effective POSIX user id, used to namespace cross-root coordination locks.
+int get effectiveUserId => _geteuid();
 
 // mkdir(const char*, mode_t). mode_t is uint16 (macOS) / uint32 (Linux); a
 // Uint32 binding is correct on both (macOS reads the low 16 bits).
@@ -102,6 +112,8 @@ const int _oRdOnly = 0x0000;
 final int _oWrOnly = 0x0001;
 final int _oCreat = Platform.isMacOS ? 0x0200 : 0x40;
 final int _oExcl = Platform.isMacOS ? 0x0800 : 0x80;
+final int _oNoFollow = Platform.isMacOS ? 0x0100 : 0x20000;
+final int _oNonBlock = Platform.isMacOS ? 0x0004 : 0x0800;
 
 // flock() operations — same values on Linux and macOS/BSD.
 const int _lockEx = 2; // LOCK_EX
@@ -109,6 +121,7 @@ const int _lockUn = 8; // LOCK_UN
 const int _lockNb = 4; // LOCK_NB
 
 const int _eIntr = 4;
+const int _eNoEnt = 2;
 // EWOULDBLOCK (== EAGAIN): the errno a non-blocking flock returns under
 // contention. macOS/BSD spell it 35, Linux/bionic 11.
 final int _eWouldBlock = Platform.isMacOS ? 35 : 11;
@@ -189,22 +202,44 @@ class SecureFileSystem {
     required int maxBytes,
     bool requirePrivate = false,
   }) {
-    final f = File(path);
-    final stat = f.statSync();
-    if (stat.type == FileSystemEntityType.notFound) return null;
-    if (stat.type != FileSystemEntityType.file) {
-      throw SecureFileError('read(not-a-regular-file)', path, 0);
+    final ptr = path.toNativeUtf8();
+    final int fd;
+    try {
+      // O_NOFOLLOW rejects a final-component symlink, while O_NONBLOCK keeps a
+      // planted FIFO from hanging in open() before its type can be checked.
+      fd = _open(ptr, _oRdOnly | _oNoFollow | _oNonBlock, 0);
+      if (fd < 0) {
+        final e = _errno;
+        if (e == _eNoEnt) return null;
+        throw SecureFileError('open(read)', path, e);
+      }
+    } finally {
+      malloc.free(ptr);
     }
-    if (requirePrivate && (stat.mode & 0x3F) != 0) {
-      throw SecureFileError(
-          'read(insecure-mode:${(stat.mode & 0x1FF).toRadixString(8)})',
-          path,
-          0);
+    try {
+      // Validate immediately after the O_NOFOLLOW open. The content read below
+      // is pinned to this descriptor, so a later pathname replacement cannot
+      // redirect it. The backend has already verified the containing directory
+      // is private; another user therefore cannot swap this entry between the
+      // open and stat (same-user/root interference is outside the threat model).
+      final stat = _statOpenedPath(path, 'read');
+      if (stat.type != FileSystemEntityType.file) {
+        throw SecureFileError('read(not-a-regular-file)', path, 0);
+      }
+      if (requirePrivate && (stat.mode & 0x3F) != 0) {
+        throw SecureFileError(
+            'read(insecure-mode:${(stat.mode & 0x1FF).toRadixString(8)})',
+            path,
+            0);
+      }
+      if (stat.size > maxBytes) {
+        throw SecureFileError(
+            'read(too-large:${stat.size}>$maxBytes)', path, 0);
+      }
+      return _readCappedFd(fd, path, maxBytes);
+    } finally {
+      _close(fd);
     }
-    if (stat.size > maxBytes) {
-      throw SecureFileError('read(too-large:${stat.size}>$maxBytes)', path, 0);
-    }
-    return f.readAsBytesSync();
   }
 
   /// Deletes [path] if present. Idempotent.
@@ -310,7 +345,10 @@ class SecureFileSystem {
     final int fd;
     try {
       // O_CREAT, not O_EXCL: the lock file is meant to be reused, not fresh.
-      fd = _open(ptr, _oWrOnly | _oCreat, 0x180 /* 0600 */);
+      // O_NOFOLLOW prevents a planted symlink; O_NONBLOCK prevents a planted
+      // FIFO from hanging before the descriptor can be validated.
+      fd = _open(
+          ptr, _oWrOnly | _oCreat | _oNoFollow | _oNonBlock, 0x180 /* 0600 */);
       if (fd < 0) {
         throw SecureFileError('open(lock)', lockPath, _errno);
       }
@@ -318,6 +356,16 @@ class SecureFileSystem {
       malloc.free(ptr);
     }
     try {
+      final stat = _statOpenedPath(lockPath, 'lock');
+      if (stat.type != FileSystemEntityType.file) {
+        throw SecureFileError('lock(not-a-regular-file)', lockPath, 0);
+      }
+      if ((stat.mode & 0x3F) != 0) {
+        throw SecureFileError(
+            'lock(insecure-mode:${(stat.mode & 0x1FF).toRadixString(8)})',
+            lockPath,
+            0);
+      }
       await _acquireExclusive(fd, lockPath, timeout);
       try {
         return await body();
@@ -375,6 +423,46 @@ class SecureFileSystem {
       if (f.existsSync()) f.deleteSync();
     } catch (_) {
       // best effort
+    }
+  }
+
+  FileStat _statOpenedPath(String path, String op) {
+    try {
+      final stat = File(path).statSync();
+      if (stat.type == FileSystemEntityType.notFound) {
+        throw FileSystemException('opened path disappeared', path);
+      }
+      return stat;
+    } on FileSystemException {
+      throw SecureFileError('$op(stat-after-open)', path, 0);
+    }
+  }
+
+  Uint8List _readCappedFd(int fd, String path, int maxBytes) {
+    const chunkBytes = 64 * 1024;
+    final buffer = malloc<Uint8>(chunkBytes);
+    final bytes = BytesBuilder(copy: false);
+    try {
+      while (true) {
+        final remaining = maxBytes + 1 - bytes.length;
+        if (remaining <= 0) {
+          throw SecureFileError('read(too-large:>$maxBytes)', path, 0);
+        }
+        final count = remaining < chunkBytes ? remaining : chunkBytes;
+        final n = _read(fd, buffer, count);
+        if (n == 0) break;
+        if (n < 0) {
+          final e = _errno;
+          if (e == _eIntr) continue;
+          throw SecureFileError('read', path, e);
+        }
+        // Copy each chunk off the reusable native buffer before the next read.
+        bytes.add(Uint8List.fromList(buffer.asTypedList(n)));
+      }
+      return bytes.takeBytes();
+    } finally {
+      buffer.asTypedList(chunkBytes).fillRange(0, chunkBytes, 0);
+      malloc.free(buffer);
     }
   }
 

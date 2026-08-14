@@ -42,6 +42,21 @@ void main() {
     expect(utf8.decode(r.stderr), 'err');
   });
 
+  test('caps subprocess output and reports overflow without hanging', () async {
+    const capped = SystemProcessRunner(maxOutputBytes: 1024);
+    final sw = Stopwatch()..start();
+    final r = await capped.run(
+      'sh',
+      ['-c', 'while :; do printf 0123456789; done'],
+      timeout: ok,
+    );
+    sw.stop();
+    expect(r.outputLimitExceeded, isTrue);
+    expect(r.stdout.length, lessThanOrEqualTo(1024));
+    expect(r.stderr.length, lessThanOrEqualTo(1024));
+    expect(sw.elapsed, lessThan(const Duration(seconds: 10)));
+  });
+
   test('propagates a nonzero exit code', () async {
     final r = await runner.run('sh', ['-c', 'exit 3'], timeout: ok);
     expect(r.launchFailed, isFalse);

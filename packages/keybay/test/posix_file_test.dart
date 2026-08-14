@@ -143,6 +143,18 @@ void main() {
       expect(() => fs.readCappedSync(fifo, maxBytes: 10),
           throwsA(isA<SecureFileError>()));
     });
+
+    test('refuses a final-component symlink instead of reading its target', () {
+      final target = '${tmp.path}/target.bin';
+      fs.writeAtomicSync(target, Uint8List.fromList(<int>[9, 8, 7]));
+      final link = '${tmp.path}/link.bin';
+      Link(link).createSync(target);
+
+      expect(
+        () => fs.readCappedSync(link, maxBytes: 10),
+        throwsA(isA<SecureFileError>()),
+      );
+    });
   });
 
   group('verifyPrivateDirSync', () {
@@ -227,6 +239,49 @@ void main() {
       );
       release.complete();
       await holder;
+    });
+
+    test('refuses symlink and non-regular lock files without blocking',
+        () async {
+      final target = '${tmp.path}/target.lock';
+      File(target).writeAsBytesSync(const <int>[]);
+      final link = '${tmp.path}/link.lock';
+      Link(link).createSync(target);
+      await expectLater(
+        fs.withExclusiveLock<void>(
+          link,
+          timeout: const Duration(milliseconds: 100),
+          body: () async {},
+        ),
+        throwsA(isA<SecureFileError>()),
+      );
+
+      final fifo = '${tmp.path}/fifo.lock';
+      expect(Process.runSync('mkfifo', <String>[fifo]).exitCode, 0);
+      await expectLater(
+        fs
+            .withExclusiveLock<void>(
+              fifo,
+              timeout: const Duration(milliseconds: 100),
+              body: () async {},
+            )
+            .timeout(const Duration(seconds: 2)),
+        throwsA(isA<SecureFileError>()),
+      );
+    });
+
+    test('refuses a reusable lock file with loose permissions', () async {
+      final lockPath = '${tmp.path}/loose.lock';
+      File(lockPath).writeAsBytesSync(const <int>[]);
+      Process.runSync('chmod', <String>['0644', lockPath]);
+      await expectLater(
+        fs.withExclusiveLock<void>(
+          lockPath,
+          timeout: const Duration(milliseconds: 100),
+          body: () async {},
+        ),
+        throwsA(isA<SecureFileError>()),
+      );
     });
   });
 }

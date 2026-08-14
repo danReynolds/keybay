@@ -318,20 +318,20 @@ rollback/locking decisions, and anything they all do that this package doesn't
 - `KeystoreBackend.contains` materializes the value via `get` despite the seam
   doc promising avoidance where possible (backend.dart:60-61) — macOS could
   query attributes-only; Linux could too.
-- `deleteAll` round-trips every secret's *value* through memory just to get
-  keys — wants a keys-only enumeration on the seam.
+- ~~`deleteAll` round-trips every secret's value through memory just to get
+  keys.~~ Resolved: production backends now expose one atomic clear operation;
+  unsupported custom backends fail closed.
 
 ## 15. `deleteAll()` semantics vs. a destructive reset (needs its own review)
 
 Surfaced during the CLI RFC review (cli-implementation-plan.md §14) and
-deliberately **not** a CLI ask. Today's `deleteAll()` is a healthy-store
-convenience: it begins with `readAll()` and then deletes per key
-(secret_storage.dart) — so it requires a *decryptable* store, is non-atomic
-mid-loop, and round-trips every value through memory to obtain keys. It
-cannot recover a `KeyInvalidated` store; the documented recovery there is
-deleting the store's data directory and re-provisioning
-(platforms/android.md). The open design question: keep `deleteAll()` as the
-logout/wipe convenience it is (documenting those semantics), and/or add a
-deliberately-named destructive reset that deletes container + wrapped key +
-keystore material and therefore works on an *unreadable* store. Decide on
-its own merits — "unused by the CLI" is not an argument either way.
+deliberately **not** a CLI ask. The healthy-store operation is now resolved:
+`deleteAll()` performs one native service clear or one locked authenticated-
+container replacement, while custom backends without equivalent semantics fail
+closed. It still deliberately requires a readable healthy store and cannot
+recover a `KeyInvalidated` store; the documented recovery there is deleting the
+store's data directory and re-provisioning (platforms/android.md). The remaining
+open design question is whether to add a deliberately-named destructive reset
+that deletes container + wrapped key + keystore material and therefore works on
+an *unreadable* store. Decide on its own merits — "unused by the CLI" is not an
+argument either way.

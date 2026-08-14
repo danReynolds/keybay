@@ -24,6 +24,16 @@ permissions:
 # a hijacked tag is a code-execution path into CI). The trailing comment
 # records the tag the SHA corresponded to when pinned.
 jobs:
+  gradle-wrapper-validation:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # Reject unknown or modified Gradle wrapper JARs before any Android build
+      # can execute them. The wrapper distribution itself is SHA-256 pinned in
+      # gradle-wrapper.properties.
+      - uses: gradle/actions/wrapper-validation@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
+
   analyze-and-test:
     # The weekly cron is the canary tier only (see `schedule` above).
     if: github.event_name != 'schedule'
@@ -39,7 +49,7 @@ jobs:
       # content-hashed lock is the reviewed dependency set, and plain pub get
       # silently re-resolves from pub.dev when it can't honor the lock —
       # unreviewed code running in CI (or worse, a release build) with no red
-      # signal. The one deliberate exception is cli-minimum-sdk below.
+      # signal.
       - run: dart pub get --enforce-lockfile
       - run: dart format --output=none --set-exit-if-changed .
       - run: dart analyze --fatal-infos
@@ -59,8 +69,8 @@ jobs:
       - if: runner.os == 'Linux'
         run: ./tool/lint_workflows.sh
       # Exercise the exact package archive and warning contract before a tag.
-      # The 3.10 floor predates --ignore-warnings, so this belongs on the
-      # current-SDK Linux lane rather than cli-minimum-sdk.
+      # Keep archive-policy validation on the current-SDK Linux lane; the
+      # minimum lane is reserved for runtime/AOT compatibility at the floor.
       - if: runner.os == 'Linux'
         run: |
           ./tool/validate_publish.sh packages/keybay cryptography ffi
@@ -73,17 +83,12 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
         with:
-          sdk: 3.10.0
-      # Deliberately NOT --enforce-lockfile: the committed lock's dev-dep SDK
-      # bound (>=3.11.0) cannot be satisfied on the 3.10 floor, so this lane
-      # re-resolves dev dependencies fresh by design — it exists to prove the
-      # CLI on its documented SDK floor, not to pin the toolchain. The runtime
-      # closure stays exact-pinned by pubspec either way, and every other lane
-      # enforces the lock.
-      - run: dart pub get
+          sdk: 3.11.0
+      # The reviewed lock is satisfiable on the supported floor, so the floor
+      # lane gets the same content-hash enforcement as every other lane.
+      - run: dart pub get --enforce-lockfile
       # The CLI's documented SDK floor is a tested product channel, including
-      # AOT/exec/PTY behavior, not only a pubspec constraint. Dart 3.10's
-      # hosted-only install proof follows first publication (release runbook).
+      # AOT/exec/PTY behavior, not only a pubspec constraint.
       - run: dart test -x integration
         working-directory: packages/keybay_cli
       - run: KEYBAY_SKIP_DART_INSTALL=1 ./tool/test_cli.sh

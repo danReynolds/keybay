@@ -119,12 +119,17 @@ final class SecretStorage {
     return backend.readAll();
   }
 
-  /// Removes every entry. Requires enumeration.
+  /// Removes every entry atomically with respect to backend writers.
+  ///
+  /// Custom backends must implement [AtomicDeleteAllBackend]. Refusing an
+  /// unsupported backend is deliberate: an enumerate-then-per-key-delete loop
+  /// can return success while leaving a concurrently-added secret behind.
   Future<void> deleteAll() async {
-    final all = await readAll();
-    for (final key in all.keys) {
-      await backend.delete(key);
+    final selected = backend;
+    if (selected is! AtomicDeleteAllBackend) {
+      throw const UnsupportedCapability('atomic deleteAll');
     }
+    await selected.deleteAll();
   }
 }
 
@@ -191,7 +196,16 @@ SecretBackend _resolveBackend(String appId) {
 SecretBackend _encryptedFileScheme(String appId, KeystoreApi api) {
   return EncryptedFileBackend(
     path: containerPathFor(appId),
-    keySource: SystemKeySource(service: appId, api: api),
+    keySource: SystemKeySource(
+      service: appId,
+      api: api,
+      // The OS-keystore identity is only appId/account, while HOME and
+      // XDG_DATA_HOME can select different container paths. Coordinate key
+      // creation in a fixed per-user location so two first writers under
+      // different roots cannot overwrite each other's newly-created key.
+      coordinationLockPath:
+          '/tmp/keybay-$effectiveUserId/$appId.store-key.lock',
+    ),
   );
 }
 

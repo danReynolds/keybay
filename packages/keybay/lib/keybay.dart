@@ -20,6 +20,7 @@ export 'src/backend.dart'
     show
         BackendCapabilities,
         BackendInfo,
+        AtomicDeleteAllBackend,
         SecretBackend,
         SecurityLevel,
         StorageScheme;

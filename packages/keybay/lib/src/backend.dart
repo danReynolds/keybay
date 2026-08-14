@@ -119,3 +119,13 @@ abstract interface class SecretBackend {
   /// Health snapshot for diagnostics.
   Future<BackendInfo> describe();
 }
+
+/// Optional backend capability for deleting a store in one backend operation.
+///
+/// [SecretStorage.deleteAll] requires this capability instead of implementing
+/// an enumerate-then-delete loop that can falsely report success while a
+/// concurrent writer adds an entry between those steps. Custom backends opt in
+/// only when their implementation provides equivalent transaction semantics.
+abstract interface class AtomicDeleteAllBackend implements SecretBackend {
+  Future<void> deleteAll();
+}

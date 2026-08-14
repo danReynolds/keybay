@@ -67,6 +67,10 @@ final class SecretToolApi implements KeystoreApi {
     if (r.timedOut) {
       throw KeystoreLocked('$op: `$executable` timed out (locked collection?)');
     }
+    if (r.outputLimitExceeded) {
+      throw KeystoreOperationFailed(
+          '$op failed: `$executable` exceeded the subprocess output limit');
+    }
     // Never include stdout/stderr — a failed store echoes the base64 value.
     throw KeystoreOperationFailed('$op failed', status: r.exitCode);
   }
@@ -74,7 +78,9 @@ final class SecretToolApi implements KeystoreApi {
   @override
   Future<Uint8List?> get(String service, String account) async {
     final r = await _run(['lookup', ..._attrs(service, account)]);
-    if (r.launchFailed || r.timedOut) _translate(r, 'get');
+    if (r.launchFailed || r.timedOut || r.outputLimitExceeded) {
+      _translate(r, 'get');
+    }
     // `lookup` exits 1 both for a genuine miss AND for a locked collection that
     // fails without a prompter (headless, no GUI agent): with only `secret-tool`
     // we cannot tell them apart, so we report "not found". A present container
@@ -108,7 +114,9 @@ final class SecretToolApi implements KeystoreApi {
     // locked collection, exiting 1 empty; search is not.) Both streams echo
     // secret material, so they are parsed at the byte level and scrubbed.
     final r = await _run(['search', '--all', ..._attrs(service, account)]);
-    if (r.launchFailed || r.timedOut) _translate(r, 'exists');
+    if (r.launchFailed || r.timedOut || r.outputLimitExceeded) {
+      _translate(r, 'exists');
+    }
     // Judge presence from the parsed attribute lines, never from the exit code
     // alone — the same discipline delete()'s confirm uses. `search` lists a
     // matching item's `attribute.account` even on a locked collection, so a
@@ -147,14 +155,16 @@ final class SecretToolApi implements KeystoreApi {
       ],
       stdin: base64.encode(value),
     );
-    if (r.exitCode != 0) _translate(r, 'set');
+    if (r.exitCode != 0 || r.outputLimitExceeded) _translate(r, 'set');
     _scrub(r);
   }
 
   @override
   Future<void> delete(String service, String account) async {
     final r = await _run(['clear', ..._attrs(service, account)]);
-    if (r.launchFailed || r.timedOut) _translate(r, 'delete');
+    if (r.launchFailed || r.timedOut || r.outputLimitExceeded) {
+      _translate(r, 'delete');
+    }
     final exit = r.exitCode;
     _scrub(r);
     if (exit == 0) return; // removed
@@ -175,7 +185,9 @@ final class SecretToolApi implements KeystoreApi {
     // search; gnome-keyring does. A provider that hides them entirely would
     // reopen the blindspot, beyond what secret-tool lets us see.)
     final s = await _run(['search', '--all', ..._attrs(service, account)]);
-    if (s.launchFailed || s.timedOut) _translate(s, 'delete');
+    if (s.launchFailed || s.timedOut || s.outputLimitExceeded) {
+      _translate(s, 'delete');
+    }
     final confirmExit = s.exitCode;
     final bool present;
     final bool secretVisible;
@@ -225,16 +237,68 @@ final class SecretToolApi implements KeystoreApi {
   }
 
   @override
+  Future<void> clear(String service) async {
+    final r = await _run(['clear', '--', 'service', service]);
+    if (r.launchFailed || r.timedOut || r.outputLimitExceeded) {
+      _translate(r, 'clear');
+    }
+    final exit = r.exitCode;
+    _scrub(r);
+    if (exit == 0) return;
+
+    // As with single-item delete, exit 1 is both a clean no-match and a real
+    // provider failure. Confirm the service is empty with an attributes-only
+    // search instead of reporting success from the ambiguous clear status.
+    final s = await _run(['search', '--all', '--', 'service', service]);
+    if (s.launchFailed || s.timedOut || s.outputLimitExceeded) {
+      _translate(s, 'clear');
+    }
+    final confirmExit = s.exitCode;
+    final Set<String> accounts;
+    final bool secretVisible;
+    final bool silent;
+    try {
+      accounts = {..._parseAccounts(s.stderr), ..._parseAccounts(s.stdout)};
+      secretVisible = _hasSecretLine(s.stdout);
+      silent = s.stdout.isEmpty && s.stderr.isEmpty;
+    } finally {
+      _scrub(s);
+    }
+    if (accounts.isNotEmpty || secretVisible) {
+      if (!secretVisible) {
+        throw const KeystoreLocked(
+            'clear could not remove all items: the collection is locked '
+            '(headless session?) — unlock the keyring and retry');
+      }
+      throw KeystoreOperationFailed(
+          'clear did not remove all items (clear exit $exit)',
+          status: exit);
+    }
+    if (confirmExit == 0 || (confirmExit == 1 && silent)) return;
+    throw KeystoreOperationFailed(
+        'clear could not be confirmed (clear exit $exit, search exit '
+        '$confirmExit)',
+        status: confirmExit);
+  }
+
+  @override
   Future<Map<String, Uint8List>> getAll(String service) async {
     // `--` after the `--all` option, before the attribute pair (see _attrs).
     final r = await _run(['search', '--all', '--', 'service', service]);
-    if (r.launchFailed || r.timedOut) _translate(r, 'getAll');
-    // A no-match is exit 0 with empty output on current secret-tool (verified;
-    // older versions spelled it exit 1, tolerated here) — either way the parse
-    // below yields the empty map.
+    if (r.launchFailed || r.timedOut || r.outputLimitExceeded) {
+      _translate(r, 'getAll');
+    }
+    // A no-match is exit 0 with empty output on current secret-tool. Older
+    // versions used exit 1, but that status is also used for D-Bus/provider
+    // failures: accept it only when both streams are byte-empty. Diagnostic-
+    // bearing exit 1 must fail closed rather than make readAll/list report a
+    // healthy empty store.
     if (r.exitCode == 1) {
-      _scrub(r);
-      return {};
+      if (r.stdout.isEmpty && r.stderr.isEmpty) {
+        _scrub(r);
+        return {};
+      }
+      _translate(r, 'getAll');
     }
     if (r.exitCode != 0) _translate(r, 'getAll');
     // `secret-tool search` prints the item bodies (INCLUDING `secret = …`) to
@@ -262,21 +326,42 @@ final class SecretToolApi implements KeystoreApi {
     // FROZEN keystore account constant (predates the keybay rename).
     final r =
         await _run(['lookup', ..._attrs(service, '__secret_store_probe__')]);
+    // Capture only non-secret control facts before scrubbing: a collision on
+    // the frozen probe account could make stdout a real stored value.
+    final launchFailed = r.launchFailed;
+    final timedOut = r.timedOut;
+    final outputLimitExceeded = r.outputLimitExceeded;
+    final exit = r.exitCode;
+    final silent = r.stdout.isEmpty && r.stderr.isEmpty;
     _scrub(r); // output is irrelevant to the probe and could be a real value
-    if (r.launchFailed) {
+    if (launchFailed) {
       return KeystoreProbe(
           available: false, locked: false, detail: '`$executable` not found');
     }
-    if (r.timedOut) {
+    if (timedOut) {
       return const KeystoreProbe(
           available: true, locked: true, detail: 'timed out (locked?)');
     }
-    // exit 0 (found, unlikely) or 1 (not found) both mean reachable+unlocked.
-    // TODO(behavior-matrix): a locked headless collection that fails *fast*
-    // (no prompter registered) exits nonzero and lands here too — building the
-    // dbus-run-session integration harness and mapping those exits precisely
-    // is a recorded follow-up.
-    return const KeystoreProbe(available: true, locked: false);
+    if (outputLimitExceeded) {
+      return const KeystoreProbe(
+        available: false,
+        locked: false,
+        detail: 'probe exceeded the subprocess output limit',
+      );
+    }
+    // A hit (exit 0) or the old clean no-match spelling (exit 1 with both
+    // streams empty) proves that the service answered. Any diagnostic-bearing
+    // or unexpected nonzero result is ambiguous: it can be a fast locked
+    // keyring or a D-Bus/provider failure, so diagnostics must not advertise a
+    // healthy unlocked store.
+    if (exit == 0 || (exit == 1 && silent)) {
+      return const KeystoreProbe(available: true, locked: false);
+    }
+    return KeystoreProbe(
+      available: false,
+      locked: false,
+      detail: 'probe failed (exit $exit)',
+    );
   }
 
   /// Extracts `attribute.account = NAME` values from `secret-tool search`

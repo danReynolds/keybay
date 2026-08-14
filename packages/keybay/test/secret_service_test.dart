@@ -321,6 +321,41 @@ void main() {
     expect(probe.available, isFalse);
   });
 
+  test('probe rejects a diagnostic-bearing exit 1 as unavailable', () async {
+    final api = SecretToolApi(
+      runner: ScriptedRunner(
+        (a, s) => ProcessRunResult(
+          exitCode: 1,
+          stdout: Uint8List(0),
+          stderr: Uint8List.fromList(utf8.encode('D-Bus unavailable\n')),
+          timedOut: false,
+          launchFailed: false,
+        ),
+      ),
+    );
+    final probe = await api.probe('s');
+    expect(probe.available, isFalse);
+    expect(probe.locked, isFalse);
+    expect(probe.detail, contains('exit 1'));
+  });
+
+  test('subprocess output overflow is a typed failure and is scrubbed',
+      () async {
+    final result = ProcessRunResult(
+      exitCode: 0,
+      stdout: Uint8List.fromList(<int>[1, 2, 3]),
+      stderr: Uint8List.fromList(<int>[4, 5, 6]),
+      timedOut: false,
+      launchFailed: false,
+      outputLimitExceeded: true,
+    );
+    final api = SecretToolApi(runner: ScriptedRunner((a, s) => result));
+    await expectLater(
+        api.get('s', 'a'), throwsA(isA<KeystoreOperationFailed>()));
+    expect(result.stdout, everyElement(0));
+    expect(result.stderr, everyElement(0));
+  });
+
   test('a store failure never leaks the value; output buffers are scrubbed',
       () async {
     // secret-tool would echo the offending stdin (the base64 value) on stderr;
@@ -382,6 +417,50 @@ void main() {
   test('empty search -> empty map', () async {
     final api = SecretToolApi(runner: ScriptedRunner((a, s) => exit(1)));
     expect(await api.getAll('svc'), isEmpty);
+  });
+
+  test('getAll fails closed on exit 1 with provider diagnostics', () async {
+    final result = ProcessRunResult(
+      exitCode: 1,
+      stdout: Uint8List(0),
+      stderr: Uint8List.fromList(utf8.encode('D-Bus connection refused\n')),
+      timedOut: false,
+      launchFailed: false,
+    );
+    final api = SecretToolApi(runner: ScriptedRunner((a, s) => result));
+
+    await expectLater(
+      api.getAll('svc'),
+      throwsA(isA<KeystoreOperationFailed>()),
+    );
+    expect(result.stdout, everyElement(0));
+    expect(result.stderr, everyElement(0));
+  });
+
+  test('clear deletes a whole service in one command', () async {
+    final runner = ScriptedRunner((a, s) => exit(0));
+    await SecretToolApi(runner: runner).clear('svc');
+    expect(runner.calls.single, <String>['clear', '--', 'service', 'svc']);
+  });
+
+  test('clear fails closed when exit 1 still lists an item', () async {
+    Uint8List enc(String value) => Uint8List.fromList(utf8.encode(value));
+    final runner = ScriptedRunner((a, s) {
+      if (a.first == 'clear') return exit(1);
+      return ProcessRunResult(
+        exitCode: 0,
+        stdout: enc('[/1]\nsecret = still-here\n'),
+        stderr: enc('attribute.account = alpha\n'),
+        timedOut: false,
+        launchFailed: false,
+      );
+    });
+    await expectLater(
+      SecretToolApi(runner: runner).clear('svc'),
+      throwsA(isA<KeystoreOperationFailed>()),
+    );
+    expect(runner.results.last.stdout, everyElement(0));
+    expect(runner.results.last.stderr, everyElement(0));
   });
 
   test('non-base64 stored value -> typed KeystoreOperationFailed', () async {

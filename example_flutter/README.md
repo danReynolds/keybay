@@ -35,6 +35,16 @@ and restores the entitled macOS overlay, and reports a per-leg pass/fail table.
 Requires a macOS dev box with Xcode + an iPhone simulator, the Android SDK + an
 AVD, Flutter, and Docker.
 
+### Android build integrity
+
+The Gradle 9.1.0 wrapper is committed, its `-bin` distribution is SHA-256
+pinned in `android/gradle/wrapper/gradle-wrapper.properties`, and CI validates
+the wrapper JAR. `android/gradle/verification-metadata.xml` also makes Gradle
+reject plugin or dependency artifacts whose bytes differ from the reviewed
+checksums. When intentionally upgrading Android build dependencies, regenerate
+that metadata with `./gradlew --write-verification-metadata sha256 help` from
+`example_flutter/android` and review the checksum diff before committing it.
+
 ## Android backup exclusion
 
 `android/app/src/main/res/xml/data_extraction_rules.xml` is the living example of

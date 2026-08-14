@@ -135,11 +135,11 @@ keybay       (engine: platform storage, container, typed errors — unchanged;
   only `workspace:` field from the staged pubspec. This is necessary because a
   root `.pubignore` exclusion for `packages/` is inherited by workspace members
   and would also empty the separately published CLI archive.
-- **CLI SDK floor:** Dart `^3.10.0`. The primary release binaries need no Dart
+- **CLI SDK floor:** Dart `^3.11.0`. The primary release binaries need no Dart
   installation; the Dart-native channel can therefore use the single current
-  `dart install keybay_cli` spelling without carrying the pre-3.10 activation
-  path as another documented workflow. The library keeps its independent,
-  lower SDK floor.
+  `dart install keybay_cli` spelling. The 3.11 floor also excludes the pub
+  archive-extraction traversal fixed in that SDK line. The library keeps its
+  independent, lower SDK floor.
 - **Zero library changes, zero library asks.** `SecretStorage(appId:)`, the
   verbs, `readAll` (enumeration), `backend.describe()`, and the typed errors
   cover all five commands (§17). The CLI conforms to the small core; the core
@@ -530,8 +530,8 @@ malware, root, and the child's own conduct remain out of scope at every tier.
    install's keychain trust unit is the broadly shared VM or an ad-hoc-signed
    binary whose identity may churn, so existing-item access can fail typed;
    the signed release binary is the promoted channel for everyone else. The
-   CLI's Dart SDK floor is 3.10, where `dart install`
-   became available, so this channel has one documented installation spelling.
+   CLI's Dart SDK floor is 3.11, so this channel has one documented installation
+   spelling and a patched pub archive extractor.
    The "any language" positioning fails if the answer to "how do I install
    it" starts with "install Dart".
 4. **Identity surface:** the existing `danReynolds/keybay` repository, its
@@ -739,8 +739,8 @@ in under five minutes on macOS and Linux.
   withdrawn as CLI fallout on the correct grounds that "unused by this CLI"
   is not a reason to change a library API. The genuine library question
   (healthy-store wipe convenience vs. a deliberately-named destructive
-  reset that can recover an *unreadable* store — today's `deleteAll` begins
-  with `readAll()` and cannot) is recorded in
+  reset that can recover an *unreadable* store — `deleteAll` is now atomic but
+  remains a healthy-store operation) is recorded in
   [research-agenda.md](research-agenda.md) §15 for its own review.
 - **Name: `keybay`; scheme `kb://`; appId `keybay-cli`; manifest filename
   `.secrets.env`** (2026-07-12; §16, Appendix B).

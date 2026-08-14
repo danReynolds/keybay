@@ -10,7 +10,7 @@ import 'dart:typed_data';
 import '../ffi/keystore_api.dart';
 import '../backend.dart';
 
-final class KeystoreBackend implements SecretBackend {
+final class KeystoreBackend implements AtomicDeleteAllBackend {
   KeystoreBackend({
     required this.service,
     required KeystoreApi api,
@@ -42,6 +42,9 @@ final class KeystoreBackend implements SecretBackend {
 
   @override
   Future<void> delete(String key) => _api.delete(service, key);
+
+  @override
+  Future<void> deleteAll() => _api.clear(service);
 
   @override
   Future<Map<String, Uint8List>> readAll() => _api.getAll(service);
