@@ -65,6 +65,38 @@ void main() {
       expect(p.split('/'), isNot(contains('..')));
       expect(p, startsWith('/'), reason: 'absolute path');
     });
+
+    test('Linux store-key coordination lock uses the private runtime root', () {
+      expect(
+        coordinationLockPathFor(
+          'com.example.demo',
+          environment: const {'XDG_RUNTIME_DIR': '/run/user/501'},
+        ),
+        '/run/user/501/keybay/com.example.demo.store-key.lock',
+      );
+      expect(
+        coordinationLockPathFor(
+          'com.example.demo',
+          environment: const {'XDG_RUNTIME_DIR': '/run/user/501/'},
+        ),
+        '/run/user/501/keybay/com.example.demo.store-key.lock',
+      );
+    });
+
+    test('Linux coordination refuses a missing or relative runtime root', () {
+      expect(
+        () =>
+            coordinationLockPathFor('com.example.demo', environment: const {}),
+        throwsA(isA<KeystoreUnreachable>()),
+      );
+      expect(
+        () => coordinationLockPathFor(
+          'com.example.demo',
+          environment: const {'XDG_RUNTIME_DIR': 'relative/runtime'},
+        ),
+        throwsA(isA<KeystoreUnreachable>()),
+      );
+    });
   });
 
   group('bytes/string API', () {

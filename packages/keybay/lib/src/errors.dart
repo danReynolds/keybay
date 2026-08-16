@@ -160,16 +160,11 @@ final class UnsupportedCapability extends SecretStoreException {
 /// The store for this `appId` was provisioned under a **different scheme** than
 /// the one that now resolves, so silently using the current scheme would hide
 /// the existing secrets (an empty-looking store) or, worse, resurface stale
-/// values from an abandoned store. On macOS this happens when an app *gains*
-/// the Keychain Sharing entitlement between versions (encrypted file → Data
-/// Protection keychain). Only that direction can throw: a *lost* entitlement
-/// is undetectable from the now-unentitled process, which cannot see the
-/// abandoned keychain items (see doc/platforms/macos.md). Rather than switch
-/// stores silently, the library throws this so the transition is a
-/// deliberate decision. Resolve it by migrating the secrets across and then
-/// removing the abandoned store — for a gained entitlement, the old encrypted
-/// file (`~/Library/Application Support/<appId>/secrets.enc`) — to proceed
-/// under the new scheme.
+/// values from an abandoned store. On macOS this happens when an app gains or
+/// loses the Keychain Sharing entitlement between versions. Rather than switch
+/// stores silently, the library throws this so the transition is a deliberate
+/// decision. Resolve it by migrating/resetting the old store and its non-secret
+/// scheme marker before proceeding under the new scheme.
 final class MigrationRequired extends SecretStoreException {
   MigrationRequired({required this.appId, required this.from, required this.to})
       : super(
@@ -185,6 +180,22 @@ final class MigrationRequired extends SecretStoreException {
 
   /// The scheme that resolves now.
   final StorageScheme to;
+}
+
+/// The signed app now selects a different Data Protection Keychain access
+/// group than the one under which this macOS store was first used. Continuing
+/// would present a new empty namespace while the old items remain elsewhere.
+/// Keybay never searches sibling groups to guess which item the host intended;
+/// the host must explicitly migrate or reset the store configuration.
+final class KeychainAccessGroupChanged extends SecretStoreException {
+  KeychainAccessGroupChanged(this.appId)
+      : super(
+          'keychain_access_group_changed',
+          'store for "$appId" was used under a different Apple Keychain '
+              'access group; refusing to switch namespaces silently',
+        );
+
+  final String appId;
 }
 
 /// A write was rejected because the whole sealed store would exceed the

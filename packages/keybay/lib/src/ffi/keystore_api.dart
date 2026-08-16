@@ -54,3 +54,22 @@ abstract interface class KeystoreApi {
   /// Whether [service] is reachable and unlocked (best effort).
   Future<KeystoreProbe> probe(String service);
 }
+
+/// Optional provider capability for an atomic create-without-replace.
+///
+/// A shared store key must never be overwritten by a racing first writer. OS
+/// providers that can make an item visible only when its identity is absent
+/// expose that primitive here; callers can then adopt the winner's value.
+abstract interface class AddOnlyKeystoreApi {
+  /// Adds [value] only when ([service], [account]) is absent.
+  ///
+  /// Returns true when this call inserted the item and false when an item with
+  /// that identity already existed. A false result must leave the existing
+  /// value untouched.
+  Future<bool> addIfAbsent(
+    String service,
+    String account,
+    Uint8List value, {
+    String? label,
+  });
+}

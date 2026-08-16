@@ -123,7 +123,7 @@ reference; the shape summary:
 | Windows | encrypted file | DPAPI / wincred | future |
 | iOS | **native items** (Data Protection Keychain) | — (data is the item) | **shipped**; fixed device-bound policy; hardware backing not attested; round-trip exercised on the iOS simulator (`example_flutter/`) |
 | Android (API 31+) | encrypted file | Android Keystore KEK via **pure-FFI JNI** — StrongBox requested, actual level inspected | **shipped**; validated on an API 33 emulator incl. the StrongBox-fallback branch; physical hardware mediation not established by emulator testing |
-| **headless deployment** | no dedicated shape | no dedicated provider | **out of scope** (owner call 2026-07-10). The desktop resolver may still reach a configured desktop credential service, but there is no supported availability contract. A TPM prototype and its rationale remain in `headless-implementation-plan.md` and git history. |
+| **headless deployment** | no dedicated shape | no dedicated provider | **out of scope**. The desktop resolver may still reach a configured desktop credential service, but there is no supported availability contract. Historical prototype work remains in git history. |
 
 ## What is deliberately NOT here
 
@@ -137,8 +137,8 @@ reference; the shape summary:
   of raising a GUI prompt.)
 - **No insecure fallback.** No plaintext key-on-disk option; if there is no secure place
   for the key, we throw.
-- **No dedicated headless mode** (out of scope, owner call 2026-07-10). It
-  cannot be safely auto-detected (see `headless-implementation-plan.md` §1), so
+- **No dedicated headless mode** (out of scope). It cannot be safely
+  auto-detected, so
   it would need its own explicit entry point — and until there is demand, no
   entry point beats a rarely-used one. A headless process can still encounter
   the desktop resolver; if its credential service is absent or locked, the
@@ -156,15 +156,19 @@ On iOS and entitled macOS apps, secrets are **native per-item Data Protection
 Keychain entries**. Keybay uses
 `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`: items do not migrate to a
 different device, but after the first unlock following boot they remain
-available when the device relocks. They are non-synchronizing. A separate
-hardware-backing level is deliberately omitted because Keybay cannot attest it.
+available when the device relocks. They are non-synchronizing. The access group
+is derived from the signed process and included explicitly in every operation;
+duplicate updates reassert both policies. A separate hardware-
+backing level is deliberately omitted because Keybay cannot attest it.
 
 Two lifecycle consequences matter: Apple Keychain items commonly persist after
 app uninstall, but Apple does not document that as a contract, so applications
 must not depend on either persistence or automatic deletion. A macOS app that
 gains the entitlement between versions moves from the file scheme to Data
 Protection Keychain items. Keybay surfaces the existing file as
-`MigrationRequired` instead of silently presenting an empty store. Plain CLIs
+`MigrationRequired` instead of silently presenting an empty store. A private,
+non-secret native-use marker likewise makes later entitlement loss or an
+access-group change loud rather than selecting a fresh namespace. Plain CLIs
 and `dart run` use the authenticated file plus a login-Keychain key; AEAD adds
 integrity and a portable container, while at-rest confidentiality remains
 login-password-bound.

@@ -53,6 +53,10 @@ jobs:
       - run: dart pub get --enforce-lockfile
       - run: dart format --output=none --set-exit-if-changed .
       - run: dart analyze --fatal-infos
+      # Repository-only assurance tooling tests. Keep these outside the core
+      # package so its published archive never contains tests that depend on
+      # repository documents or shell adapters.
+      - run: dart test test/device_security_receipt_test.dart
       # Unit tier (hermetic): crypto vectors, container/fuzz, POSIX perms,
       # backend logic over fakes, and the dependency-closure firewall. Each
       # package's tests run from its own directory (they read cwd-relative
@@ -170,6 +174,66 @@ jobs:
             KEYBAY_LOCKED_TEST=1 ./tool/test_cli_locked_storage.sh
           '
 
+  # Genuine mobile platform APIs on disposable virtual devices. These are
+  # Continuous integration checks, not physical-device qualification and do
+  # not issue security receipts.
+  integration-android:
+    if: github.event_name != 'schedule'
+    name: integration-android (API ${{ matrix.api-level }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [31, 36]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: install exact Flutter SDK
+        run: |
+          flutter_root="$RUNNER_TEMP/flutter"
+          git init "$flutter_root"
+          git -C "$flutter_root" remote add origin https://github.com/flutter/flutter.git
+          git -C "$flutter_root" fetch --depth=1 origin refs/tags/3.44.4:refs/tags/3.44.4
+          git -C "$flutter_root" checkout --detach refs/tags/3.44.4
+          test "$(git -C "$flutter_root" rev-parse HEAD)" = ad70ec4617166f1c38e5d2bfd388af71fda14f06
+          echo "$flutter_root/bin" >> "$GITHUB_PATH"
+      - run: flutter pub get --enforce-lockfile
+        working-directory: example_flutter
+      - name: enable KVM for the Android emulator
+        run: sudo chown "$(id -u):$(id -g)" /dev/kvm
+      - uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          target: default
+          disable-animations: true
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics
+          script: ./tool/test_mobile_ci.sh android
+
+  integration-ios:
+    if: github.event_name != 'schedule'
+    # Keep the simulator gate on the stable Xcode 16 line. Xcode 26 hosted
+    # runners have exhibited intermittent xcodebuild deadlocks, which can turn
+    # an otherwise deterministic security gate into an unbounded hang.
+    runs-on: macos-15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: verify exact Xcode toolchain
+        run: test "$(xcodebuild -version | head -n 1)" = "Xcode 16.4"
+      - name: install exact Flutter SDK
+        run: |
+          flutter_root="$RUNNER_TEMP/flutter"
+          git init "$flutter_root"
+          git -C "$flutter_root" remote add origin https://github.com/flutter/flutter.git
+          git -C "$flutter_root" fetch --depth=1 origin refs/tags/3.44.4:refs/tags/3.44.4
+          git -C "$flutter_root" checkout --detach refs/tags/3.44.4
+          test "$(git -C "$flutter_root" rev-parse HEAD)" = ad70ec4617166f1c38e5d2bfd388af71fda14f06
+          echo "$flutter_root/bin" >> "$GITHUB_PATH"
+      - run: flutter pub get --enforce-lockfile
+        working-directory: example_flutter
+      - run: ./tool/test_mobile_ci.sh ios
+
   site:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
@@ -199,13 +263,16 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - name: scan dependency lockfile
+      - name: scan every committed dependency lockfile
         uses: google/osv-scanner-action/osv-scanner-action@8dc09193bb540e09b23da07ad7e30bd33bf87018 # v2.3.8
         with:
           scan-args: |-
             --output=results.json
             --format=json
             --lockfile=./pubspec.lock
+            --lockfile=./example_flutter/pubspec.lock
+            --lockfile=./packages/keybay_cli/example/flutter/pubspec.lock
+            --lockfile=./packages/keybay_cli/example/rails/Gemfile.lock
             --lockfile=./site/Gemfile.lock
         continue-on-error: true
       - name: report findings and fail on vulnerabilities

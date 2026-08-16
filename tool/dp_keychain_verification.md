@@ -10,10 +10,14 @@ are covered automatically:
 - **Refusal path** (`errSecMissingEntitlement` −34018 → the file scheme) — CI,
   every push (`keychain_integration_test.dart`, plus the resolver end-to-end).
 - **Unentitled file scheme inside a real `.app`** — the `example_flutter/`
-  harness, `flutter test integration_test -d macos` (no signing needed).
+  harness, `flutter test integration_test/keybay_test.dart -d macos
+  --dart-define=EXPECT_SCHEME=file --dart-define=EXPECT_LEVEL=login` (no
+  development signing needed).
 
 The **entitled success path** can't run in CI (no signing identity) and needs a
-one-time local run on a Mac with Xcode and an Apple Development identity.
+repeatable local run on a Mac with Xcode and an Apple Development identity.
+Re-run it after entitlement, signing, resolver, native-FFI, or major macOS
+changes; retain the result under the device-suite evidence policy.
 
 ## Just run the script
 
@@ -62,7 +66,7 @@ The permanent harness is `example_flutter/` — no throwaway app.
    ```xml
    <key>keychain-access-groups</key>
    <array>
-     <string>$(AppIdentifierPrefix)com.example.exampleFlutter</string>
+     <string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>
    </array>
    ```
 
@@ -82,8 +86,8 @@ The permanent harness is `example_flutter/` — no throwaway app.
 
 4. **Run the entitled leg** — pass the same dart-defines the script uses. The
    distinct `APP_ID` matters: it keeps this native-scheme store from colliding
-   with the default-appId **file**-scheme store the unentitled leg leaves on the
-   same machine, which would otherwise trip the scheme-migration guard
+   with any default-appId **file**-scheme store left by a manual unentitled run
+   on the same machine, which would otherwise trip the scheme-migration guard
    (`MigrationRequired`) at construction.
 
    ```sh

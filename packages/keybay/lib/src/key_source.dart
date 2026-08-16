@@ -72,8 +72,11 @@ abstract interface class KeySource {
   /// The existing key, or null if none has been created.
   Future<Uint8List?> read();
 
-  /// Generates, persists, and returns a fresh key. Overwrites any existing one,
-  /// so call only when [read] returned null (the backend enforces this order).
+  /// Ensures a key exists and returns it after [read] returned null.
+  ///
+  /// Providers with atomic add-only creation adopt a concurrent winner rather
+  /// than overwriting it. Other implementations generate and persist a fresh
+  /// key; their caller must coordinate the read/create transaction.
   Future<Uint8List> create();
 
   /// Removes the persisted key. Idempotent.
@@ -84,10 +87,15 @@ abstract interface class KeySource {
 }
 
 /// Internal capability for key sources whose identity is shared independently
-/// of the container path. It lets the encrypted backend hold one global lock
+/// of the container path. It lets the encrypted backend hold one identity lock
 /// across the read/create/container-write transaction on first use.
 abstract interface class CreationCoordinatedKeySource implements KeySource {
   Future<T> withCreationLock<T>(Future<T> Function() body);
+
+  /// Whether a failed first container write may remove the key it just made.
+  /// False when creation can race across independent container roots: another
+  /// writer may already have adopted that published key.
+  bool get canRollbackCreatedKey;
 }
 
 /// Holds the key in process memory only. Not persistent. **Internal / not
@@ -188,6 +196,10 @@ final class SystemKeySource implements CreationCoordinatedKeySource {
   final SecureFileSystem _fs;
 
   @override
+  bool get canRollbackCreatedKey =>
+      coordinationLockPath != null && _api is! AddOnlyKeystoreApi;
+
+  @override
   Future<T> withCreationLock<T>(Future<T> Function() body) {
     final lockPath = coordinationLockPath;
     if (lockPath == null) return body();
@@ -215,6 +227,28 @@ final class SystemKeySource implements CreationCoordinatedKeySource {
   @override
   Future<Uint8List> create() async {
     final key = generateStoreKey();
+    final api = _api;
+    if (api case final AddOnlyKeystoreApi addOnly) {
+      final inserted = await addOnly.addIfAbsent(
+        service,
+        account,
+        key,
+        label: label ?? 'keybay key',
+      );
+      if (inserted) return key;
+
+      // Another first writer won. Adopt its key; never overwrite it with our
+      // candidate. A duplicate followed by absence is an external deletion
+      // race, not a fresh-store signal, so fail loudly rather than retrying an
+      // upsert that could orphan the winner's container.
+      final existing = await read();
+      if (existing == null) {
+        throw const KeystoreOperationFailed(
+          'store key disappeared after atomic create collision',
+        );
+      }
+      return existing;
+    }
     await _api.set(service, account, key, label: label ?? 'keybay key');
     return key;
   }

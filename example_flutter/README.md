@@ -35,6 +35,27 @@ and restores the entitled macOS overlay, and reports a per-leg pass/fail table.
 Requires a macOS dev box with Xcode + an iPhone simulator, the Android SDK + an
 AVD, Flutter, and Docker.
 
+The separate [device security suite](../doc/device-security-suite.md) runs
+physical-device and adversarial scenarios while retaining a sanitized receipt:
+
+```sh
+./tool/device_security.sh doctor android
+./tool/device_security.sh run android --device <serial>
+./tool/device_security.sh run android --device <serial> --tamper
+./tool/device_security.sh doctor ios
+./tool/device_security.sh run ios --device <physical-udid>
+./tool/device_security.sh run macos
+./tool/device_security.sh run macos --tamper
+```
+
+The mobile and macOS harness uses the dedicated test-only identity
+`dev.keybay.securityharness`. Android cleanup is scoped to that exact package,
+the selected Android user, and the dedicated `com.example.keybayHarness` and
+`com.example.keybayDeviceSecurity.*` Keybay namespaces. Baseline qualification
+never reboots the target or changes credentials, biometrics, backup transport,
+or another application's data. Lifecycle and destructive procedures remain
+separately gated as they are implemented.
+
 ### Android build integrity
 
 The Gradle 9.1.0 wrapper is committed, its `-bin` distribution is SHA-256
@@ -47,11 +68,13 @@ that metadata with `./gradlew --write-verification-metadata sha256 help` from
 
 ## Android backup exclusion
 
-`android/app/src/main/res/xml/data_extraction_rules.xml` is the living example of
-  the backup exclusion documented in the package's
+`android/app/src/main/res/xml/data_extraction_rules.xml` is the living harness
+counterpart to the backup exclusion documented in the package's
 [`doc/platforms/android.md`](../doc/platforms/android.md). The
   Android Keystore wrapping key is not part of app backup and does not migrate
   with transferred app data, so a restored store cannot be decrypted on another
   device (reported as `KeyInvalidated`);
-excluding the store directory from cloud backup and device transfer avoids that
-confusing restore state and keeps ciphertext out of backups.
+this dedicated harness disables backup and excludes its entire files domain
+from cloud backup and device transfer because it creates several test
+namespaces. Consumer applications should use the narrower per-`appId` paths in
+the platform guide.

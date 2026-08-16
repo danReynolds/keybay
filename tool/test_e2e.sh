@@ -21,6 +21,7 @@
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HARNESS="$REPO/example_flutter"
+HARNESS_BUNDLE_ID="dev.keybay.securityharness"
 ANDROID_SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 ADB="$ANDROID_SDK/platform-tools/adb"
 ENTITLED=0
@@ -129,7 +130,7 @@ apply_entitled_overlay() {
   printf '\nDEVELOPMENT_TEAM = %s\nCODE_SIGN_IDENTITY = Apple Development\n' \
     "$team" >>"$XCCONFIG"
   /usr/bin/sed -i '' \
-    's|<key>com.apple.security.network.server</key>|<key>keychain-access-groups</key><array><string>$(AppIdentifierPrefix)com.example.exampleFlutter</string></array><key>com.apple.security.network.server</key>|' \
+    's|<key>com.apple.security.network.server</key>|<key>keychain-access-groups</key><array><string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string></array><key>com.apple.security.network.server</key>|' \
     "$ENTITLEMENTS"
   # Regenerate Flutter's ephemeral xcode inputs, then provision (idempotent;
   # creates the managed profile on first run — needs the account's PLA signed).
@@ -181,7 +182,7 @@ leg_macos_app() {
   # prompt and hang a non-interactive run. This fixed com.example store is test
   # data, so remove both halves before and after the leg to keep it repeatable.
   local app_id="com.example.keybayHarness.file"
-  local app_dir="$HOME/Library/Containers/com.example.exampleFlutter/Data/Library/Application Support/$app_id"
+  local app_dir="$HOME/Library/Containers/$HARNESS_BUNDLE_ID/Data/Library/Application Support/$app_id"
   security delete-generic-password -s "$app_id" -a store-key \
     >/dev/null 2>&1 || true
   rm -rf -- "$app_dir"

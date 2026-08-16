@@ -80,6 +80,15 @@ CliFailure failureForSecretStore(SecretStoreException error) {
         'Recovery procedure: $recoveryUrl',
       ],
     ),
+    KeychainAccessGroupChanged() => CliFailure(
+      exitCode: 69,
+      lines: <String>[
+        'error: the Apple Keychain access group for this store changed.',
+        'Keybay will not switch namespaces implicitly; restore the original '
+            'signing configuration or follow the deliberate migration procedure.',
+        'Recovery procedure: $recoveryUrl',
+      ],
+    ),
     StoreTooLarge() => CliFailure(
       exitCode: 69,
       lines: <String>[

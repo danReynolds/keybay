@@ -1,6 +1,6 @@
 /// Android JNI over pure `dart:ffi` — no Java shipped, no plugin, no
-/// `package:jni` (see doc/design.md §12 and doc/implementation-plan.md
-/// Phase 3 for the decision record and the probe that proved it).
+/// `package:jni` (see doc/design.md §12 for the decision record and the
+/// probe that proved it).
 ///
 /// Mechanism: Android officially exports `JNI_GetCreatedJavaVMs` from
 /// `libnativehelper` to apps at **API 31+** (android/ndk#1320), so a library

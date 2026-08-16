@@ -60,8 +60,9 @@ before plaintext is returned. Each platform link has the full breakdown.
 | [Android 12+](platforms/android.md) | an authenticated encrypted file | store key wrapped by Android Keystore; StrongBox requested and actual level inspected |
 | [Linux desktop](platforms/linux.md) | an authenticated encrypted file | 32-byte store key in an unlocked Secret Service provider; login-bound |
 
-Every row is exercised end-to-end through its genuine platform API or service
-(see [Testing](#testing)). Windows is not implemented and fails closed:
+Every row is exercised through its genuine platform API or service, with the
+evidence class and stronger qualification kept explicit (see
+[Testing](#testing)). Windows is not implemented and fails closed:
 
 | Platform | Planned scheme |
 |---|---|
@@ -70,8 +71,8 @@ Every row is exercised end-to-end through its genuine platform API or service
 Headless deployments have no supported Keybay backend or availability
 contract. A desktop resolver may still reach a configured credential service;
 an absent or locked service fails typed. Deployments should use their
-platform's own secret system. The removed prototype and rationale remain in
-[the research plan](headless-implementation-plan.md).
+platform's own secret system. The boundary and rationale are normative in
+[the security design](design.md#8-threat-model).
 
 ## Threat model
 
@@ -124,13 +125,14 @@ service**, repeatably, from the suite — not mocks.
 ```
 
 In CI, on every push to main and every pull request: the unit tier (crypto
-vectors, container fuzzing, real POSIX permissions, dependency-closure
-firewall) plus the real macOS Keychain and Linux Secret Service. The mobile
-and entitled-macOS legs need device toolchains and a signing identity, so they
-run locally via `tool/test_e2e.sh`, which boots and tears down the iOS
-simulator and Android emulator itself. One honest limit: on a
-simulator/emulator the secure hardware is *emulated*, so those legs prove the
-real keystore **code path** end-to-end, not that physical silicon mediated it.
+vectors, container mutation, real POSIX permissions, dependency-closure
+firewall), the real macOS Keychain and Linux Secret Service, and maintained
+iOS-simulator/Android-emulator integration. The entitled-macOS leg needs a
+signing identity and runs locally via `tool/test_e2e.sh --entitled`. One honest
+limit: simulator/emulator secure hardware is *emulated*, so those legs prove
+the genuine API **code path**, not that physical silicon mediated it. Stronger
+native/device evidence is scoped by the
+[security suite](device-security-suite.md).
 
 ## Requirements
 
@@ -150,9 +152,11 @@ real keystore **code path** end-to-end, not that physical silicon mediated it.
 
 Keybay is published on pub.dev. The API and on-disk container format may still
 change; a future `0.2.0` may carry breaking changes under pub's pre-1.0
-semantics. It is implemented and validated end-to-end against the genuine
-platform path: macOS (CLI and entitled), Linux, iOS, and Android 12+. Windows is
-unsupported and fails typed.
+semantics. The macOS, Linux, iOS, and Android 12+ paths are implemented and
+maintained through genuine platform integration; stronger qualification is
+limited to the exact configurations and evidence named by the
+[security suite](device-security-suite.md). Windows is unsupported and fails
+typed.
 Headless operation has no supported backend or availability contract.
 Report vulnerabilities per [SECURITY.md](../SECURITY.md); design rationale is in
 [design.md](design.md) and [architecture.md](architecture.md), with the current

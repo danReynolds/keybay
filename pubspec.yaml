@@ -9,6 +9,9 @@ publish_to: none
 environment:
   sdk: ^3.6.0
 
+dev_dependencies:
+  test: ^1.25.0
+
 workspace:
   - packages/keybay
   - packages/keybay_cli

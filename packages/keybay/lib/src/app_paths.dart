@@ -1,4 +1,4 @@
-/// Derived per-app storage locations (see doc/implementation-plan.md §3).
+/// Derived per-app storage locations (see doc/design.md §9).
 ///
 /// The container path is a pure function of the validated `appId` — no path
 /// knob exists on the public API. `appId` is a single traversal-proof path
@@ -12,6 +12,10 @@ import 'errors.dart';
 
 /// The container file name inside the app's data directory.
 const String containerFileName = 'secrets.enc';
+
+/// Non-secret macOS trace that prevents a later loss of Keychain Sharing
+/// entitlement from silently selecting an empty encrypted-file store.
+const String macosSchemeMarkerFileName = '.scheme';
 
 /// Derives the container file path for [appId] on this platform:
 ///
@@ -78,3 +82,41 @@ String androidDataDirFromTmpdir(String tmpdir) {
 /// `System.getProperty("java.io.tmpdir")` (see [androidDataDirFromTmpdir]).
 String androidContainerPathFor(String appId, {required String tmpdir}) =>
     '${androidDataDirFromTmpdir(tmpdir)}/files/$appId/$containerFileName';
+
+/// Beside the possible macOS encrypted container so the signing configuration
+/// sees one stable trace across file/native scheme transitions.
+String macosSchemeMarkerPathFor(String appId,
+    {Map<String, String>? environment}) {
+  final container = containerPathFor(appId, environment: environment);
+  final i = container.lastIndexOf('/');
+  return '${container.substring(0, i)}/$macosSchemeMarkerFileName';
+}
+
+/// A Linux session-private lock path shared by every container root for one
+/// Secret Service identity. It intentionally does not depend on
+/// HOME/XDG_DATA_HOME: two processes that point their containers at different
+/// data roots must still coordinate creation of the one shared Secret Service
+/// key. `XDG_RUNTIME_DIR` is the desktop session's private, user-owned runtime
+/// namespace; unlike a predictable directory under `/tmp`, another OS user
+/// cannot pre-create this path and deny all Keybay writes.
+///
+/// The runtime directory must already exist. The caller verifies that boundary
+/// before allowing [SystemKeySource] to create the `keybay` child directory.
+/// Apple uses the Keychain's atomic add-if-absent primitive instead: no runtime
+/// lock is needed there.
+String coordinationLockPathFor(
+  String appId, {
+  Map<String, String>? environment,
+}) {
+  final runtimeDir = (environment ?? Platform.environment)['XDG_RUNTIME_DIR'];
+  if (runtimeDir == null || runtimeDir.isEmpty || !runtimeDir.startsWith('/')) {
+    throw const KeystoreUnreachable(
+      'XDG_RUNTIME_DIR is not an absolute path; a private desktop runtime '
+      'directory is required for Linux store coordination',
+    );
+  }
+  final normalized = runtimeDir.length > 1 && runtimeDir.endsWith('/')
+      ? runtimeDir.substring(0, runtimeDir.length - 1)
+      : runtimeDir;
+  return '$normalized/keybay/$appId.store-key.lock';
+}

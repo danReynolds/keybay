@@ -13,6 +13,15 @@
   store.
 - Coordinate first store-key creation by keystore identity across different
   HOME/XDG container roots, without changing existing key or container names.
+- Scope every Apple Data Protection Keychain operation to the process's first
+  entitled access group and reassert the device-only, non-synchronizing policy
+  on duplicate updates.
+- Make macOS signing transitions loud: atomic Keychain key creation prevents
+  cross-root first-write replacement, and a private non-secret marker refuses
+  later entitlement loss or access-group changes instead of selecting an
+  empty-looking store.
+- Move Linux cross-root coordination into the session-private
+  `XDG_RUNTIME_DIR`; a missing or relative runtime directory now fails closed.
 - Harden POSIX reads and lock files with `O_NOFOLLOW`, non-blocking type checks,
   descriptor-pinned bounded reads, and private-mode enforcement.
 - Report an Android wrapped-key blob with a missing Keystore KEK as unavailable

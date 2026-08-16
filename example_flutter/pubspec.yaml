@@ -3,7 +3,7 @@ description: >-
   Flutter host app for keybay's mobile/desktop integration tiers: proves
   the package runs inside Flutter apps and exercises the resolver on real
   platform keystores (macOS entitled/unentitled, iOS simulator, Android
-  emulator). See doc/implementation-plan.md Phase 2.
+  emulator). See doc/device-security-suite.md.
 publish_to: "none"
 version: 1.0.0+1
 

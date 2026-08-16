@@ -152,6 +152,11 @@ leak-checked integration pass is a recorded follow-up, not yet built).
 `OSStatus` maps to the typed taxonomy (`errSecItemNotFound`,
 `errSecInteractionNotAllowed` → locked, `errSecDuplicateItem` → upsert, …).
 Writes are add-then-update on duplicate (covers the delete/add race).
+Data Protection operations derive the app's first entitled access group and
+include it explicitly on every add/read/update/enumerate/delete: Apple otherwise
+adds to the first group but searches every entitled group. Duplicate updates
+reassert `AfterFirstUnlockThisDeviceOnly` and `synchronizable = false`, so a
+pre-existing item cannot retain a weaker or migratory policy.
 
 **Linux subprocess hygiene.** Every op has a hard timeout (default 15 s):
 `secret-tool` has no no-prompt flag and a locked collection spawns a GUI
@@ -410,6 +415,31 @@ has its own explicit process boundary.
 The bar is ssh-agent / aws-vault, not an HSM. The `KeySource` seam is where a
 future key home can attach without redesign.
 
+### Security guarantees
+
+These identifiers are the normative product properties. Tests and qualification
+scenarios reference them; they do not redefine them elsewhere.
+
+| ID | Guarantee |
+|---|---|
+| `KB-INV-001` | Keybay's persistent data artifacts do not contain plaintext secret values. |
+| `KB-INV-002` | Copying an encrypted container without its separately protected store key, or copying a device-bound native/wrapped state without the required platform key, is insufficient to recover its secrets. |
+| `KB-INV-003` | Corruption, authentication failure, and missing/mismatched required key material fail closed without returning plaintext or silently replacing the store. |
+| `KB-INV-004` | Process, lock, reboot, reinstall, backup, transfer, and restore behavior matches the documented policy for the qualified platform configuration. |
+| `KB-INV-005` | Diagnostics report only protection properties established by the running platform; Keybay never infers hardware backing from API choice alone. |
+| `KB-INV-006` | Provider, entitlement, access-group, and storage-scheme transitions do not silently downgrade protection or present abandoned data as a fresh empty store. |
+| `KB-INV-007` | Concurrency, interruption, malformed input, and native-boundary stress preserve confidentiality, integrity, availability bounds, and typed failure behavior. |
+| `KB-INV-008` | Backup, synchronization, and cross-device transfer behavior matches Keybay's documented nonmigration policy on the reference host configuration. |
+
+### Library and host boundary
+
+Keybay owns its cryptography, container, derived paths, platform-store queries,
+failure behavior, diagnostics, and reference harness. A consuming application
+owns its final signing and provisioning, Apple entitlements/access groups, and
+Android backup/transfer policy. Keybay validates and qualifies the reference
+integration, but that evidence does not prove an arbitrary host application is
+configured safely.
+
 ## 9. Platform policy
 
 iOS ships, reusing the macOS `SecItem` C API almost verbatim (loaded from the
@@ -432,16 +462,16 @@ attest their hardware backing.
 
 | Runtime | Selected shape | Protection and status |
 |---|---|---|
-| **macOS, entitled app** | Native Data Protection Keychain items | Fixed `AfterFirstUnlockThisDeviceOnly`, non-synchronizing policy; hardware backing not attested; signed harness exercises the success path |
+| **macOS, entitled app** | Native Data Protection Keychain items | One explicit entitled access group; fixed `AfterFirstUnlockThisDeviceOnly`, non-synchronizing policy; a private non-secret marker makes later scheme/group changes loud after a marker-aware build has observed native use; hardware backing not attested |
 | **macOS, CLI or unentitled app** | Authenticated file | Store key in login Keychain; confidentiality remains login-password-bound; real Keychain integration runs in CI |
-| **Linux desktop** | Authenticated file | Store key in an unlocked Secret Service provider; confidentiality remains login-bound; real gnome-keyring integration runs in CI |
-| **iOS** | Native Data Protection Keychain items | Same fixed item policy; hardware backing not attested; simulator exercises the genuine API path |
+| **Linux desktop** | Authenticated file | Store key in an unlocked Secret Service provider; cross-root first creation coordinates inside private `XDG_RUNTIME_DIR`; confidentiality remains login-bound; real gnome-keyring integration runs in CI |
+| **iOS** | Native Data Protection Keychain items | One explicit default entitled access group and the same fixed item policy; hardware backing not attested; simulator exercises the genuine API path |
 | **Android 12+** | Authenticated file | Store key wrapped by Android Keystore; StrongBox requested, actual provider level inspected; emulator exercises fallback and self-test paths |
 | **Windows** | Unsupported | Fails closed; a DPAPI/Credential Manager binding remains future work |
 
-Three invariants matter:
+Three consequences matter:
 
-1. **The policy does not multiply the platform surface.** Native items and the
+1. **The policy does not multiply the platform surface (`KB-INV-006`).** Native items and the
    file key reuse the same small OS binding where possible; Android adds one
    specialized wrapping-key source because its Keystore is a key store, not an
    arbitrary-secret store.
@@ -449,7 +479,7 @@ Three invariants matter:
    branding.** On login-bound macOS and Linux stores, the container's concrete
    wins are authenticated encryption, one portable backup unit, and a key
    stored separately—not hardware resistance.
-3. **Fail closed, never substitute an insecure home.** An unsupported runtime,
+3. **Fail closed, never substitute an insecure home (`KB-INV-003`).** An unsupported runtime,
    unreachable credential store, invalidated key, or corrupt container returns
    a typed error. There is no plaintext store-key fallback.
 

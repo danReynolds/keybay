@@ -3,15 +3,15 @@
 //
 // Run via tool/test_e2e.sh, which passes the per-environment EXPECT_SCHEME /
 // EXPECT_LEVEL dart-defines. The expectations by leg (see
-// doc/implementation-plan.md Phase 2):
+// doc/device-security-suite.md):
 //   macOS, ad-hoc signing (no entitlement): file + loginBound (−34018 branch
 //     inside a real .app — the same branch every CLI takes).
 //   macOS, Keychain Sharing + development signing: native items; no inferred
 //     hardware level.
 //   iOS simulator: native items; no inferred hardware level.
-//   Android emulator (API 31+): encrypted file + AndroidKeyStore-wrapped key
-//     via the pure-FFI JNI shim; level measured from the KEK (software on the
-//     emulator) in the dedicated test after a write.
+//   Android (API 31+): encrypted file + AndroidKeyStore-wrapped key via the
+//     pure-FFI JNI shim; level measured from the KEK after a write. Emulator
+//     runs default to software; physical-device runs pass hardware explicitly.
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -24,9 +24,13 @@ import 'package:keybay/keybay.dart';
 /// deterministic storage shape); `EXPECT_LEVEL` is `hardware` | `software` |
 /// `login` and may be empty when the level can't be asserted up front (Android
 /// measures from a KEK that doesn't exist until the first write — see the
-/// dedicated test below). Apple native-item paths deliberately leave it null.
+/// dedicated test below). `EXPECT_ANDROID_LEVEL` sets that post-write Android
+/// assertion and defaults to the emulator's `software` result. Apple
+/// native-item paths deliberately leave the level null.
 const String expectScheme = String.fromEnvironment('EXPECT_SCHEME');
 const String expectLevel = String.fromEnvironment('EXPECT_LEVEL');
+const String expectAndroidLevel =
+    String.fromEnvironment('EXPECT_ANDROID_LEVEL', defaultValue: 'software');
 
 /// The macOS entitled and unentitled legs run on the *same machine* and would
 /// otherwise share one app-support dir — where the entitled leg would trip
@@ -88,8 +92,7 @@ void main() {
     expect(info.locked, isFalse);
   });
 
-  test('Android: security level is measured from the KEK, not asserted',
-      () async {
+  test('Android: security level is measured from the KEK', () async {
     if (!Platform.isAndroid) {
       markTestSkipped('Android-only');
       return;
@@ -97,12 +100,19 @@ void main() {
     // Provision the KEK, then read the level the hardware actually claims.
     await store.writeString('__lvl', 'x');
     final info = await store.backend.describe();
-    // An emulator's Keystore is software-emulated, so the honest measured
-    // level is `softwareBacked` — proving we report what KeyInfo says, not a
-    // blanket "hardwareBacked". A real device with TEE/StrongBox reports
-    // hardwareBacked.
-    expect(info.level, SecurityLevel.softwareBacked,
-        reason: 'emulator Keystore is software; measurement must say so');
+    final wantLevel = switch (expectAndroidLevel) {
+      'hardware' => SecurityLevel.hardwareBacked,
+      'software' => SecurityLevel.softwareBacked,
+      _ => throw StateError(
+          'EXPECT_ANDROID_LEVEL must be hardware or software',
+        ),
+    };
+    // The expected result belongs to the environment, not detection code: an
+    // emulator uses software, while physical TEE/StrongBox hardware reports
+    // hardware. Either way this proves Keybay reports KeyInfo rather than
+    // assuming every Android Keystore is hardware-backed.
+    expect(info.level, wantLevel,
+        reason: 'Android Keystore level differs from the test-leg contract');
   });
 
   test('macOS entitled: a pre-existing file store blocks native (migration)',

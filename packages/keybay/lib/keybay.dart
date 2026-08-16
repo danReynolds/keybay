@@ -34,6 +34,7 @@ export 'src/errors.dart'
         KeystoreOperationFailed,
         KeystoreUnreachable,
         MigrationRequired,
+        KeychainAccessGroupChanged,
         SecretStoreException,
         SecureFileError,
         StoreBusy,
