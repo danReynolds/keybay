@@ -5,9 +5,25 @@ accordingly.
 
 ## Reporting
 
-Report suspected vulnerabilities privately to **me@danreynolds.ca** — do not open
-a public issue for a security bug. Include a description, affected version, and a
-reproduction if you have one. You'll get an acknowledgement within a few days.
+Use GitHub's [private vulnerability reporting](https://github.com/danReynolds/keybay/security/advisories/new)
+for suspected vulnerabilities. If GitHub is unsuitable, email
+**me@danreynolds.ca**. Do not open a public issue for an undisclosed security
+bug.
+
+Include the affected version/configuration, impact, and the smallest safe
+reproduction you can provide. Do not include real credentials or device
+identifiers. Expect acknowledgement within three business days and an initial
+scope/severity assessment within ten business days. Fix and disclosure timing
+depends on impact and platform coordination; Keybay will coordinate publication
+with the reporter rather than silently closing a valid report.
+
+## Supported versions
+
+While Keybay is pre-1.0, security fixes target the latest published minor line
+and `main`. Older 0.x releases do not receive routine backports. A critical fix
+may be backported when upgrading is not a practical mitigation; that decision
+is stated in the advisory. Unsupported versions remain available but are not a
+security-maintained configuration.
 
 ## Threat model
 
@@ -18,6 +34,17 @@ it does **not** — is summarized for the [SDK](doc/sdk.md#threat-model) and
 deliberate about its limits (process-memory disclosure, rollback, same-user
 malware while the keystore is unlocked, and timing side-channels are out of
 scope, with rationale).
+
+## Device assurance
+
+The [device security suite](doc/device-security-suite.md) turns platform and
+lifecycle claims into versioned scenarios for Android, iOS, macOS, and later
+Linux provider qualification. It distinguishes hermetic, native-host,
+virtual-device, and physical-device evidence and defines how reviewed receipts
+are retained.
+The suite evolves as platform guidance and attack techniques change; historical
+receipts remain scoped to their exact commit, target, OS, executable selection,
+and scenarios.
 
 ## Cryptography
 

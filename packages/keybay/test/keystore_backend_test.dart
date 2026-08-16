@@ -2,6 +2,7 @@
 library;
 
 import 'dart:io';
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:keybay/keybay.dart';
@@ -10,6 +11,7 @@ import 'package:keybay/keybay.dart';
 import 'package:keybay/src/backends/encrypted_file_backend.dart';
 import 'package:keybay/src/backends/keystore_backend.dart';
 import 'package:keybay/src/ffi/keystore_api.dart';
+import 'package:keybay/src/ffi/posix_file.dart';
 import 'package:keybay/src/key_source.dart';
 import 'package:test/test.dart';
 
@@ -67,6 +69,64 @@ class FakeKeystoreApi implements KeystoreApi {
   void _checkReachable() {
     if (!available) throw const KeystoreUnreachable();
     if (locked) throw const KeystoreLocked();
+  }
+}
+
+class FakeAddOnlyKeystoreApi extends FakeKeystoreApi
+    implements AddOnlyKeystoreApi {
+  int addIfAbsentCalls = 0;
+
+  @override
+  Future<bool> addIfAbsent(
+    String service,
+    String account,
+    Uint8List value, {
+    String? label,
+  }) async {
+    _checkReachable();
+    addIfAbsentCalls++;
+    final items = _store[service] ??= {};
+    if (items.containsKey(account)) return false;
+    items[account] = Uint8List.fromList(value);
+    return true;
+  }
+}
+
+class _TwoRootRaceApi extends FakeAddOnlyKeystoreApi {
+  var _getCalls = 0;
+  final _firstPair = Completer<void>();
+  final _secondPair = Completer<void>();
+
+  @override
+  Future<Uint8List?> get(String service, String account) async {
+    _checkReachable();
+    final captured = _store[service]?[account];
+    final call = ++_getCalls;
+    final gate = call <= 2 ? _firstPair : _secondPair;
+    if (call == 2 || call == 4) gate.complete();
+    await gate.future;
+    return captured == null ? null : Uint8List.fromList(captured);
+  }
+}
+
+class _DuplicateThenMissingApi extends FakeKeystoreApi
+    implements AddOnlyKeystoreApi {
+  @override
+  Future<bool> addIfAbsent(
+    String service,
+    String account,
+    Uint8List value, {
+    String? label,
+  }) async =>
+      false;
+}
+
+class _WriteFailsFs extends SecureFileSystem {
+  const _WriteFailsFs();
+
+  @override
+  void writeAtomicSync(String path, Uint8List bytes) {
+    throw SecureFileError('write', path, 28);
   }
 }
 
@@ -193,6 +253,95 @@ void main() {
           reason: 'only the identity-lock winner may create the shared key');
       expect(await first.read('a'), <int>[1]);
       expect(await second.read('b'), <int>[2]);
+    });
+
+    test('atomic provider creation makes racing writers adopt one key',
+        () async {
+      final api = FakeAddOnlyKeystoreApi();
+      final first = SystemKeySource(service: 'same-app', api: api);
+      final second = SystemKeySource(service: 'same-app', api: api);
+
+      final created = await Future.wait([first.create(), second.create()]);
+
+      expect(api.addIfAbsentCalls, 2);
+      expect(api.setCalls, 0,
+          reason: 'atomic first creation must never fall back to upsert');
+      expect(created[0], created[1],
+          reason: 'the duplicate writer must adopt the winning key');
+      expect(await first.read(), created[0]);
+      expect(first.canRollbackCreatedKey, isFalse,
+          reason: 'a published key may already protect another container');
+    });
+
+    test('atomic provider protects simultaneous first writes in split roots',
+        () async {
+      final api = _TwoRootRaceApi();
+      final dir = Directory.systemTemp.createTempSync('ss_atomic_split_root_');
+      Process.runSync('chmod', <String>['700', dir.path]);
+      final rootA = Directory('${dir.path}/a')..createSync();
+      final rootB = Directory('${dir.path}/b')..createSync();
+      Process.runSync('chmod', <String>['700', rootA.path]);
+      Process.runSync('chmod', <String>['700', rootB.path]);
+      addTearDown(() => dir.deleteSync(recursive: true));
+      EncryptedFileBackend backend(String root) => EncryptedFileBackend(
+            path: '$root/secrets.enc',
+            keySource: SystemKeySource(service: 'same-app', api: api),
+          );
+      final first = backend(rootA.path);
+      final second = backend(rootB.path);
+
+      await Future.wait([
+        first.write('a', b([1])),
+        second.write('b', b([2])),
+      ]);
+
+      expect(api.addIfAbsentCalls, 2,
+          reason: 'the fixture must make both first writers attempt creation');
+      expect(await first.read('a'), [1]);
+      expect(await second.read('b'), [2]);
+    });
+
+    test('failed Apple-style first write retains its published key and heals',
+        () async {
+      final api = FakeAddOnlyKeystoreApi();
+      final dir = Directory.systemTemp.createTempSync('ss_atomic_retry_');
+      Process.runSync('chmod', <String>['700', dir.path]);
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final path = '${dir.path}/secrets.enc';
+      final source = SystemKeySource(service: 'same-app', api: api);
+      final failing = EncryptedFileBackend(
+        path: path,
+        keySource: source,
+        fs: const _WriteFailsFs(),
+      );
+
+      await expectLater(
+          failing.write('k', b([1])), throwsA(isA<SecureFileError>()));
+      expect(await source.read(), hasLength(storeKeyLength),
+          reason: 'an atomically published key may already have another user');
+      expect(File(path).existsSync(), isFalse);
+
+      final retry = EncryptedFileBackend(path: path, keySource: source);
+      await retry.write('k', b([2]));
+      expect(await retry.read('k'), [2]);
+    });
+
+    test('duplicate followed by deletion fails instead of overwriting',
+        () async {
+      final source = SystemKeySource(
+        service: 'same-app',
+        api: _DuplicateThenMissingApi(),
+      );
+      await expectLater(
+        source.create(),
+        throwsA(
+          isA<KeystoreOperationFailed>().having(
+            (error) => error.message,
+            'message',
+            contains('disappeared'),
+          ),
+        ),
+      );
     });
 
     test('SystemKeySource.describe checks presence without reading the key',

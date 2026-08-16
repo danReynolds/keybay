@@ -59,12 +59,6 @@ final int Function(int) _fsync =
 final int Function(int) _close =
     _libc.lookupFunction<Int32 Function(Int32), int Function(int)>('close');
 
-final int Function() _geteuid =
-    _libc.lookupFunction<Uint32 Function(), int Function()>('geteuid');
-
-/// Effective POSIX user id, used to namespace cross-root coordination locks.
-int get effectiveUserId => _geteuid();
-
 // mkdir(const char*, mode_t). mode_t is uint16 (macOS) / uint32 (Linux); a
 // Uint32 binding is correct on both (macOS reads the low 16 bits).
 final int Function(Pointer<Utf8>, int) _mkdir = _libc.lookupFunction<

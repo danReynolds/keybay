@@ -8,6 +8,15 @@ Service** (GNOME Keyring or KWallet) via `secret-tool`. Keybay writes no
 plaintext copy of that key beside the container; the service owns how it
 persists credential data.
 
+Because `HOME` or `XDG_DATA_HOME` can select different container roots while
+the Secret Service identity remains the same `appId`, first key creation also
+takes an identity lock under the desktop session's private `XDG_RUNTIME_DIR`.
+Racing writers therefore cannot replace the shared store key and orphan a
+container under another root, while another OS user cannot pre-create a
+predictable shared-`/tmp` directory to deny writes. A missing or relative
+`XDG_RUNTIME_DIR` fails closed; Keybay's Linux support is for desktop sessions
+with a Secret Service, not an invented headless fallback.
+
 **What this resists.** The file key sits in the Secret Service under a
 login-derived key: safe from other local users and casual theft. Against a
 stolen disk it is only as strong as the login/keyring password. The
@@ -26,4 +35,7 @@ Service provider — GNOME Keyring, or KWallet ≥ 5.97.
 **Validation.** Real Secret Service round-trips (set/get/update/delete, every
 byte through the base64 transport, enumeration) run against a real
 gnome-keyring under a throwaway D-Bus session — in CI on every push, and
-re-runnable from a Mac via `tool/test_linux.sh` (Docker).
+re-runnable from a Mac via `tool/test_linux.sh` (Docker). That is native-service
+evidence, not a claim about every Secret Service provider. Locked/disconnected
+provider behavior remains in the bounded pre-1.0 work in the
+[assurance plan](../security-assurance-plan.md#minimum-pre-10-qualification).

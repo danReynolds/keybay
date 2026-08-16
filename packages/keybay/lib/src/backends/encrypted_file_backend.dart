@@ -5,7 +5,7 @@
 /// fresh install from a lost container, a lost key, a wrong key, or tampering.
 ///
 /// **Concurrency.** Mutating whole-file read-modify-write operations are
-/// serialized on two layers:
+/// serialized on two path layers, with a third key-identity rule:
 ///
 /// 1. A FIFO mutex keyed on the **container path**, so concurrent calls within
 ///    one isolate — even from two separate backend instances (e.g. two
@@ -16,9 +16,12 @@
 ///    taken for the duration of every mutating operation. flock ownership is
 ///    per open file description, so it excludes *other isolates in the same
 ///    process* (which POSIX `fcntl` locks would not) **and** *other processes*
-///    alike. This closes the two cross-writer hazards: a lost update, and — on
-///    first write — two writers each minting a store key and leaving the
-///    container sealed under a discarded one.
+///    alike. This closes lost updates and first-write key races for one
+///    container path.
+/// 3. A [CreationCoordinatedKeySource] handles the rarer case where one OS
+///    keystore identity is reached through different container roots: Linux
+///    takes an identity lock in private `XDG_RUNTIME_DIR`, while Apple atomically
+///    adds the Keychain item and makes a duplicate writer adopt the winner.
 ///
 /// Reads are intentionally **not** locked: writes are atomic (temp + `rename`),
 /// so a concurrent reader always sees either the whole old container or the
@@ -137,10 +140,11 @@ final class EncryptedFileBackend implements AtomicDeleteAllBackend {
   }
 
   /// Encrypts and atomically writes [entries], creating the store key on first
-  /// write. If the write fails right after a *fresh* key was created, the key
-  /// is rolled back so the store returns to a clean uninitialized state rather
-  /// than a key-without-container orphan. Call only under an exclusive
-  /// [_serialized].
+  /// write. If a globally coordinated fresh key cannot have another user, a
+  /// failed first container write rolls it back. An atomically published
+  /// provider key is retained because a racing container may already use it;
+  /// the next mutation safely heals that key-without-container state. Call
+  /// only under an exclusive [_serialized].
   Future<void> _save(Map<String, ContainerEntry> entries) async {
     final source = _keySource;
     if (source is CreationCoordinatedKeySource) {
@@ -163,7 +167,10 @@ final class EncryptedFileBackend implements AtomicDeleteAllBackend {
       }
       _fs.writeAtomicSync(path, sealed);
     } catch (_) {
-      if (createdFreshKey) {
+      final mayRollback = _keySource is CreationCoordinatedKeySource
+          ? _keySource.canRollbackCreatedKey
+          : true;
+      if (createdFreshKey && mayRollback) {
         try {
           await _keySource.delete();
         } catch (_) {

@@ -117,7 +117,7 @@ packages:
   keybay:
     dependency: "direct main"
     description:
-      path: ".."
+      path: "../packages/keybay"
       relative: true
     source: path
     version: "0.1.0"

@@ -16,6 +16,7 @@ import 'app_paths.dart';
 import 'backend.dart';
 import 'backends/encrypted_file_backend.dart';
 import 'backends/keystore_backend.dart';
+import 'backends/scheme_tracking_backend.dart';
 import 'errors.dart';
 import 'ffi/jni.dart';
 import 'ffi/keychain.dart';
@@ -139,12 +140,13 @@ final class SecretStorage {
 /// avoids re-probing per store.
 DataProtectionAvailability? _dpAvailabilityCache;
 
-/// Resolves the per-platform scheme (doc/implementation-plan.md §2).
+/// Resolves the per-platform scheme (doc/design.md §9).
 SecretBackend _resolveBackend(String appId) {
   if (Platform.isIOS) {
     // iOS: the DP keychain is the *only* keychain and every app can use it
-    // (the implicit default access group every signed app carries) — no
-    // probe, no fork: unconditional native Data Protection Keychain items.
+    // (the default access group every signed app carries, derived and scoped
+    // explicitly by the binding) — no scheme fork: unconditional native Data
+    // Protection Keychain items.
     final api = AppleKeychainApi.dataProtection();
     return KeystoreBackend(service: appId, api: api);
   }
@@ -158,10 +160,22 @@ SecretBackend _resolveBackend(String appId) {
         // between versions while an encrypted-file store already holds data
         // (which would otherwise look empty).
         _guardMacOSFileToNative(appId);
-        return KeystoreBackend(service: appId, api: dp);
+        final guard = MacOSSchemeGuard(
+          appId: appId,
+          markerPath: macosSchemeMarkerPathFor(appId),
+          accessGroup: dp.dataProtectionAccessGroup,
+        )..verifyNativeSelection();
+        return SchemeTrackingBackend(
+          backend: KeystoreBackend(service: appId, api: dp),
+          recordNativeSelection: guard.recordNativeSelection,
+        );
       case DataProtectionAvailability.missingEntitlement:
         // The normal CLI / `dart run` path: encrypted file, key in the login
         // Keychain.
+        MacOSSchemeGuard(
+          appId: appId,
+          markerPath: macosSchemeMarkerPathFor(appId),
+        ).verifyFileSelection();
         return _encryptedFileScheme(appId, AppleKeychainApi());
     }
   }
@@ -187,24 +201,37 @@ SecretBackend _resolveBackend(String appId) {
   throw KeystoreUnreachable(
       'no secret storage scheme for ${Platform.operatingSystem} — supported: '
       'macOS, Linux desktop, iOS, Android 12+. Windows is unsupported and '
-      'headless operation is out of scope (design record: '
-      'doc/headless-implementation-plan.md)');
+      'headless operation is out of scope (see doc/design.md)');
 }
 
 /// The shared file scheme: one authenticated container, key in the OS keystore
 /// ([SystemKeySource] reports [SecurityLevel.loginBound]).
 SecretBackend _encryptedFileScheme(String appId, KeystoreApi api) {
+  String? coordinationLockPath;
+  if (Platform.isLinux) {
+    coordinationLockPath = coordinationLockPathFor(appId);
+    final runtimeDir = coordinationLockPath.substring(
+      0,
+      coordinationLockPath.length - '/keybay/$appId.store-key.lock'.length,
+    );
+    const fs = SecureFileSystem();
+    if (!fs.verifyPrivateDirSync(runtimeDir)) {
+      throw KeystoreUnreachable(
+        'XDG_RUNTIME_DIR does not exist: $runtimeDir',
+      );
+    }
+  }
   return EncryptedFileBackend(
     path: containerPathFor(appId),
     keySource: SystemKeySource(
       service: appId,
       api: api,
-      // The OS-keystore identity is only appId/account, while HOME and
-      // XDG_DATA_HOME can select different container paths. Coordinate key
-      // creation in a fixed per-user location so two first writers under
-      // different roots cannot overwrite each other's newly-created key.
-      coordinationLockPath:
-          '/tmp/keybay-$effectiveUserId/$appId.store-key.lock',
+      // Linux has no provider-level atomic add, so coordinate the shared
+      // Secret-Service identity in the session-private XDG runtime directory,
+      // independent of HOME/XDG_DATA_HOME.
+      // Apple Keychain uses atomic SecItemAdd and adopts the winning value;
+      // that remains correct across sandboxed and unsandboxed temp roots.
+      coordinationLockPath: coordinationLockPath,
     ),
   );
 }
@@ -212,14 +239,13 @@ SecretBackend _encryptedFileScheme(String appId, KeystoreApi api) {
 /// macOS migration guard for a **gained** Keychain Sharing entitlement.
 ///
 /// The encrypted-file scheme leaves a natural on-disk trace — the container
-/// file — so no separate marker is needed: if the entitled app now resolves to
+/// file — so no additional file-scheme marker is needed: if the entitled app now resolves to
 /// native items while a file-scheme container already holds data, switching
 /// silently would hide those secrets behind an empty-looking store. Throw
 /// [MigrationRequired] so the transition is deliberate. A store that was only
 /// *opened* under the file scheme but never written has no container, so this
-/// never false-fires. (The reverse — a lost entitlement — is not detectable
-/// from an unentitled process, which cannot read the abandoned DP items; the
-/// data is OS-walled rather than resurfaced. See doc/platforms/macos.md.)
+/// never false-fires. The reverse direction is detected by the non-secret
+/// native-use marker checked in the unentitled resolver branch.
 void _guardMacOSFileToNative(String appId) {
   const fs = SecureFileSystem();
   if (fs.existsSync(containerPathFor(appId))) {

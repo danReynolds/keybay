@@ -9,18 +9,21 @@
 ///   file-based keychain (`kSecUseDataProtectionKeychain = false`). Works for
 ///   any process — unsigned CLIs, `dart run`, signed apps — with no entitlement.
 /// - **Data Protection Keychain** (`AppleKeychainApi.dataProtection()`):
-///   native item protection with a fixed accessibility policy. On macOS this needs a signed app carrying
+///   native item protection with a fixed accessibility policy. On macOS this
+///   needs a signed app carrying
 ///   the Keychain Sharing entitlement — an unentitled process gets
 ///   `errSecMissingEntitlement` (−34018) → [KeystoreUnreachable] with guidance,
 ///   never a silent fallback. On iOS it is the only keychain and every app can
-///   use it (the implicit default access group). DP items are created
+///   use it (the implicit default access group). Keybay derives that group and
+///   includes it explicitly in every operation. DP items are created/updated
 ///   `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`: device-bound (does not
 ///   migrate to another device on restore), readable by background work after
-///   first unlock — the constant-not-knob accessibility decision
-///   (doc/implementation-plan.md Phase 2).
+///   first unlock — the constant-not-knob accessibility decision documented
+///   in doc/platforms/ios.md and doc/platforms/macos.md.
 ///
 /// Both modes set `kSecAttrSynchronizable = false`; the item is not synchronized
-/// through iCloud Keychain.
+/// through iCloud Keychain. DP duplicate updates also reassert accessibility
+/// and synchronization instead of preserving a pre-existing weaker policy.
 ///
 /// Symbol loading: macOS `dlopen`s the frameworks by absolute path (a plain
 /// Dart VM links neither); on iOS every app process already has
@@ -77,7 +80,7 @@ enum DataProtectionAvailability {
 }
 
 /// The real Apple binding (macOS + iOS).
-final class AppleKeychainApi implements KeystoreApi {
+final class AppleKeychainApi implements KeystoreApi, AddOnlyKeystoreApi {
   /// The classic file-based login keychain (macOS; no entitlement required).
   AppleKeychainApi() : this._(dataProtection: false);
 
@@ -131,6 +134,9 @@ final class AppleKeychainApi implements KeystoreApi {
   late final Pointer<Void> Function(Pointer<Void>, int) _cfArrayGetValueAtIndex;
   late final Pointer<Void> Function(Pointer<Void>, Pointer<Void>)
       _cfDictionaryGetValue;
+  late final int Function(Pointer<Void>) _cfGetTypeId;
+  late final int Function() _cfArrayGetTypeId;
+  late final int Function() _cfStringGetTypeId;
 
   // Security
   late final int Function(Pointer<Void>, Pointer<Pointer<Void>>) _secItemAdd;
@@ -138,6 +144,10 @@ final class AppleKeychainApi implements KeystoreApi {
       _secItemCopyMatching;
   late final int Function(Pointer<Void>, Pointer<Void>) _secItemUpdate;
   late final int Function(Pointer<Void>) _secItemDelete;
+  late final Pointer<Void> Function(Pointer<Void>) _secTaskCreateFromSelf;
+  late final Pointer<Void> Function(
+          Pointer<Void>, Pointer<Void>, Pointer<Pointer<Void>>)
+      _secTaskCopyValueForEntitlement;
 
   // Constant CFStringRef / CFBooleanRef symbols.
   late final Pointer<Void> _keyCallbacks;
@@ -146,6 +156,7 @@ final class AppleKeychainApi implements KeystoreApi {
       _kSecClassGenericPassword,
       _kSecAttrService,
       _kSecAttrAccount,
+      _kSecAttrAccessGroup,
       _kSecAttrLabel,
       _kSecValueData,
       _kSecReturnData,
@@ -198,6 +209,12 @@ final class AppleKeychainApi implements KeystoreApi {
         Pointer<Void> Function(Pointer<Void>, Pointer<Void>),
         Pointer<Void> Function(
             Pointer<Void>, Pointer<Void>)>('CFDictionaryGetValue');
+    _cfGetTypeId = _cf.lookupFunction<UintPtr Function(Pointer<Void>),
+        int Function(Pointer<Void>)>('CFGetTypeID');
+    _cfArrayGetTypeId = _cf
+        .lookupFunction<UintPtr Function(), int Function()>('CFArrayGetTypeID');
+    _cfStringGetTypeId = _cf.lookupFunction<UintPtr Function(), int Function()>(
+        'CFStringGetTypeID');
     _secItemAdd = _sec.lookupFunction<
         Int32 Function(Pointer<Void>, Pointer<Pointer<Void>>),
         int Function(Pointer<Void>, Pointer<Pointer<Void>>)>('SecItemAdd');
@@ -210,6 +227,14 @@ final class AppleKeychainApi implements KeystoreApi {
         int Function(Pointer<Void>, Pointer<Void>)>('SecItemUpdate');
     _secItemDelete = _sec.lookupFunction<Int32 Function(Pointer<Void>),
         int Function(Pointer<Void>)>('SecItemDelete');
+    _secTaskCreateFromSelf = _sec.lookupFunction<
+        Pointer<Void> Function(Pointer<Void>),
+        Pointer<Void> Function(Pointer<Void>)>('SecTaskCreateFromSelf');
+    _secTaskCopyValueForEntitlement = _sec.lookupFunction<
+        Pointer<Void> Function(
+            Pointer<Void>, Pointer<Void>, Pointer<Pointer<Void>>),
+        Pointer<Void> Function(Pointer<Void>, Pointer<Void>,
+            Pointer<Pointer<Void>>)>('SecTaskCopyValueForEntitlement');
     _keyCallbacks = _cf.lookup<Void>('kCFTypeDictionaryKeyCallBacks');
     _valueCallbacks = _cf.lookup<Void>('kCFTypeDictionaryValueCallBacks');
     _kCFBooleanTrue = _cfConst(_cf, 'kCFBooleanTrue');
@@ -218,6 +243,7 @@ final class AppleKeychainApi implements KeystoreApi {
     _kSecClassGenericPassword = _cfConst(_sec, 'kSecClassGenericPassword');
     _kSecAttrService = _cfConst(_sec, 'kSecAttrService');
     _kSecAttrAccount = _cfConst(_sec, 'kSecAttrAccount');
+    _kSecAttrAccessGroup = _cfConst(_sec, 'kSecAttrAccessGroup');
     _kSecAttrLabel = _cfConst(_sec, 'kSecAttrLabel');
     _kSecValueData = _cfConst(_sec, 'kSecValueData');
     _kSecReturnData = _cfConst(_sec, 'kSecReturnData');
@@ -250,6 +276,89 @@ final class AppleKeychainApi implements KeystoreApi {
               )
             ]
           : const [];
+
+  String? _resolvedAccessGroup;
+  bool _accessGroupResolved = false;
+
+  /// The one access group every Data Protection Keychain operation targets.
+  ///
+  /// Apple otherwise applies asymmetric defaults: add uses the first group in
+  /// the app's entitlements, while an unscoped read/update/delete searches all
+  /// groups the process can access. Deriving that same first group once and
+  /// including it in every query prevents a colliding item in a sibling/shared
+  /// group from being disclosed, overwritten, enumerated, or deleted.
+  String get dataProtectionAccessGroup {
+    if (!_dataProtection) {
+      throw StateError('login-keychain mode has no DP access group');
+    }
+    final group = _resolveDataProtectionAccessGroup();
+    if (group == null) {
+      throw const KeystoreUnreachable(
+        'the Data Protection keychain has no resolvable application access '
+        'group; verify the signed app entitlements and provisioning profile',
+      );
+    }
+    return group;
+  }
+
+  String? _resolveDataProtectionAccessGroup() {
+    if (_accessGroupResolved) return _resolvedAccessGroup;
+    _accessGroupResolved = true;
+
+    final refs = <Pointer<Void>>[];
+    try {
+      final task = _secTaskCreateFromSelf(_nullRef);
+      if (task == nullptr) return null;
+      refs.add(task);
+
+      Pointer<Void> entitlement(String name) {
+        final key = _cfString(name)..let(refs.add);
+        final value = _secTaskCopyValueForEntitlement(task, key, nullptr);
+        if (value != nullptr) refs.add(value);
+        return value;
+      }
+
+      final groups = entitlement('keychain-access-groups');
+      if (groups != nullptr && _cfGetTypeId(groups) == _cfArrayGetTypeId()) {
+        final count = _cfArrayGetCount(groups);
+        if (count > 0) {
+          final first = _cfArrayGetValueAtIndex(groups, 0);
+          if (first != nullptr && _cfGetTypeId(first) == _cfStringGetTypeId()) {
+            final value = _tryCopyString(first);
+            if (value != null && value.isNotEmpty) {
+              return _resolvedAccessGroup = value;
+            }
+          }
+        }
+      }
+
+      // Signed apps without an explicit sharing list still have one implicit
+      // application group. Apple uses different entitlement spellings across
+      // iOS and macOS, so accept either as the deterministic fallback.
+      for (final name in const [
+        'application-identifier',
+        'com.apple.application-identifier',
+      ]) {
+        final value = entitlement(name);
+        if (value != nullptr && _cfGetTypeId(value) == _cfStringGetTypeId()) {
+          final text = _tryCopyString(value);
+          if (text != null && text.isNotEmpty) {
+            return _resolvedAccessGroup = text;
+          }
+        }
+      }
+      return null;
+    } finally {
+      _releaseAll(refs);
+    }
+  }
+
+  List<(Pointer<Void>, Pointer<Void>)> _accessGroupPairs(
+      List<Pointer<Void>> refs) {
+    if (!_dataProtection) return const [];
+    final group = _cfString(dataProtectionAccessGroup)..let(refs.add);
+    return [(_kSecAttrAccessGroup, group)];
+  }
 
   /// Every SecItem call carries `kSecUseAuthenticationUI =
   /// kSecUseAuthenticationUIFail` — unconditionally, no knob. An operation
@@ -377,6 +486,7 @@ final class AppleKeychainApi implements KeystoreApi {
         (_kSecClass, _kSecClassGenericPassword),
         (_kSecAttrService, svc),
         (_kSecAttrAccount, acct),
+        ..._accessGroupPairs(refs),
         (_kSecUseDataProtectionKeychain, _dpValue),
         (_kSecReturnData, _kCFBooleanTrue),
         (_kSecMatchLimit, _kSecMatchLimitOne),
@@ -419,6 +529,7 @@ final class AppleKeychainApi implements KeystoreApi {
         (_kSecClass, _kSecClassGenericPassword),
         (_kSecAttrService, svc),
         (_kSecAttrAccount, acct),
+        ..._accessGroupPairs(refs),
         (_kSecUseDataProtectionKeychain, _dpValue),
         // Attributes only — never kSecReturnData — so a presence check never
         // pulls the value out of the keychain (nor decrypts it via the Secure
@@ -452,6 +563,37 @@ final class AppleKeychainApi implements KeystoreApi {
   }
 
   @override
+  Future<bool> addIfAbsent(String service, String account, Uint8List value,
+      {String? label}) async {
+    final refs = <Pointer<Void>>[];
+    try {
+      final svc = _cfString(service)..let(refs.add);
+      final acct = _cfString(account)..let(refs.add);
+      final data = _cfData(value)..let(refs.add);
+      final labelRef = _cfString(label ?? 'keybay')..let(refs.add);
+      final add = _dict([
+        (_kSecClass, _kSecClassGenericPassword),
+        (_kSecAttrService, svc),
+        (_kSecAttrAccount, acct),
+        ..._accessGroupPairs(refs),
+        (_kSecValueData, data),
+        (_kSecUseDataProtectionKeychain, _dpValue),
+        (_kSecAttrSynchronizable, _kCFBooleanFalse),
+        (_kSecAttrLabel, labelRef),
+        ..._accessibilityPairs,
+        ..._uiPairs,
+      ]);
+      refs.addAll(add.owned);
+      final status = _secItemAdd(add.dict, nullptr);
+      if (status == _errSecSuccess) return true;
+      if (status == _errSecDuplicateItem) return false;
+      _fail(status, 'addIfAbsent');
+    } finally {
+      _releaseAll(refs);
+    }
+  }
+
+  @override
   Future<void> set(String service, String account, Uint8List value,
       {String? label}) async {
     // Try add; on duplicate, update the data (and label).
@@ -468,6 +610,7 @@ final class AppleKeychainApi implements KeystoreApi {
         (_kSecClass, _kSecClassGenericPassword),
         (_kSecAttrService, svc),
         (_kSecAttrAccount, acct),
+        ..._accessGroupPairs(refs),
         (_kSecValueData, data),
         (_kSecUseDataProtectionKeychain, _dpValue),
         (_kSecAttrSynchronizable, _kCFBooleanFalse),
@@ -506,6 +649,7 @@ final class AppleKeychainApi implements KeystoreApi {
           (_kSecClass, _kSecClassGenericPassword),
           (_kSecAttrService, svc),
           (_kSecAttrAccount, acct),
+          ..._accessGroupPairs(refs),
           (_kSecUseDataProtectionKeychain, _dpValue),
           ..._uiPairs,
         ]);
@@ -528,6 +672,7 @@ final class AppleKeychainApi implements KeystoreApi {
         (_kSecClass, _kSecClassGenericPassword),
         (_kSecAttrService, svc),
         (_kSecAttrAccount, acct),
+        ..._accessGroupPairs(refs),
         (_kSecUseDataProtectionKeychain, _dpValue),
         ..._uiPairs,
       ]);
@@ -538,6 +683,8 @@ final class AppleKeychainApi implements KeystoreApi {
       final update = _dict([
         (_kSecValueData, data),
         if (label != null) (_kSecAttrLabel, labelRef),
+        (_kSecAttrSynchronizable, _kCFBooleanFalse),
+        ..._accessibilityPairs,
       ]);
       refs.addAll(update.owned);
       final us = _secItemUpdate(query.dict, update.dict);
@@ -559,6 +706,7 @@ final class AppleKeychainApi implements KeystoreApi {
         (_kSecClass, _kSecClassGenericPassword),
         (_kSecAttrService, svc),
         (_kSecAttrAccount, acct),
+        ..._accessGroupPairs(refs),
         (_kSecUseDataProtectionKeychain, _dpValue),
         ..._uiPairs,
       ]);
@@ -580,6 +728,7 @@ final class AppleKeychainApi implements KeystoreApi {
       final q = _dict([
         (_kSecClass, _kSecClassGenericPassword),
         (_kSecAttrService, svc),
+        ..._accessGroupPairs(refs),
         (_kSecUseDataProtectionKeychain, _dpValue),
         ..._uiPairs,
       ]);
@@ -616,6 +765,7 @@ final class AppleKeychainApi implements KeystoreApi {
       final q = _dict([
         (_kSecClass, _kSecClassGenericPassword),
         (_kSecAttrService, svc),
+        ..._accessGroupPairs(refs),
         (_kSecUseDataProtectionKeychain, _dpValue),
         (_kSecReturnAttributes, _kCFBooleanTrue),
         (_kSecMatchLimit, _kSecMatchLimitAll),
@@ -684,15 +834,21 @@ final class AppleKeychainApi implements KeystoreApi {
   /// broken keychain setup hears about it instead of being silently downgraded
   /// to weaker storage.
   DataProtectionAvailability probeDataProtection() {
+    final accessGroup = _resolveDataProtectionAccessGroup();
+    if (accessGroup == null) {
+      return DataProtectionAvailability.missingEntitlement;
+    }
     final refs = <Pointer<Void>>[];
     try {
       final svc = _cfString(_dpProbeService)..let(refs.add);
       final acct = _cfString(_dpProbeAccount)..let(refs.add);
+      final group = _cfString(accessGroup)..let(refs.add);
       final data = _cfData(Uint8List.fromList(const [0]))..let(refs.add);
       final add = _dict([
         (_kSecClass, _kSecClassGenericPassword),
         (_kSecAttrService, svc),
         (_kSecAttrAccount, acct),
+        (_kSecAttrAccessGroup, group),
         (_kSecValueData, data),
         (_kSecUseDataProtectionKeychain, _dpValue),
         (_kSecAttrSynchronizable, _kCFBooleanFalse),
@@ -717,6 +873,7 @@ final class AppleKeychainApi implements KeystoreApi {
         (_kSecClass, _kSecClassGenericPassword),
         (_kSecAttrService, svc),
         (_kSecAttrAccount, acct),
+        (_kSecAttrAccessGroup, group),
         (_kSecUseDataProtectionKeychain, _dpValue),
         ..._uiPairs,
       ]);

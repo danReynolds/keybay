@@ -15,10 +15,19 @@ exec docker run --rm -i -v "$REPO":/src:ro dart:stable bash -s <<'INNER'
 set -euo pipefail
 apt-get update -qq
 apt-get install -y -qq libsecret-tools gnome-keyring dbus python3 >/dev/null
-mkdir -p /build/packages/keybay_cli/example
-cp /src/pubspec.yaml /src/pubspec.lock /src/analysis_options.yaml \
-  /src/dart_test.yaml /build/
-cp -R /src/lib /src/test /src/tool /build/
+mkdir -p /build/packages/keybay /build/packages/keybay_cli/example
+cp /src/pubspec.yaml /src/pubspec.lock /src/analysis_options.yaml /build/
+cp -R /src/tool /build/
+cp /src/packages/keybay/pubspec.yaml \
+  /src/packages/keybay/analysis_options.yaml \
+  /src/packages/keybay/dart_test.yaml \
+  /src/packages/keybay/LICENSE \
+  /src/packages/keybay/README.md \
+  /src/packages/keybay/CHANGELOG.md \
+  /build/packages/keybay/
+cp -R /src/packages/keybay/lib \
+  /src/packages/keybay/test \
+  /build/packages/keybay/
 cp /src/packages/keybay_cli/pubspec.yaml \
   /src/packages/keybay_cli/analysis_options.yaml \
   /src/packages/keybay_cli/LICENSE \
@@ -41,6 +50,7 @@ dart pub get >/dev/null
 # missing XDG data hierarchy itself (0700).
 dbus-run-session -- bash -c '
   set -euo pipefail
+  export XDG_RUNTIME_DIR="$(mktemp -d)"
   eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
   export GNOME_KEYRING_CONTROL
   (cd packages/keybay && KEYBAY_INTEGRATION=1 dart test test/secret_service_integration_test.dart)
@@ -55,6 +65,7 @@ dbus-run-session -- bash -c '
 # exactly the throwaway session KEYBAY_LOCKED_TEST demands.
 dbus-run-session -- bash -c '
   set -euo pipefail
+  export XDG_RUNTIME_DIR="$(mktemp -d)"
   eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
   export GNOME_KEYRING_CONTROL
   (cd packages/keybay && KEYBAY_INTEGRATION=1 KEYBAY_LOCKED_TEST=1 dart test test/secret_service_locked_integration_test.dart)
@@ -64,6 +75,7 @@ dbus-run-session -- bash -c '
 # It also locks the collection, so give it a third disposable session.
 dbus-run-session -- bash -c '
   set -euo pipefail
+  export XDG_RUNTIME_DIR="$(mktemp -d)"
   eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
   export GNOME_KEYRING_CONTROL
   KEYBAY_LOCKED_TEST=1 ./tool/test_cli_locked_storage.sh

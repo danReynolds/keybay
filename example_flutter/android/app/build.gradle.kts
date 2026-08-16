@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.example_flutter"
+    namespace = "dev.keybay.securityharness"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -15,8 +15,10 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.example_flutter"
+        // Dedicated test-only package. Device-security tooling may clear or
+        // uninstall exactly this package to obtain a clean Keystore namespace;
+        // it must never share an identity with a developer or consumer app.
+        applicationId = "dev.keybay.securityharness"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // keybay requires Android 12 / API 31+ (AndroidKeyStore KEK path; see doc/platforms/android.md).

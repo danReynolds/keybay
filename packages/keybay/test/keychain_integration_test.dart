@@ -49,6 +49,18 @@ void main() {
     await api.delete(service, 'k'); // idempotent
   }, skip: skip);
 
+  test('addIfAbsent is atomic and never replaces the winner', () async {
+    expect(
+      await api.addIfAbsent(service, 'k', bytes([1, 2, 3]), label: 'winner'),
+      isTrue,
+    );
+    expect(
+      await api.addIfAbsent(service, 'k', bytes([9, 9, 9]), label: 'loser'),
+      isFalse,
+    );
+    expect(await api.get(service, 'k'), [1, 2, 3]);
+  }, skip: skip);
+
   test('enumerates all accounts under a service', () async {
     await api.set(service, 'a', bytes([1]));
     await api.set(service, 'b', bytes([2, 2]));

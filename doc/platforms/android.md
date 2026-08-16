@@ -79,10 +79,25 @@ not a plugin, it can't inject manifest rules for you. Add them (API 31+):
 </data-extraction-rules>
 ```
 
-The `example_flutter/` app carries these rules as a living example.
+The `example_flutter/` security harness carries an equivalent, stricter rule:
+it excludes its entire files domain because the suite creates several test
+`appId` namespaces. Consumer apps should normally keep the narrower rule above.
+
+Android 16 QPR2 / API 36.1 also defines a separate
+`<cross-platform-transfer platform="ios">` mode. Its rule requires the host
+application's real iOS bundle ID, Apple team ID, and content version, so Keybay
+cannot supply a correct generic stanza. If your application participates in
+that transfer mode, configure it explicitly and exclude every Keybay `appId`;
+an omitted mode must not be treated as proof of exclusion. Physical or
+service-backed transfer is not currently release-qualified; it is part of the
+bounded pre-1.0 lifecycle work in the
+[assurance plan](../security-assurance-plan.md#minimum-pre-10-qualification).
+See the current [Android backup and transfer rules](https://developer.android.com/identity/data/autobackup).
 
 **Validation.** The full round-trip and the on-disk shape (container is
 ciphertext; only the small wrapped-key blob is beside it) are validated on an
 API 33 emulator, including the StrongBox-fallback branch. As with iOS, an
 emulator's secure hardware is software-emulated, so the hardware property itself
-is pending a one-time physical-device run.
+is established only by a retained physical run of
+[`KB-AND-010`](../device-security-suite.md#android). The repeatable device suite,
+not the emulator receipt, is also where OEM and lifecycle variance is recorded.

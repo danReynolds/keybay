@@ -4,13 +4,15 @@
      not part of app backup and does not migrate with transferred app data, so
      a restored store cannot be decrypted on another device (reported as
      KeyInvalidated). Excluding the store directory avoids that confusing state
-     and keeps ciphertext out of backups. The path is the appId passed to
-     SecretStorage(appId:), a directory under this app's files/ dir. -->
+     and keeps ciphertext out of backups. This dedicated security harness
+     creates several run-scoped Keybay namespaces, so it excludes the entire
+     files domain rather than maintaining a fragile per-appId list. Consumer
+     apps should use the narrower paths documented in platforms/android.md. -->
 <data-extraction-rules>
     <cloud-backup>
-        <exclude domain="file" path="com.example.keybayHarness/" />
+        <exclude domain="file" path="." />
     </cloud-backup>
     <device-transfer>
-        <exclude domain="file" path="com.example.keybayHarness/" />
+        <exclude domain="file" path="." />
     </device-transfer>
 </data-extraction-rules>

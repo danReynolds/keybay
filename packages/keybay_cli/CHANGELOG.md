@@ -7,6 +7,8 @@
 - Refuse interactive secret input from a background process group before
   changing terminal echo, with SIGTTIN/SIGTTOU race protection and a real PTY
   regression test.
+- Refresh the shipped Rails example to patched Rails, JSON, Loofah, and
+  rails-html-sanitizer releases and include its lockfile in advisory scanning.
 
 ## 0.1.0
 

@@ -2,7 +2,7 @@
 /// by an AES-256-GCM key created in Android Keystore. StrongBox is requested,
 /// then the normal provider is retried when unavailable; the actual level is
 /// inspected and may be software-backed. Only the wrapped blob is written
-/// beside the container. See doc/implementation-plan.md Phase 3.
+/// beside the container. See doc/platforms/android.md.
 ///
 /// Reliability posture (the ecosystem lessons, design.md §9):
 /// - KEK is generated with `setUserAuthenticationRequired(false)` — the

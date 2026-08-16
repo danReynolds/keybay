@@ -5,8 +5,9 @@ deterministically, and never by silently degrading.
 
 ## How the choice is made
 
-On first use the library attempts a tiny probe write to the **Data Protection
-keychain** and reads the result:
+On first use the library derives the first authorized access group from the
+signed process entitlements, then verifies it with a tiny explicitly scoped
+write to the **Data Protection keychain**:
 
 - **Success** → the app is signed and carries the Keychain Sharing
   entitlement → [native items](#signed-apps-entitled).
@@ -17,10 +18,8 @@ keychain** and reads the result:
 
 Entitlements are baked into the code signature, so the outcome is fixed per
 binary and cached for the process. The probe writes to a **dedicated internal
-service** (outside the `appId` grammar), so it can never collide with — or
-delete — one of your secrets. (The full rationale — why a probe rather than
-reading the entitlement, and why this is *not* the unsafe kind of
-auto-detection — is in [design.md](../design.md).)
+service** (outside the `appId` grammar) in that exact group, so it can never
+collide with or delete a caller secret.
 
 **Gaining the entitlement between versions moves the store.** Switching from a
 CLI/unentitled build to an entitled one changes the resolved scheme from the
@@ -29,18 +28,31 @@ file leaves its own on-disk trace (the container), so rather than silently
 present an empty store and strand those secrets, an entitled resolve that finds
 a pre-existing `~/Library/Application Support/<appId>/secrets.enc` throws a
 typed `MigrationRequired` (`from: encryptedFile, to: nativeItems`). Migrate the
-secrets across, then remove that file (or the directory) to proceed. (No
-separate marker file is kept — the container's existence is the signal, so a
-store that was only *opened* under the file scheme but never written never
-false-fires. The reverse, a *lost* entitlement, isn't detectable from the
-now-unentitled process — it cannot read the abandoned Data Protection items,
-which the OS walls off rather than resurfaces.)
+secrets across, then remove that file (or the directory) to proceed.
+
+**Losing or changing the entitlement is also loud.** Before the first native
+mutation, Keybay records a private, non-secret `.scheme` marker beside the
+possible file-store location. It contains only the native scheme and encoded
+access-group identity. A later unentitled resolver throws `MigrationRequired`
+instead of opening a fresh file store; a different access group throws
+`KeychainAccessGroupChanged`. The marker is retained after deletion so a
+signing change cannot silently revive an abandoned namespace. Removing it is
+therefore an explicit migration/reset action, not automatic cleanup.
+
+The marker protects native use observed by marker-aware Keybay versions. An
+older entitled installation should run one marker-aware build before its
+entitlement or access group changes; changing both at the upgrade boundary
+leaves no information an unentitled process can use to discover the older
+OS-walled items and requires an explicit application migration decision.
 
 ## Signed apps (entitled)
 
 Each secret is a **native item in the Data Protection Keychain**. There is no
-Keybay container or separate Keybay store key on this path. Items use
-`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` and are non-synchronizing.
+Keybay secret container or separate Keybay store key on this path; only the
+non-secret scheme marker above. Every operation includes the one derived access
+group explicitly. Items use `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`
+and are non-synchronizing; updates reassert both attributes rather than
+inheriting a colliding pre-existing item's policy.
 
 **What this policy means.** The item does not migrate to a different device.
 `AfterFirstUnlock` remains compatible with background work: after the first
@@ -57,6 +69,8 @@ signed, provisioned bundle CI can't produce; it is validated end-to-end by the
 `example_flutter/` host app (Keychain Sharing + a development team → the
 resolver picks native items and completes a round trip). That leg is local —
 the repeatable recipe is [tool/dp_keychain_verification.md](../../tool/dp_keychain_verification.md).
+Its security properties, lifecycle extensions, and retained evidence contract
+are tracked as the [macOS device-suite scenarios](../device-security-suite.md#macos).
 
 ## Command-line and unentitled
 
@@ -69,6 +83,12 @@ in the **login Keychain** via the `SecItem` API. Keybay writes no plaintext copy
 of that key beside the container; the operating system owns how the credential
 store persists it.
 
+First creation is insert-only: Keybay uses atomic `SecItemAdd`, and a racing
+writer adopts the already-created Keychain value instead of overwriting it.
+This matters when the same `appId` is reached from sandboxed and unsandboxed
+processes whose container roots differ; both containers remain sealed under
+the one winning Keychain key.
+
 **What this resists.** The file key sits in the login Keychain under a
 login-password-derived key: safe from other local users and casual theft.
 Against a stolen disk it is only as strong as the login password. The
@@ -77,7 +97,8 @@ file from its key; it does not turn a login-bound key into hardware protection.
 
 **Validation.** Real login-Keychain round-trips run in CI on every push; the
 file scheme is additionally exercised inside a real sandboxed `.app` by the
-`example_flutter/` harness.
+`example_flutter/` harness. Destructive and lifecycle qualification remains
+separate in the [macOS device-suite scenarios](../device-security-suite.md#macos).
 
 ## Know your trust unit
 
