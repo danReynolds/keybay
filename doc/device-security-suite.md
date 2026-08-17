@@ -217,17 +217,68 @@ secrets, account data, signing credentials, raw serials, or UDIDs.
 
 ## Qualification triggers and claim boundary
 
-Run the affected non-disruptive baseline for each publication candidate whose
-release claims that configuration as qualified. Trigger additional lifecycle,
-restore, provider-failure, access-group, signing/ACL, or interruption procedures
-only when the relevant implementation, OS/provider policy, advisory, incident,
-or oracle changes. Before 1.0, complete the bounded exploit-chain baseline in
-[the assurance implementation plan](security-assurance-plan.md#minimum-pre-10-qualification).
+Run the affected non-disruptive baseline for each minor/major publication
+candidate whose release claims that configuration as qualified. A release may
+omit a target — a patch release in particular may ship without re-running a
+device baseline — but then its manifest must declare that configuration
+unqualified rather than carry forward a pass.
+
+Destructive or operator-driven scenarios are never a routine release
+requirement. Run them only when affected by:
+
+- container, wrapping, parser, authentication, or fail-closed changes;
+- transaction, concurrency, interruption, or native-boundary changes;
+- OS/provider policy, signing, entitlement, access-group, backup, transfer,
+  restore, install, lock, or reboot changes;
+- a relevant advisory, incident, or exploit chain; or
+- a changed scenario oracle.
+
+Each scenario states its required evidence class. Missing capability is
+`blocked` or unqualified, never a lower-class pass.
+
+Finding disposition at a release gate: Critical and High findings block
+release. A Medium finding is fixed, or temporarily accepted with scope,
+rationale, expiry, and any required claim reduction. An unresolved finding of
+any severity cannot coexist with a release claim it directly contradicts;
+unknown or inconclusive evidence blocks only the affected claim or
+configuration. Low findings follow normal issue policy unless explicitly
+release-relevant.
 
 Review official Apple/Android/Dart/Secret Service guidance and applicable peer
-advisories before security-sensitive releases, plus one short quarterly check.
-Record only applicable, uncertain, claim-affecting, or non-obvious dismissal
-decisions in their advisory/issue/PR; do not build a feed ledger.
+advisories on the recurring sweep cadence and before security-sensitive
+releases. Record only applicable, uncertain, claim-affecting, or non-obvious
+dismissal decisions in their advisory/issue/PR; do not build a feed ledger.
+
+### Pre-1.0 exploit-chain baseline
+
+The maintained qualification matrix follows security-relevant distinctions:
+Android needs its emulator tier plus one physical device whose generated-key
+protection is independently checked with `KeyInfo`; iOS needs the simulator
+tier plus one provisioned physical iPhone before any physical-iOS claim; macOS
+needs Apple-silicon native-host coverage of both the unentitled
+encrypted-file/login-Keychain path and the signed, entitled Data Protection
+path; Linux needs real disposable GNOME Keyring integration, with other
+providers claimed only after equivalent qualification.
+
+Before the strongest 1.0 claims, run this bounded baseline once, then rerun
+only the affected destructive scenarios under the triggers above:
+
+- Android restored container/wrapped-key state without the original KEK must
+  fail without self-heal; force-stop/reboot continuity and reference-app
+  backup/transfer behavior must match the contract.
+- Apple accessibility must match the contract across reboot, first unlock, and
+  relock. Query, update, enumeration, and deletion must not cross the intended
+  access group; a colliding pre-existing item must not silently retain weaker
+  accessibility; and entitlement loss or prior native state must not silently
+  appear as a fresh lower-protection store.
+- A stable signed macOS CLI/harness must preserve the intended login-Keychain
+  ACL identity across upgrade. A locked or interaction-required operation must
+  return a typed bounded failure without an unexpected GUI prompt or hang.
+- Linux locked and disconnected provider operations must terminate promptly
+  and fail closed.
+- Encrypted-file backends must survive real multi-process first-write and
+  interruption races without key replacement, silent reset, or
+  unauthenticated state.
 
 No suite result is a certification. Public statements name the exact release,
 subject, configuration, evidence class, scenarios, limitations, and date. A
