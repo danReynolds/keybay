@@ -54,6 +54,15 @@ final token = await store.readString('api-token');
 
 ## Security
 
+Keybay's security model is two commitments:
+
+1. **Secure on every platform** — secrets live in each platform's own
+   credential storage, wired directly and verified from unit tests to real
+   devices.
+2. **Secure over time** — every change runs against real providers, every
+   release ships a signed statement of what was verified, and platform
+   changes are triaged against the model on a schedule.
+
 Keybay uses native keychain storage where supported. Elsewhere, it uses an
 authenticated encrypted file whose key is protected by the operating system's
 credential store. If the required store is unavailable, locked, invalidated,
@@ -64,7 +73,7 @@ Protection ends when a value is read or injected into a process. Same-user
 malware, rollback, and root remain outside the threat model. Windows and
 headless deployments are unsupported.
 
-[Read the security design →](https://danreynolds.github.io/keybay/docs/design/) ·
-[Report a vulnerability](https://danreynolds.github.io/keybay/docs/security/#reporting)
+The full model, the threat model, and how to verify a release yourself:
+[SECURITY.md](SECURITY.md).
 
 MIT licensed.

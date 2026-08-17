@@ -1,7 +1,11 @@
 # Keybay security design
 
-The current security and implementation design for `keybay`, including the
-choices that are not obvious from the API alone.
+Keybay's security model is two commitments — secure on every platform, and
+secure over time ([SECURITY.md](../SECURITY.md)). This document is the first
+commitment's foundation: the threat model, the numbered `KB-INV-*` invariants
+the model's promises decompose into, and the design decisions — including the
+choices that are not obvious from the API alone — that keep those invariants
+cheap to uphold.
 
 ## 1. Motivation
 
