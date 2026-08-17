@@ -308,6 +308,38 @@ jobs:
             exit 1
           fi
 
+  # Oracle-based peer watch: a new OSV advisory against a peer secret-storage
+  # library is free red-team output for Keybay's own failure surface. The
+  # seen-list update is the recorded triage decision; the opened issue is the
+  # triage container.
+  peer-advisory-watch:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: check OSV for new peer advisories
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          python3 tool/peer_advisories.py > advisories.txt 2>&1
+          status=$?
+          cat advisories.txt
+          if [ "$status" -eq 1 ]; then
+            open_issue="$(gh issue list --repo "$GITHUB_REPOSITORY" \
+              --state open --search 'Peer advisory triage in:title' \
+              --json number --jq 'length')"
+            if [ "$open_issue" = 0 ]; then
+              gh issue create --repo "$GITHUB_REPOSITORY" \
+                --title "Peer advisory triage: new OSV IDs for watched packages" \
+                --body-file advisories.txt || true
+            fi
+          fi
+          exit "$status"
+
   # Structure-aware container fuzz at canary depth. Every PR already runs the
   # same test at its small deterministic default inside the package test tier;
   # the weekly canary explores with a fresh seed and three orders more cases.
