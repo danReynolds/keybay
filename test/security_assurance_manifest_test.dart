@@ -86,7 +86,7 @@ void main() {
           'kind': 'apk-sha256',
           'sha256': List.filled(64, '3').join(),
           'package_id': 'dev.keybay.securityharness',
-          'command': 'flutter-test-controlled',
+          'command': 'adb-install-pull-verified',
           'status': 'pass',
         },
         'cleanup': {'status': 'pass'},

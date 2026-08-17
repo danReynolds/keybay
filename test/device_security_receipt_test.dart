@@ -88,7 +88,7 @@ void main() {
           '--package-id',
           'dev.keybay.securityharness',
           '--install-command',
-          'flutter-test-controlled',
+          'adb-install-pull-verified',
           '--install-status',
           'pass',
           '--field',
@@ -129,7 +129,7 @@ void main() {
       'sha256':
           'dd37c2d7274f7ea982cb83390c36918fee9ce8889073c44b68cdc00bdb8c3e04',
       'package_id': 'dev.keybay.securityharness',
-      'command': 'flutter-test-controlled',
+      'command': 'adb-install-pull-verified',
       'status': 'pass',
     });
     expect(
@@ -375,7 +375,7 @@ Future<List<String>> _baseArgsForCleanupFailure(
       '--package-id',
       'dev.keybay.securityharness',
       '--install-command',
-      'flutter-test-controlled',
+      'adb-install-pull-verified',
       '--install-status',
       'pass',
       '--field',

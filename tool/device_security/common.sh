@@ -91,7 +91,7 @@ ds_write_receipt() {
     --installer-kind "$installer_kind" \
     --installer-path "$installer_path" \
     --package-id dev.keybay.securityharness \
-    --install-command flutter-test-controlled \
+    --install-command adb-install-pull-verified \
     --install-status "$install_status" \
     "$@"
 }

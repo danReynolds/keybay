@@ -91,8 +91,43 @@ _android_package_present_for_user() {
   return 2
 }
 
-_android_package_present() {
-  _android_package_present_for_user "$ANDROID_USER"
+# Controlled install with installed-bytes verification. This must run BEFORE
+# the challenge: `flutter test` uninstalls the harness when it exits, so
+# package identity is provable only while the retained APK is demonstrably
+# what the device holds. The pulled copy closes the loop: built bytes ==
+# installed bytes, then the nonce-bound results prove that package ran.
+_android_controlled_install() {
+  local installer="$1"
+  (
+    cd "$DEVICE_SECURITY_HARNESS"
+    flutter build apk --debug
+  ) || return 1
+  [[ -f "$installer" && ! -L "$installer" ]] || return 1
+  ds_require apkanalyzer
+  [[ "$(apkanalyzer manifest application-id "$installer")" == \
+    "$ANDROID_HARNESS_PACKAGE" ]] || return 1
+  adb -s "$ANDROID_DEVICE" install -r --user "$ANDROID_USER" "$installer" \
+    >/dev/null || return 1
+  local device_path
+  device_path="$(adb -s "$ANDROID_DEVICE" shell pm path --user "$ANDROID_USER" \
+    "$ANDROID_HARNESS_PACKAGE" 2>/dev/null | tr -d '\r' |
+    sed -n 's/^package://p' | head -n 1)"
+  [[ -n "$device_path" ]] || return 1
+  local pulled="$DEVICE_SECURITY_RUN_DIR/installed-base.apk"
+  adb -s "$ANDROID_DEVICE" pull "$device_path" "$pulled" >/dev/null || return 1
+  local built_digest installed_digest
+  built_digest="$(_android_file_sha256 "$installer")"
+  installed_digest="$(_android_file_sha256 "$pulled")"
+  rm -f -- "$pulled"
+  [[ -n "$built_digest" && "$built_digest" == "$installed_digest" ]]
+}
+
+_android_file_sha256() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 -- "$1" | awk '{print $1}'
+  else
+    sha256sum -- "$1" | awk '{print $1}'
+  fi
 }
 
 _android_users_with_package() {
@@ -158,6 +193,11 @@ _android_run_selection() {
   trap '_android_cleanup_harness >/dev/null 2>&1 || true; exit 130' INT
   trap '_android_cleanup_harness >/dev/null 2>&1 || true; exit 143' TERM
 
+  local installer="$DEVICE_SECURITY_HARNESS/build/app/outputs/flutter-apk/app-debug.apk"
+  local install_status="pass"
+  _android_controlled_install "$installer" || install_status="fail"
+  [[ "$install_status" == "pass" ]] || rc=1
+
   set +e
   ds_flutter_security_test "$ANDROID_DEVICE" "$selection" \
     "$challenge_log" "$results" \
@@ -169,17 +209,6 @@ _android_run_selection() {
   challenge_rc=$?
   set -e
   [[ "$challenge_rc" -eq 0 ]] || rc=1
-
-  local installer="$DEVICE_SECURITY_HARNESS/build/app/outputs/flutter-apk/app-debug.apk"
-  local install_status="pass"
-  [[ -f "$installer" && ! -L "$installer" ]] || install_status="fail"
-  if [[ "$install_status" == "pass" ]]; then
-    ds_require apkanalyzer
-    [[ "$(apkanalyzer manifest application-id "$installer")" == \
-      "$ANDROID_HARNESS_PACKAGE" ]] || install_status="fail"
-    _android_package_present || install_status="fail"
-  fi
-  [[ "$install_status" == "pass" ]] || rc=1
 
   local cleanup_rc=0
   _android_cleanup_harness || cleanup_rc=1

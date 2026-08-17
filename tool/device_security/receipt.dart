@@ -185,7 +185,7 @@ _Config _parse(List<String> args) {
   if (packageId != 'dev.keybay.securityharness') {
     throw ReceiptException('unexpected qualification package identity');
   }
-  if (required('--install-command') != 'flutter-test-controlled') {
+  if (required('--install-command') != 'adb-install-pull-verified') {
     throw ReceiptException('unexpected install command identity');
   }
   return (
@@ -200,7 +200,7 @@ _Config _parse(List<String> args) {
     installerKind: installerKind,
     installerPath: required('--installer-path'),
     packageId: packageId,
-    installCommand: 'flutter-test-controlled',
+    installCommand: 'adb-install-pull-verified',
     installStatus: installStatus,
     fields: fields,
   );
