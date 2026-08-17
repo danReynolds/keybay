@@ -68,11 +68,20 @@ actual="$(shasum -a 256 -- "$evidence" | awk '{print $1}')"
   exit 64
 }
 
+# A candidate subject accumulates one receipt per selection (baseline, a
+# change-triggered tamper run, macos, ...); only the same selection may not be
+# promoted twice — receipts are immutable, corrections come from a new run.
 destination="$REPO/doc/device-security-receipts/$subject"
-[[ ! -e "$destination" && ! -L "$destination" ]] || {
-  echo "promote-device-receipt: subject evidence already exists" >&2
-  exit 64
-}
+receipt_dest="$destination/$selection.receipt.json"
+evidence_dest="$destination/$evidence_name"
+for existing in "$receipt_dest" "$evidence_dest"; do
+  [[ ! -e "$existing" && ! -L "$existing" ]] || {
+    echo "promote-device-receipt: $selection is already promoted for this" \
+      "subject" >&2
+    exit 64
+  }
+done
+mkdir -p -- "$destination"
 temporary="$(mktemp -d "$REPO/doc/device-security-receipts/.promote.XXXXXX")"
 cleanup() {
   [[ ! -d "$temporary" ]] || rm -rf -- "$temporary"
@@ -81,6 +90,8 @@ trap cleanup EXIT
 cp -- "$receipt" "$temporary/$selection.receipt.json"
 cp -- "$evidence" "$temporary/$evidence_name"
 chmod 0644 "$temporary"/*
-mv -- "$temporary" "$destination"
+mv -- "$temporary/$selection.receipt.json" "$receipt_dest"
+mv -- "$temporary/$evidence_name" "$evidence_dest"
 trap - EXIT
+cleanup
 echo "$destination"

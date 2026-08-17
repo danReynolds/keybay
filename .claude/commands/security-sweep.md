@@ -7,9 +7,10 @@ green. Correctness is guarded by tests; *currency* is guarded by this sweep.
 
 ## Procedure
 
-1. Establish the review window. Find the most recent closed issue titled
-   "Security sweep" (or the sweep issue that dispatched this run) and use its
-   close date as the window start; if none exists, use the last 60 days.
+1. Establish the review window. Find the most recent closed issue whose title
+   starts with "Security sweep:" (the template's `Security sweep: YYYY-MM`
+   form — follow-up issues use other titles) and use its close date as the
+   window start; if none exists, use the last 60 days.
 
 2. Read, for changes inside the window:
    - Apple security release notes and the Keychain Services / Data Protection

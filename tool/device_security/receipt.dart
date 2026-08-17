@@ -409,7 +409,10 @@ String _inventoryStatus(String platform, Map<String, String> fields) {
             boot.contains('vbmeta=locked') &&
             boot.contains('flash-locked=1') &&
             fields['selinux'] == 'Enforcing' &&
-            (fields['fbe']?.isNotEmpty ?? false)
+            // 'unreported' is the adapter's sentinel for "sm get-fbe-mode
+            // yielded nothing" — an unverified fact must not pass inventory.
+            (fields['fbe'] ?? '') != '' &&
+            fields['fbe'] != 'unreported'
         ? 'pass'
         : 'fail';
   }

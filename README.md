@@ -63,12 +63,8 @@ Keybay's security model is two commitments:
    release ships a signed statement of what was verified, and platform
    changes are triaged against the model on a schedule.
 
-Keybay uses native keychain storage where supported. Elsewhere, it uses an
-authenticated encrypted file whose key is protected by the operating system's
-credential store. If the required store is unavailable, locked, invalidated,
-corrupt, tampered with, or unsupported, Keybay fails closed. It never falls
-back to plaintext.
-
+If the required platform store is unavailable, locked, invalidated, corrupt,
+tampered with, or unsupported, Keybay fails closed — never plaintext.
 Protection ends when a value is read or injected into a process. Same-user
 malware, rollback, and root remain outside the threat model. Windows and
 headless deployments are unsupported.

@@ -9,16 +9,19 @@
 # This is the same code path CI runs after publication; a consumer needs only
 # curl, python3, and an authenticated `gh` CLI.
 #
-# usage: tool/verify_release.sh keybay VERSION
-#          [--source-ref REF] [--work-dir DIR] [--output-predicate PATH]
+# usage: tool/verify_release.sh keybay VERSION [--source-ref REF]
+#          [--work-dir DIR]
+#
+# With --work-dir, the downloaded archive, recomputed identity, and the raw
+# `gh attestation verify --format json` output are retained there for callers
+# (CI compares them against the run's own artifacts).
 set -euo pipefail
 umask 077
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
 usage() {
-  echo "usage: $0 keybay VERSION [--source-ref REF] [--work-dir DIR]" \
-    "[--output-predicate PATH]" >&2
+  echo "usage: $0 keybay VERSION [--source-ref REF] [--work-dir DIR]" >&2
   exit 64
 }
 
@@ -35,7 +38,6 @@ shift 2
 
 source_ref=""
 work_dir=""
-output_predicate=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --source-ref)
@@ -46,11 +48,6 @@ while [[ $# -gt 0 ]]; do
     --work-dir)
       [[ $# -ge 2 ]] || usage
       work_dir="$2"
-      shift 2
-      ;;
-    --output-predicate)
-      [[ $# -ge 2 ]] || usage
-      output_predicate="$2"
       shift 2
       ;;
     *) usage ;;
@@ -82,7 +79,11 @@ if ! curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
 fi
 
 python3 "$REPO/tool/compare_pub_archives.py" --identity "$hosted" "$identity"
-digest="$(python3 "$REPO/tool/compare_pub_archives.py" --digest "$hosted")"
+# The canonical digest is by definition sha256 of the identity file's bytes;
+# hash those instead of parsing the whole archive a second time.
+digest="$(python3 -c \
+  'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' \
+  "$identity")"
 
 verify_args=(
   --repo danReynolds/keybay
@@ -101,21 +102,16 @@ if ! gh attestation verify "$identity" "${verify_args[@]}" > "$verified"; then
   exit 1
 fi
 
-python3 - "$verified" "$digest" "$version" "$output_predicate" <<'PY'
+python3 - "$verified" "$digest" "$version" <<'PY'
 import json
 import sys
 
-verified_path, digest, version, output_predicate = sys.argv[1:5]
+verified_path, digest, version = sys.argv[1:4]
 with open(verified_path, encoding="utf-8") as handle:
     results = json.load(handle)
 if not isinstance(results, list) or not results:
     sys.exit("verify-release: unexpected gh attestation output shape")
 predicate = results[0]["verificationResult"]["statement"]["predicate"]
-
-if output_predicate:
-    with open(output_predicate, "w", encoding="utf-8") as handle:
-        json.dump(predicate, handle, indent=2, sort_keys=True)
-        handle.write("\n")
 
 if predicate.get("version") != version:
     sys.exit(

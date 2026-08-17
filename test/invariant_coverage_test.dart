@@ -11,7 +11,9 @@ import 'package:test/test.dart';
 void main() {
   test('every declared KB-INV invariant has an executable falsifier', () {
     final design = File('doc/design.md').readAsStringSync();
-    final idPattern = RegExp(r'KB-INV-\d{3}');
+    // \d+ (not \d{3}) so a future KB-INV-1000 is never truncated to a
+    // phantom KB-INV-100; matches the pattern the receipt test uses.
+    final idPattern = RegExp(r'KB-INV-\d+');
     final declared =
         idPattern.allMatches(design).map((match) => match.group(0)!).toSet();
     expect(declared, isNotEmpty,

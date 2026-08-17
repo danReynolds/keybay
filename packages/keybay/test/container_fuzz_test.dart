@@ -1,4 +1,5 @@
 @Tags(['unit'])
+@Timeout(Duration(minutes: 10))
 library;
 
 // Structure-aware fuzz for the container's two parsing layers. The
@@ -108,11 +109,9 @@ void main() {
       final keyB = keyOf(r.nextInt(1 << 30));
       // A commit-field splice between same-key, same-salt envelopes is a
       // no-op; force distinct keys so every splice genuinely lies.
-      var identicalKeys = keyA.length == keyB.length;
-      for (var b = 0; identicalKeys && b < keyA.length; b++) {
-        identicalKeys = keyA[b] == keyB[b];
+      if (String.fromCharCodes(keyA) == String.fromCharCodes(keyB)) {
+        keyB[0] ^= 1;
       }
-      if (identicalKeys) keyB[0] ^= 1;
       final sealedA = await containerA.seal(randomEntries(r), keyA);
       final sealedB = await containerB.seal(randomEntries(r), keyB);
 

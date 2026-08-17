@@ -39,7 +39,12 @@ def advisories(ecosystem: str, name: str) -> set[str]:
             headers={"Content-Type": "application/json"},
         )
         with urllib.request.urlopen(request, timeout=30) as response:
-            payload = json.load(response)
+            try:
+                payload = json.load(response)
+            except json.JSONDecodeError as error:
+                # A captive portal or outage page must read as
+                # "watch could not watch" (69), never as "new advisories" (1).
+                raise urllib.error.URLError(f"non-JSON OSV response: {error}")
         ids.update(vuln["id"] for vuln in payload.get("vulns") or [])
         page_token = payload.get("next_page_token")
         if not page_token:

@@ -122,6 +122,8 @@ Future<Map<String, Object?>> _build(_Config config) async {
   final repo = File.fromUri(Platform.script).parent.parent.parent.absolute;
   final git = _firstExisting(['/usr/bin/git', '/bin/git']);
   final commit = await _run(git, ['-C', repo.path, 'rev-parse', 'HEAD']);
+  final commitTime =
+      await _run(git, ['-C', repo.path, 'show', '-s', '--format=%cI', 'HEAD']);
   if ((await _run(git, [
     '-C',
     repo.path,
@@ -158,6 +160,7 @@ Future<Map<String, Object?>> _build(_Config config) async {
 
   final receiptRecords = <Map<String, Object?>>[];
   final observedSelections = <String>{};
+  final observedPlatforms = <String>{};
   for (final rawPath in config.receipts) {
     final receiptFile = File(rawPath).absolute;
     _regular(receiptFile, 'receipt');
@@ -190,6 +193,7 @@ Future<Map<String, Object?>> _build(_Config config) async {
     if (!observedSelections.add(selection)) {
       throw ManifestException('duplicate receipt selection: $selection');
     }
+    observedPlatforms.add(platform);
     final evidence = decoded['evidence'];
     if (evidence is! List || evidence.isEmpty) {
       throw ManifestException('receipt has no retained evidence');
@@ -225,21 +229,30 @@ Future<Map<String, Object?>> _build(_Config config) async {
       'evidence': retained,
     });
   }
+  // The qualification policy is enforced here, in the validator, so no
+  // wrapper script can assemble a manifest that skips it or contradicts
+  // itself (doc/device-security-suite.md, "Qualification triggers").
+  final requiredSelections = config.subject == 'core'
+      ? _coreRequiredSelections(
+          version: config.version,
+          configured: config.requiredSelections,
+          observedPlatforms: observedPlatforms,
+          unqualified: config.unqualified,
+        )
+      : config.requiredSelections;
+
   // A required selection is satisfied by any observed receipt whose scenario
   // set covers it: a change-triggered tamper run subsumes the baseline it
   // extends, so requiring the baseline never forces a redundant second run.
   final observedScenarioIds = [
     for (final selection in observedSelections)
-      scenariosForSelection(selection).map((scenario) => scenario.id).toSet(),
+      scenarioSelections[selection]!.toSet(),
   ];
-  final missing = config.requiredSelections.where((required) {
-    final List<SecurityScenario> scenarios;
-    try {
-      scenarios = scenariosForSelection(required);
-    } on ArgumentError {
+  final missing = requiredSelections.where((required) {
+    final requiredIds = scenarioSelections[required]?.toSet();
+    if (requiredIds == null) {
       throw ManifestException('unknown required selection: $required');
     }
-    final requiredIds = scenarios.map((scenario) => scenario.id).toSet();
     return !observedScenarioIds
         .any((observed) => observed.containsAll(requiredIds));
   }).toList();
@@ -251,7 +264,10 @@ Future<Map<String, Object?>> _build(_Config config) async {
   return {
     'schema': 'keybay.release-assurance-manifest',
     'schema_version': 1,
-    'generated_at': DateTime.now().toUtc().toIso8601String(),
+    // The release commit's timestamp, not wall clock: the manifest must be
+    // byte-deterministic per commit so a re-run workflow reconciles against
+    // the already-published asset instead of failing forever.
+    'generated_at': commitTime,
     'subject': config.subject == 'core' ? 'keybay-core' : 'keybay-cli',
     'version': config.version,
     'source': {'repository': 'danReynolds/keybay', 'commit': commit},
@@ -266,6 +282,52 @@ Future<Map<String, Object?>> _build(_Config config) async {
     'unqualified_configurations': config.unqualified,
     'canonical_limitations': config.limitations,
   };
+}
+
+/// Core qualification policy, enforced against what was actually observed so
+/// the signed statement can be neither incomplete nor self-contradictory:
+/// a minor/major (x.y.0) requires the Android baseline; a patch without an
+/// Android receipt must declare that gap; any configuration with a receipt
+/// must not simultaneously declare its own absence; and a missing macOS
+/// receipt must be declared.
+List<String> _coreRequiredSelections({
+  required String version,
+  required List<String> configured,
+  required Set<String> observedPlatforms,
+  required List<String> unqualified,
+}) {
+  final required = [...configured];
+  final patch = int.parse(version.split('.').last);
+  final androidGapDeclared = unqualified.any(
+      (entry) => entry.contains('Android') && entry.contains('not re-run'));
+  final macosGapDeclared =
+      unqualified.any((entry) => entry.contains('macOS native-host'));
+
+  if (patch == 0) {
+    if (!required.contains('android-baseline')) {
+      required.add('android-baseline');
+    }
+  } else if (!observedPlatforms.contains('android') && !androidGapDeclared) {
+    throw ManifestException(
+        'a core patch release without an Android receipt must declare the '
+        'gap (an unqualified entry containing "Android" and "not re-run")');
+  }
+  if (observedPlatforms.contains('android') && androidGapDeclared) {
+    throw ManifestException(
+        'contradictory manifest: an Android receipt is present alongside an '
+        'Android not-re-run gap declaration');
+  }
+  if (!observedPlatforms.contains('macos') && !macosGapDeclared) {
+    throw ManifestException(
+        'a core release without a macOS receipt must declare the gap (an '
+        'unqualified entry containing "macOS native-host")');
+  }
+  if (observedPlatforms.contains('macos') && macosGapDeclared) {
+    throw ManifestException(
+        'contradictory manifest: a macOS receipt is present alongside a '
+        'macOS native-host gap declaration');
+  }
+  return required;
 }
 
 (String, String, String, String) _validatePassingReceipt(
@@ -344,27 +406,50 @@ Future<Map<String, Object?>> _build(_Config config) async {
   );
 }
 
+/// The paths whose changes redefine what a receipt's pass means: the suite
+/// entrypoint and runners/oracles, the reference harness, the procedure text,
+/// and the subject-identity computation. Public so the test suite can assert
+/// every entry still exists (a renamed path silently stops invalidating).
+const receiptSemanticsPaths = [
+  'tool/device_security.sh',
+  'tool/device_security/',
+  'tool/compare_pub_archives.py',
+  'example_flutter/',
+  'doc/device-security-suite.md',
+];
+
 Future<void> _validateSuiteApplicability(
   String git,
   Directory repo,
   String receiptCommit,
   String releaseCommit,
 ) async {
-  await _run(git, [
-    '-C',
-    repo.path,
-    'cat-file',
-    '-e',
-    '$receiptCommit^{commit}',
-  ]);
-  await _run(git, [
-    '-C',
-    repo.path,
-    'merge-base',
-    '--is-ancestor',
-    receiptCommit,
-    releaseCommit,
-  ]);
+  try {
+    await _run(git, [
+      '-C',
+      repo.path,
+      'cat-file',
+      '-e',
+      '$receiptCommit^{commit}',
+    ]);
+    await _run(git, [
+      '-C',
+      repo.path,
+      'merge-base',
+      '--is-ancestor',
+      receiptCommit,
+      releaseCommit,
+    ]);
+  } on ManifestException {
+    // This repository squash-merges, so a receipt minted on a feature-branch
+    // checkout records a commit that never reaches main's ancestry. Name the
+    // remedy instead of surfacing a bare git exit code.
+    throw ManifestException(
+        'receipt suite commit $receiptCommit is not in the release commit\'s '
+        'ancestry. Qualify from a main-ancestry commit: merge first, run the '
+        'device suite against the release candidate, promote the receipt, '
+        'then tag.');
+  }
   final changed = await _run(git, [
     '-C',
     repo.path,
@@ -375,15 +460,7 @@ Future<void> _validateSuiteApplicability(
   // The subject content digest already pins the exact package bytes a receipt
   // tested, so unrelated repository changes cannot alter what the receipt
   // proved. What can change a receipt's meaning after the fact is the
-  // machinery that produced and defined it: the suite runners and oracles, the
-  // reference harness, the procedure text, and the subject-identity
-  // computation itself. Only those paths invalidate reuse.
-  const receiptSemanticsPaths = [
-    'tool/device_security/',
-    'tool/compare_pub_archives.py',
-    'example_flutter/',
-    'doc/device-security-suite.md',
-  ];
+  // machinery in [receiptSemanticsPaths]; only those paths invalidate reuse.
   final invalidating = changed
       .split('\n')
       .where((path) =>
@@ -411,6 +488,9 @@ Future<String> _canonicalPubDigest(Directory repo, File archive) async {
 }
 
 Future<String> _sha256(File file) async {
+  // Mirrors receipt.dart's guard: a digest recorded for bytes that changed
+  // mid-hash must fail loudly, never enter a signed statement.
+  final before = file.statSync();
   for (final (command, arguments) in <(String, List<String>)>[
     ('/usr/bin/shasum', ['-a', '256', '--', file.path]),
     ('/usr/bin/sha256sum', ['--', file.path]),
@@ -418,7 +498,13 @@ Future<String> _sha256(File file) async {
   ]) {
     if (!File(command).existsSync()) continue;
     final output = await _run(command, arguments);
-    final digest = output.split(RegExp(r'\s+')).first;
+    final digest = output.split(RegExp(r'\s+')).first.toLowerCase();
+    final after = file.statSync();
+    if (before.size != after.size ||
+        before.modified != after.modified ||
+        before.changed != after.changed) {
+      throw ManifestException('artifact changed while hashing');
+    }
     if (RegExp(r'^[0-9a-f]{64}$').hasMatch(digest)) return digest;
   }
   throw ManifestException('no SHA-256 implementation is available');
@@ -432,7 +518,16 @@ void _regular(File file, String label) {
 }
 
 Future<String> _run(String executable, List<String> arguments) async {
-  final result = await Process.run(executable, arguments);
+  // Strip GIT_* so a caller's environment (GIT_DIR, GIT_INDEX_FILE, ...)
+  // cannot redirect the clean-checkout and applicability checks.
+  final environment = Map<String, String>.of(Platform.environment)
+    ..removeWhere((key, _) => key.startsWith('GIT_'));
+  final result = await Process.run(
+    executable,
+    arguments,
+    environment: environment,
+    includeParentEnvironment: false,
+  );
   if (result.exitCode != 0) {
     throw ManifestException('$executable exited ${result.exitCode}');
   }

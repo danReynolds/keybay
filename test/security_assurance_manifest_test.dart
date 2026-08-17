@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../tool/security_assurance/manifest.dart' show receiptSemanticsPaths;
 import 'support/clean_tool_repo.dart';
 
 void main() {
@@ -115,6 +116,9 @@ void main() {
   Future<ProcessResult> runManifest({
     List<String> extra = const [],
     String? output,
+    String version = '1.2.3',
+    bool withReceipt = true,
+    bool withAndroidGap = false,
   }) =>
       Process.run(
         Platform.resolvedExecutable,
@@ -125,15 +129,19 @@ void main() {
           '--subject',
           'core',
           '--version',
-          '1.2.3',
+          version,
           '--ci-run-id',
           '12345',
           '--artifact',
           'keybay-1.2.3.tar.gz=${archive.path}',
-          '--receipt',
-          receipt.path,
-          '--require-selection',
-          'android-tamper',
+          if (withReceipt) ...['--receipt', receipt.path],
+          if (withReceipt) ...['--require-selection', 'android-tamper'],
+          if (withAndroidGap) ...[
+            '--unqualified',
+            'Android device qualification was not re-run for this patch release',
+          ],
+          '--unqualified',
+          'macOS native-host qualification was not re-run for this release',
           '--unqualified',
           'Physical Apple qualification has not been performed',
           '--limitation',
@@ -267,6 +275,59 @@ void main() {
       extra: ['--require-selection', 'android-baseline'],
     );
     expect(result.exitCode, 0, reason: '${result.stderr}');
+  });
+
+  test('core policy is enforced by the validator, not the wrapper', () async {
+    // A minor/major (x.y.0) without an Android receipt fails even when no
+    // caller passes --require-selection.
+    expect(
+      (await runManifest(
+        output: '${temp.path}/minor-missing.json',
+        version: '1.3.0',
+        withReceipt: false,
+      ))
+          .exitCode,
+      64,
+    );
+    // A patch without an Android receipt must declare the gap...
+    expect(
+      (await runManifest(
+        output: '${temp.path}/patch-undeclared.json',
+        withReceipt: false,
+      ))
+          .exitCode,
+      64,
+    );
+    // ...and passes once it does.
+    expect(
+      (await runManifest(
+        output: '${temp.path}/patch-declared.json',
+        withReceipt: false,
+        withAndroidGap: true,
+      ))
+          .exitCode,
+      0,
+    );
+    // A receipt plus the matching gap declaration is a contradiction.
+    expect(
+      (await runManifest(
+        output: '${temp.path}/contradiction.json',
+        withAndroidGap: true,
+      ))
+          .exitCode,
+      64,
+    );
+  });
+
+  test('every receipt-semantics path still exists in the repository', () {
+    for (final path in receiptSemanticsPaths) {
+      final exists = path.endsWith('/')
+          ? Directory('$repo/$path').existsSync()
+          : File('$repo/$path').existsSync();
+      expect(exists, isTrue,
+          reason: '$path is named by receiptSemanticsPaths but does not '
+              'exist — a renamed path silently stops invalidating receipts');
+    }
   });
 
   test('an uncovered required selection fails the manifest', () async {

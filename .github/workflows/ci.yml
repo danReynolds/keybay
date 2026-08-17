@@ -325,8 +325,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
-          python3 tool/peer_advisories.py > advisories.txt 2>&1
-          status=$?
+          # `|| status=$?` keeps the runner's default `-e` from aborting the
+          # step before the triage-issue handling below can run.
+          status=0
+          python3 tool/peer_advisories.py > advisories.txt 2>&1 || status=$?
           cat advisories.txt
           if [ "$status" -eq 1 ]; then
             open_issue="$(gh issue list --repo "$GITHUB_REPOSITORY" \
