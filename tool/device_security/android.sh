@@ -91,6 +91,10 @@ _android_package_present_for_user() {
   return 2
 }
 
+_android_package_present() {
+  _android_package_present_for_user "$ANDROID_USER"
+}
+
 # Controlled install with installed-bytes verification. This must run BEFORE
 # the challenge: `flutter test` uninstalls the harness when it exits, so
 # package identity is provable only while the retained APK is demonstrably
