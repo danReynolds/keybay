@@ -45,8 +45,8 @@ void main() {
     for (var i = 0; i < count; i++) {
       final key = 'k${r.nextInt(1 << 16)}-$i';
       final label = r.nextBool() ? 'label-${r.nextInt(1 << 8)}' : null;
-      final value =
-          Uint8List.fromList(List.generate(r.nextInt(64), (_) => r.nextInt(256)));
+      final value = Uint8List.fromList(
+          List.generate(r.nextInt(64), (_) => r.nextInt(256)));
       entries[key] = ContainerEntry(value, label: label);
     }
     return entries;
@@ -71,7 +71,8 @@ void main() {
         final cut = out.length <= 4 ? 4 : 4 + r.nextInt(out.length - 4);
         return Uint8List.sublistView(out, 0, cut);
       case 4: // trailing garbage after a canonical payload
-        return Uint8List.fromList([...out, ...List.filled(1 + r.nextInt(7), 0xAA)]);
+        return Uint8List.fromList(
+            [...out, ...List.filled(1 + r.nextInt(7), 0xAA)]);
       default: // invalid UTF-8 where a key's bytes begin
         if (out.length > 8) out[8] = 0xFF;
         return out;
@@ -124,11 +125,10 @@ void main() {
       final spliced = Uint8List.fromList(sealedA);
       switch (r.nextInt(3)) {
         case 0:
-          spliced.setRange(
-              commitOffset, nonceOffset, sealedB, commitOffset);
+          spliced.setRange(commitOffset, nonceOffset, sealedB, commitOffset);
         case 1:
-          spliced.setRange(
-              nonceOffset, bodyOffset, sealedB.sublist(nonceOffset, bodyOffset));
+          spliced.setRange(nonceOffset, bodyOffset,
+              sealedB.sublist(nonceOffset, bodyOffset));
         default:
           spliced.setRange(spliced.length - 16, spliced.length,
               sealedB.sublist(sealedB.length - 16));
