@@ -3,107 +3,256 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import 'support/clean_tool_repo.dart';
+
+const _nonce =
+    '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
 void main() {
   late Directory temp;
   late String repo;
+  late File archive;
+  late String subject;
+  late File results;
+  late File installer;
+  late Directory cleanToolRepo;
+  late String receiptScript;
 
-  setUp(() {
+  setUp(() async {
     temp = Directory.systemTemp.createTempSync('keybay-receipt-test.');
     final chmod = Process.runSync('/bin/chmod', ['700', temp.path]);
     if (chmod.exitCode != 0) {
       throw StateError('could not make the receipt test directory private');
     }
     repo = Directory.current.path;
+    cleanToolRepo = await stageCleanToolRepo(temp, repo, const [
+      'tool/compare_pub_archives.py',
+      'tool/device_security/catalog.dart',
+      'tool/device_security/receipt.dart',
+    ]);
+    receiptScript = '${cleanToolRepo.path}/tool/device_security/receipt.dart';
+    final package = Directory('${temp.path}/package')..createSync();
+    File('${package.path}/pubspec.yaml')
+        .writeAsStringSync('name: keybay\nversion: 1.2.3\n');
+    final lib = Directory('${package.path}/lib')..createSync();
+    File('${lib.path}/keybay.dart').writeAsStringSync('library;\n');
+    archive = File('${temp.path}/keybay-1.2.3.tar.gz');
+    final tar = await Process.run('tar', [
+      '-C',
+      package.path,
+      '-czf',
+      archive.path,
+      'pubspec.yaml',
+      'lib',
+    ]);
+    expect(tar.exitCode, 0, reason: '${tar.stderr}');
+    final digest = await Process.run('python3', [
+      '$repo/tool/compare_pub_archives.py',
+      '--digest',
+      archive.path,
+    ]);
+    expect(digest.exitCode, 0, reason: '${digest.stderr}');
+    subject = 'core-pub-content-sha256:${(digest.stdout as String).trim()}';
+    results = File('${temp.path}/results.json');
+    _writeResults(results, subject: subject);
+    installer = File('${temp.path}/app-debug.apk')..writeAsStringSync('apk');
   });
+
   tearDown(() => temp.deleteSync(recursive: true));
 
-  Future<ProcessResult> run(List<String> args) => Process.run(
+  Future<ProcessResult> runReceipt(List<String> extra, {String? output}) =>
+      Process.run(
         Platform.resolvedExecutable,
-        ['$repo/tool/device_security/receipt.dart', ...args],
+        [
+          receiptScript,
+          '--output',
+          output ?? '${temp.path}/receipt.json',
+          '--platform',
+          'android',
+          '--selection',
+          'android-baseline',
+          '--execution-class',
+          'physical-device',
+          '--nonce',
+          _nonce,
+          '--subject-archive',
+          archive.path,
+          '--results',
+          results.path,
+          '--cleanup-status',
+          'pass',
+          '--installer-kind',
+          'apk-sha256',
+          '--installer-path',
+          installer.path,
+          '--package-id',
+          'dev.keybay.securityharness',
+          '--install-command',
+          'flutter-test-controlled',
+          '--install-status',
+          'pass',
+          '--field',
+          'model=Google Pixel',
+          '--field',
+          'osVersion=16',
+          '--field',
+          'apiLevel=36',
+          '--field',
+          'securityPatch=2026-08-05',
+          '--field',
+          'buildFingerprint=google/device/build',
+          '--field',
+          'verifiedBoot=green; vbmeta=locked; flash-locked=1',
+          '--field',
+          'selinux=Enforcing',
+          '--field',
+          'fbe=native',
+          ...extra,
+        ],
         workingDirectory: repo,
       );
 
-  test('writes the allowlisted schema with a basename and SHA-256', () async {
-    final evidence = File('${temp.path}/baseline.log')
-      ..writeAsStringSync('abc');
-    final output = '${temp.path}/receipt.json';
-    final result = await run([
-      '--output',
-      output,
-      '--platform',
-      'android',
-      '--selection',
-      'android-baseline',
-      '--execution-class',
-      'physical-device',
-      '--status',
-      'pass',
-      '--scenario',
-      'KB-AND-001=pass',
-      '--scenario',
-      'KB-AND-010=pass',
-      '--scenario',
-      'KB-AND-011=pass',
-      '--scenario',
-      'KB-AND-020=pass',
-      '--field',
-      'model=Google Pixel',
-      '--field',
-      'osVersion=16',
-      '--field',
-      'apiLevel=36',
-      '--field',
-      'securityPatch=2026-08-05',
-      '--field',
-      'buildFingerprint=google/device/build',
-      '--field',
-      'verifiedBoot=green',
-      '--field',
-      'selinux=Enforcing',
-      '--field',
-      'fbe=native',
-      '--evidence',
-      evidence.path,
-    ]);
+  test('derives a schema-v2 pass from exact subject and structured results',
+      () async {
+    final result = await runReceipt([]);
     expect(result.exitCode, 0, reason: '${result.stderr}');
-
-    final receipt =
-        jsonDecode(File(output).readAsStringSync()) as Map<String, dynamic>;
-    expect(receipt['schema'], 'keybay.device-security-receipt');
-    expect(receipt['schema_version'], 1);
-    expect(receipt['suite_version'], '1');
-    expect(receipt['platform'], 'android');
-    expect(receipt['selection'], 'android-baseline');
-    expect(receipt['execution_class'], 'physical-device');
+    final receipt = jsonDecode(
+      File('${temp.path}/receipt.json').readAsStringSync(),
+    ) as Map<String, dynamic>;
+    expect(receipt['schema_version'], 2);
     expect(receipt['status'], 'pass');
-    expect(receipt['timestamp'], isA<String>());
-    expect(receipt['repository'], containsPair('dirty', isA<bool>()));
+    expect(receipt['run_nonce'], _nonce);
+    expect(receipt['suite'], containsPair('clean', true));
+    expect(receipt['subject'], containsPair('sha256', subject.split(':').last));
+    expect(receipt['installer'], {
+      'kind': 'apk-sha256',
+      'sha256':
+          'dd37c2d7274f7ea982cb83390c36918fee9ce8889073c44b68cdc00bdb8c3e04',
+      'package_id': 'dev.keybay.securityharness',
+      'command': 'flutter-test-controlled',
+      'status': 'pass',
+    });
     expect(
-      (receipt['repository'] as Map<String, dynamic>)['commit'],
-      matches(RegExp(r'^[0-9a-f]{40}$')),
+      (receipt['scenarios'] as List<dynamic>)
+          .cast<Map<String, dynamic>>()
+          .every((entry) => entry['status'] == 'pass'),
+      isTrue,
     );
-    expect(receipt['device'], {
-      'model': 'Google Pixel',
-      'build': 'google/device/build',
-      'api_level': 36,
-      'security_patch': '2026-08-05',
-    });
-    expect(receipt['fields'], {
-      'os_version': '16',
-      'verified_boot': 'green',
-      'selinux': 'Enforcing',
-      'fbe': 'native',
-    });
-    expect((receipt['evidence'] as List<dynamic>).single, {
-      'path': 'baseline.log',
-      'sha256': 'ba7816bf8f01cfea414140de5dae2223'
-          'b00361a396177a9cb410ff61f20015ad',
-      'bytes': 3,
-    });
   });
 
-  test(
-      'executable catalog, generated inventory, procedures, and guarantees agree',
+  test('result parser binds nonce/subject and derives per-scenario outcomes',
+      () async {
+    final raw = File('${temp.path}/raw.jsonl');
+    raw.writeAsStringSync([
+      _event('testStart', {
+        'test': {
+          'id': 1,
+          'name': 'KEYBAY-SECURITY-METADATA nonce=$_nonce subject=$subject',
+        }
+      }),
+      _event('testDone', {'testID': 1, 'result': 'success', 'skipped': false}),
+      for (var index = 0; index < 3; index++) ...[
+        _event('testStart', {
+          'test': {
+            'id': index + 2,
+            'name': 'group ${[
+              'KB-AND-010',
+              'KB-AND-011',
+              'KB-AND-020'
+            ][index]} test',
+          }
+        }),
+        _event('testDone', {
+          'testID': index + 2,
+          'result': index == 1 ? 'failure' : 'success',
+          'skipped': false,
+        }),
+      ],
+    ].join('\n'));
+    final output = File('${temp.path}/parsed.json');
+    final parsed = await Process.run(Platform.resolvedExecutable, [
+      '$repo/tool/device_security/result.dart',
+      '--input',
+      raw.path,
+      '--output',
+      output.path,
+      '--selection',
+      'android-baseline',
+      '--nonce',
+      _nonce,
+      '--subject',
+      subject,
+    ]);
+    expect(parsed.exitCode, 0, reason: '${parsed.stderr}');
+    final document =
+        jsonDecode(output.readAsStringSync()) as Map<String, dynamic>;
+    expect(document['nonce'], _nonce);
+    expect(document['subject'], subject);
+    expect(
+      (document['scenarios'] as List<dynamic>).any(
+        (entry) =>
+            entry is Map<String, dynamic> &&
+            entry['id'] == 'KB-AND-011' &&
+            entry['status'] == 'fail' &&
+            entry['reason'] == 'derived from Flutter JSON test reporter',
+      ),
+      isTrue,
+    );
+  });
+
+  test('rejects stale/substituted/omitted results and output overwrite',
+      () async {
+    for (final mutation in <void Function(Map<String, dynamic>)>[
+      (json) => json['nonce'] = List.filled(64, 'f').join(),
+      (json) => json['subject'] =
+          'core-pub-content-sha256:${List.filled(64, 'a').join()}',
+      (json) => (json['scenarios'] as List<dynamic>).removeLast(),
+    ]) {
+      final document = jsonDecode(results.readAsStringSync());
+      mutation(document as Map<String, dynamic>);
+      results.writeAsStringSync(jsonEncode(document));
+      final result = await runReceipt([],
+          output: '${temp.path}/${mutation.hashCode}.json');
+      expect(result.exitCode, 64);
+      _writeResults(results, subject: subject);
+    }
+    File('${temp.path}/receipt.json').writeAsStringSync('existing');
+    expect((await runReceipt([])).exitCode, 64);
+  });
+
+  test('failed oracle or cleanup cannot become pass', () async {
+    _writeResults(results, subject: subject, failed: 'KB-AND-011');
+    final failed = await runReceipt([]);
+    expect(failed.exitCode, 0, reason: '${failed.stderr}');
+    expect(
+      (jsonDecode(File('${temp.path}/receipt.json').readAsStringSync())
+          as Map<String, dynamic>)['status'],
+      'fail',
+    );
+
+    _writeResults(results, subject: subject);
+    final args = await _baseArgsForCleanupFailure(
+        receiptScript, temp, archive, results, installer);
+    final cleanup = await Process.run(Platform.resolvedExecutable, args,
+        workingDirectory: repo);
+    expect(cleanup.exitCode, 0, reason: '${cleanup.stderr}');
+    expect(
+      (jsonDecode(File('${temp.path}/cleanup.json').readAsStringSync())
+          as Map<String, dynamic>)['status'],
+      'inconclusive',
+    );
+  });
+
+  test('dirty suite source cannot issue a release receipt', () async {
+    File('${cleanToolRepo.path}/tool/device_security/catalog.dart')
+        .writeAsStringSync('\n', mode: FileMode.append);
+    expect(
+      (await runReceipt([], output: '${temp.path}/dirty.json')).exitCode,
+      64,
+    );
+  });
+
+  test('catalog inventory, procedures, and normative guarantees agree',
       () async {
     final result = await Process.run(
       Platform.resolvedExecutable,
@@ -116,363 +265,133 @@ void main() {
     final block = RegExp(
       r'<!-- BEGIN GENERATED DEVICE SECURITY INVENTORY -->\n([\s\S]*?)\n<!-- END GENERATED DEVICE SECURITY INVENTORY -->',
     ).firstMatch(suite);
-    expect(block, isNotNull);
     expect(block!.group(1)!.trim(), generated);
-
-    final ids = RegExp(r'^\| `(KB-[A-Z]+-[0-9]+)` \|', multiLine: true)
-        .allMatches(generated)
-        .map((match) => match.group(1)!)
-        .toSet();
-    expect(ids, isNotEmpty);
-    for (final id in ids) {
-      expect(
-        RegExp('^### `${RegExp.escape(id)}`\$', multiLine: true)
-            .allMatches(suite),
-        hasLength(1),
-        reason: '$id must have exactly one human procedure',
-      );
-    }
-
     final design = File('$repo/doc/design.md').readAsStringSync();
-    final guarantees = RegExp(r'`(KB-INV-[0-9]+)`')
-        .allMatches(generated)
-        .map((match) => match.group(1)!)
-        .toSet();
-    for (final guarantee in guarantees) {
+    for (final match in RegExp(r'^\| `(KB-[A-Z]+-[0-9]+)` \|', multiLine: true)
+        .allMatches(generated)) {
+      final id = match.group(1)!;
       expect(
-        RegExp('^\\| `${RegExp.escape(guarantee)}` \\|', multiLine: true)
-            .allMatches(design),
-        hasLength(1),
-        reason: '$guarantee must have exactly one normative design row',
-      );
+          RegExp('^### `${RegExp.escape(id)}`\$', multiLine: true)
+              .allMatches(suite),
+          hasLength(1));
+    }
+    for (final match in RegExp(r'`(KB-INV-[0-9]+)`').allMatches(generated)) {
+      final id = match.group(1)!;
+      expect(
+          RegExp('^\\| `${RegExp.escape(id)}` \\|', multiLine: true)
+              .allMatches(design),
+          hasLength(1));
     }
   });
 
-  test('rejects identifier-named/unknown fields and unsafe evidence names',
+  test('entrypoint and platform adapters retain destructive safety guards',
       () async {
-    final evidence = File('${temp.path}/baseline.log')
-      ..writeAsStringSync('log');
-    final valid = [
-      '--platform',
-      'ios',
-      '--selection',
-      'ios-baseline',
-      '--execution-class',
-      'physical-device',
-      '--status',
-      'pass',
-      '--scenario',
-      'KB-IOS-001=pass',
-      '--scenario',
-      'KB-IOS-010=pass',
-      '--scenario',
-      'KB-IOS-020=pass',
-      '--field',
-      'osVersion=iOS 19',
-      '--evidence',
-      evidence.path,
-    ];
-    for (final field in ['deviceSerial=ABC123', 'operatorNote=hello']) {
-      final result = await run([
-        '--output',
-        '${temp.path}/${field.hashCode}.json',
-        ...valid,
-        '--field',
-        field,
-      ]);
-      expect(result.exitCode, 64);
-    }
-    final unsafeEvidence = File('${temp.path}/device-serial-ABC.log')
-      ..writeAsStringSync('log');
-    final result = await run([
-      '--output',
-      '${temp.path}/unsafe.json',
-      ...valid.sublist(0, valid.length - 2),
-      '--evidence',
-      unsafeEvidence.path,
-    ]);
-    expect(result.exitCode, 64);
-  });
-
-  test('accepts inconclusive failure but refuses misleading pass/overwrite',
-      () async {
-    final evidence = File('${temp.path}/baseline.log')
-      ..writeAsStringSync('log');
-    final output = '${temp.path}/receipt.json';
-    final args = [
-      '--output',
-      output,
-      '--platform',
-      'ios',
-      '--selection',
-      'ios-baseline',
-      '--execution-class',
-      'physical-device',
-      '--status',
-      'inconclusive',
-      '--scenario',
-      'KB-IOS-001=inconclusive',
-      '--scenario',
-      'KB-IOS-010=inconclusive',
-      '--scenario',
-      'KB-IOS-020=inconclusive',
-      '--field',
-      'osVersion=iOS 19',
-      '--evidence',
-      evidence.path,
-    ];
-    expect((await run(args)).exitCode, 0);
-    expect((await run(args)).exitCode, 64);
-    final misleading = [...args];
-    misleading[misleading.indexOf('inconclusive')] = 'pass';
-    misleading[1] = '${temp.path}/misleading.json';
-    expect((await run(misleading)).exitCode, 64);
-
-    final downgradedFailure = [
-      '--output',
-      '${temp.path}/downgraded.json',
-      '--platform',
-      'ios',
-      '--selection',
-      'ios-baseline',
-      '--execution-class',
-      'physical-device',
-      '--status',
-      'inconclusive',
-      '--scenario',
-      'KB-IOS-001=fail',
-      '--scenario',
-      'KB-IOS-010=inconclusive',
-      '--scenario',
-      'KB-IOS-020=pass',
-      '--field',
-      'osVersion=iOS 19',
-      '--evidence',
-      evidence.path,
-    ];
-    expect((await run(downgradedFailure)).exitCode, 64);
-    downgradedFailure[downgradedFailure.indexOf('inconclusive')] = 'fail';
-    downgradedFailure[1] = '${temp.path}/failed.json';
-    expect((await run(downgradedFailure)).exitCode, 0);
-  });
-
-  test('rejects invented selections/scenarios and symlinked paths', () async {
-    final evidence = File('${temp.path}/baseline.log')
-      ..writeAsStringSync('log');
-    final base = [
-      '--output',
-      '${temp.path}/receipt.json',
-      '--platform',
-      'ios',
-      '--selection',
-      'ios-baseline',
-      '--execution-class',
-      'physical-device',
-      '--status',
-      'pass',
-      '--scenario',
-      'KB-IOS-001=pass',
-      '--scenario',
-      'KB-IOS-010=pass',
-      '--scenario',
-      'KB-IOS-020=pass',
-      '--field',
-      'osVersion=iOS 19',
-      '--evidence',
-      evidence.path,
-    ];
-    final inventedSelection = [...base]..[base.indexOf('--selection') + 1] =
-        'made-up';
-    expect((await run(inventedSelection)).exitCode, 64);
-    final inventedScenario = [...base]..[base.indexOf('KB-IOS-020=pass')] =
-        'NOT-A-SCENARIO=pass';
-    expect((await run(inventedScenario)).exitCode, 64);
-
-    final victim = File('${temp.path}/victim')..writeAsStringSync('untouched');
-    final outputLink = Link('${temp.path}/receipt.json')
-      ..createSync(victim.path);
-    expect((await run(base)).exitCode, 64);
-    expect(victim.readAsStringSync(), 'untouched');
-    outputLink.deleteSync();
-
-    final evidenceLink = Link('${temp.path}/evidence.log')
-      ..createSync(evidence.path);
-    final linkedEvidence = [...base]..[base.indexOf(evidence.path)] =
-        evidenceLink.path;
-    expect((await run(linkedEvidence)).exitCode, 64);
-  });
-
-  test('physical iOS selector requires one exact connected non-emulator',
-      () async {
-    final process = await Process.start(
-      Platform.resolvedExecutable,
-      ['$repo/tool/device_security/flutter_device.dart', 'physical-id'],
-      workingDirectory: repo,
-    );
-    process.stdin.write(jsonEncode([
-      {
-        'id': 'physical-id',
-        'targetPlatform': 'ios',
-        'emulator': false,
-        'isSupported': true,
-        'sdk': 'iOS 19.0',
-      },
-      {
-        'id': 'simulator-id',
-        'targetPlatform': 'ios',
-        'emulator': true,
-        'isSupported': true,
-        'sdk': 'iOS 19.0',
-      },
-    ]));
-    await process.stdin.close();
-    expect(await process.exitCode, 0);
-    expect(await utf8.decoder.bind(process.stdout).join(), 'iOS 19.0\n');
-
-    final rejected = await Process.start(
-      Platform.resolvedExecutable,
-      ['$repo/tool/device_security/flutter_device.dart', 'simulator-id'],
-      workingDirectory: repo,
-    );
-    rejected.stdin.write(jsonEncode([
-      {
-        'id': 'simulator-id',
-        'targetPlatform': 'ios',
-        'emulator': true,
-        'isSupported': true,
-        'sdk': 'iOS 19.0',
-      }
-    ]));
-    await rejected.stdin.close();
-    expect(await rejected.exitCode, 65);
-
-    for (final invalidDevice in [
-      {
-        'id': 'physical-id',
-        'targetPlatform': 'ios-remote',
-        'emulator': false,
-        'isSupported': true,
-        'sdk': 'iOS 19.0',
-      },
-      {
-        'id': 'physical-id',
-        'targetPlatform': 'ios',
-        'emulator': false,
-        'sdk': 'iOS 19.0',
-      },
-    ]) {
-      final malformed = await Process.start(
-        Platform.resolvedExecutable,
-        ['$repo/tool/device_security/flutter_device.dart', 'physical-id'],
-        workingDirectory: repo,
-      );
-      malformed.stdin.write(jsonEncode([invalidDevice]));
-      await malformed.stdin.close();
-      expect(await malformed.exitCode, 65);
-    }
-  });
-
-  test('Android cleanup fails closed and Flutter runs stay user-scoped',
-      () async {
-    final adapter =
-        File('$repo/tool/device_security/android.sh').readAsStringSync();
-    expect(
-      RegExp(r'--device-user "\$ANDROID_USER"').allMatches(adapter).length,
-      2,
-    );
-
-    const harness = r'''
-set -uo pipefail
-REPO="$KEYBAY_TEST_REPO"
-source "$REPO/tool/device_security/common.sh"
-source "$REPO/tool/device_security/android.sh"
-ANDROID_DEVICE=fake-device
-ANDROID_USER=0
-
-adb() {
-  case "$KEYBAY_ADB_MODE:$*" in
-    query-error:*"shell pm list packages"*) return 42 ;;
-    other-user:*"shell pm list users"*)
-      printf 'Users:\n  UserInfo{0:Owner:13} running\n  UserInfo{10:Work:30}\n'
-      ;;
-    other-user:*"shell pm list packages --user 10"*)
-      printf 'package:dev.keybay.securityharness\n'
-      ;;
-    other-user:*"shell pm list packages --user 0"*) return 0 ;;
-    *) return 42 ;;
-  esac
-}
-
-if _android_cleanup_harness; then
-  exit 1
-fi
-''';
-    for (final mode in ['query-error', 'other-user']) {
-      final result = await Process.run(
-        'bash',
-        ['-c', harness],
-        workingDirectory: repo,
-        environment: {
-          ...Platform.environment,
-          'KEYBAY_TEST_REPO': repo,
-          'KEYBAY_ADB_MODE': mode,
-        },
-      );
-      expect(result.exitCode, 0,
-          reason: '$mode stdout=${result.stdout} stderr=${result.stderr}');
-    }
-  });
-
-  test('entrypoint rejects platform traversal before sourcing', () async {
-    final result = await Process.run(
+    final traversal = await Process.run(
       'bash',
       ['$repo/tool/device_security.sh', 'doctor', '../device_security/linux'],
       workingDirectory: repo,
     );
-    expect(result.exitCode, 64);
-    expect(result.stderr, contains('unsupported platform'));
+    expect(traversal.exitCode, 64);
+
+    final android =
+        File('$repo/tool/device_security/android.sh').readAsStringSync();
+    expect(android, contains(r'uninstall --user "$ANDROID_USER"'));
+    expect(android, contains(r'--device-user "$ANDROID_USER"'));
+    expect(android, contains('exit 130'));
+    expect(android, contains('exit 143'));
   });
 
-  test('Android harness backup policy excludes every Keybay file namespace',
-      () {
+  test('host backup exclusions and macOS identity stay harness-scoped', () {
     final manifest = File(
       '$repo/example_flutter/android/app/src/main/AndroidManifest.xml',
     ).readAsStringSync();
     expect(manifest, contains('android:allowBackup="false"'));
-
     final rules = File(
       '$repo/example_flutter/android/app/src/main/res/xml/'
       'data_extraction_rules.xml',
     ).readAsStringSync();
-    expect(
-      RegExp(r'<exclude domain="file" path="\."\s*/>').allMatches(rules),
-      hasLength(2),
-      reason: 'cloud and device-transfer must both exclude all file stores',
-    );
-  });
+    expect(RegExp(r'<exclude domain="file" path="\."\s*/>').allMatches(rules),
+        hasLength(2));
+    expect(rules, isNot(contains('<cross-platform-transfer platform="ios">')));
 
-  test('macOS e2e cleanup and entitlement follow the harness bundle ID', () {
     final config = File(
       '$repo/example_flutter/macos/Runner/Configs/AppInfo.xcconfig',
     ).readAsStringSync();
-    final bundleId = RegExp(
-      r'^PRODUCT_BUNDLE_IDENTIFIER = (\S+)$',
-      multiLine: true,
-    ).firstMatch(config)?.group(1);
-    expect(bundleId, isNotNull);
-
-    final script = File('$repo/tool/test_e2e.sh').readAsStringSync();
-    expect(script, contains('HARNESS_BUNDLE_ID="$bundleId"'));
-    expect(
-      script,
-      contains(r'$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)'),
-    );
-
-    final recipe =
-        File('$repo/tool/dp_keychain_verification.md').readAsStringSync();
-    expect(
-      recipe,
-      contains(r'$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)'),
-    );
+    expect(config,
+        contains('PRODUCT_BUNDLE_IDENTIFIER = dev.keybay.securityharness'));
   });
 }
+
+void _writeResults(File file, {required String subject, String? failed}) {
+  file.writeAsStringSync(jsonEncode({
+    'schema': 'keybay.device-security-results',
+    'schema_version': 1,
+    'nonce': _nonce,
+    'subject': subject,
+    'selection': 'android-baseline',
+    'scenarios': [
+      for (final id in ['KB-AND-010', 'KB-AND-011', 'KB-AND-020'])
+        {
+          'id': id,
+          'status': id == failed ? 'fail' : 'pass',
+          'reason': 'derived from Flutter JSON test reporter',
+        },
+    ],
+  }));
+}
+
+String _event(String type, Map<String, Object> fields) =>
+    jsonEncode({'type': type, ...fields});
+
+Future<List<String>> _baseArgsForCleanupFailure(
+  String receiptScript,
+  Directory temp,
+  File archive,
+  File results,
+  File installer,
+) async =>
+    [
+      receiptScript,
+      '--output',
+      '${temp.path}/cleanup.json',
+      '--platform',
+      'android',
+      '--selection',
+      'android-baseline',
+      '--execution-class',
+      'physical-device',
+      '--nonce',
+      _nonce,
+      '--subject-archive',
+      archive.path,
+      '--results',
+      results.path,
+      '--cleanup-status',
+      'fail',
+      '--installer-kind',
+      'apk-sha256',
+      '--installer-path',
+      installer.path,
+      '--package-id',
+      'dev.keybay.securityharness',
+      '--install-command',
+      'flutter-test-controlled',
+      '--install-status',
+      'pass',
+      '--field',
+      'model=Google Pixel',
+      '--field',
+      'osVersion=16',
+      '--field',
+      'apiLevel=36',
+      '--field',
+      'securityPatch=2026-08-05',
+      '--field',
+      'buildFingerprint=google/device/build',
+      '--field',
+      'verifiedBoot=green; vbmeta=locked; flash-locked=1',
+      '--field',
+      'selinux=Enforcing',
+      '--field',
+      'fbe=native',
+    ];

@@ -3,7 +3,7 @@ description: >-
   Cross-platform secret storage for Dart without Flutter: native Data
   Protection Keychain items on Apple platforms where available, or an
   authenticated encrypted file with an OS-protected key.
-version: 0.1.0
+version: 0.1.1
 repository: https://github.com/danReynolds/keybay
 homepage: https://danreynolds.github.io/keybay/
 issue_tracker: https://github.com/danReynolds/keybay/issues

@@ -78,9 +78,18 @@ void main() {
     final pubspec = File(
       '${packageDirectory.path}/pubspec.yaml',
     ).readAsStringSync();
+    final packageVersion = RegExp(
+      r'^version:\s*([0-9]+\.[0-9]+\.[0-9]+)\s*$',
+      multiLine: true,
+    ).firstMatch(pubspec)!.group(1)!;
     expect(
       pubspec,
-      contains(RegExp(r'^\s*keybay:\s*0\.1\.0\s*$', multiLine: true)),
+      contains(
+        RegExp(
+          '^\\s*keybay:\\s*${RegExp.escape(packageVersion)}\\s*\$',
+          multiLine: true,
+        ),
+      ),
     );
     expect(
       pubspec,

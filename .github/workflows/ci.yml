@@ -56,7 +56,7 @@ jobs:
       # Repository-only assurance tooling tests. Keep these outside the core
       # package so its published archive never contains tests that depend on
       # repository documents or shell adapters.
-      - run: dart test test/device_security_receipt_test.dart
+      - run: dart test
       # Unit tier (hermetic): crypto vectors, container/fuzz, POSIX perms,
       # backend logic over fakes, and the dependency-closure firewall. Each
       # package's tests run from its own directory (they read cwd-relative

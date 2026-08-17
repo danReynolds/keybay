@@ -25,6 +25,9 @@ const securityMode =
 
 const expectedScheme = String.fromEnvironment('EXPECT_SCHEME');
 const expectedLevel = String.fromEnvironment('EXPECT_LEVEL');
+const securityRunNonce = String.fromEnvironment('SECURITY_RUN_NONCE');
+const securitySubjectIdentity =
+    String.fromEnvironment('SECURITY_SUBJECT_IDENTITY');
 const configuredAppId = String.fromEnvironment(
   'APP_ID',
   defaultValue: 'com.example.keybayDeviceSecurity.shared',
@@ -37,8 +40,25 @@ const _androidChannel =
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
+  test(
+      'KEYBAY-SECURITY-METADATA nonce=$securityRunNonce '
+      'subject=$securitySubjectIdentity', () {
+    expect(
+      securityRunNonce,
+      matches(RegExp(r'^[0-9a-f]{64}$')),
+      reason: 'qualification requires a runner-generated 256-bit nonce',
+    );
+    expect(
+      securitySubjectIdentity,
+      matches(RegExp(r'^core-pub-content-sha256:[0-9a-f]{64}$')),
+      reason: 'qualification must identify the exact core package contents',
+    );
+  });
+
   group('Shared native platform security', () {
-    test('platform policy and round-trip match the declared leg', () async {
+    test(
+        '${_appleScenarioId('010')} platform policy and round-trip match the '
+        'declared leg', () async {
       if (!(Platform.isIOS || Platform.isMacOS)) {
         markTestSkipped('Apple physical-host scenario');
         return;
@@ -67,7 +87,9 @@ void main() {
       });
     });
 
-    test('spawned isolates retain every same-store update', () async {
+    test(
+        '${_appleScenarioId('020')} spawned isolates retain every same-store '
+        'update', () async {
       if (!(Platform.isIOS || Platform.isMacOS)) {
         markTestSkipped('Apple physical-host scenario');
         return;
@@ -114,7 +136,7 @@ void main() {
       });
     });
 
-    test('macOS encrypted container tamper fails closed and recovers',
+    test('KB-MAC-030 encrypted container tamper fails closed and recovers',
         () async {
       if (!(Platform.isMacOS &&
           _requiredScheme() == StorageScheme.encryptedFile)) {
@@ -356,8 +378,52 @@ void main() {
                 'restoring the exact wrapped blob must restore readability');
       });
     });
+
+    test('KB-AND-040 restored state without its KEK fails without self-heal',
+        () async {
+      if (!Platform.isAndroid) {
+        markTestSkipped('Android-only');
+        return;
+      }
+      if (_requiredSecurityMode() != 'tamper') {
+        markTestSkipped('KB-AND-040 requires SECURITY_MODE=tamper');
+        return;
+      }
+      await _withFreshAndroidStore('missingKek', (store, appId) async {
+        final canary =
+            'KB-AND-040-${DateTime.now().microsecondsSinceEpoch}-plaintext';
+        await store.writeString('canary', canary);
+        final paths = _androidStorePaths(appId);
+        final originalContainer = paths.container.readAsBytesSync();
+        final originalBlob = paths.blob.readAsBytesSync();
+
+        expect(await _deleteAndroidAlias(appId), isTrue,
+            reason: 'the challenge must remove the provisioned test KEK');
+        expect(await _androidKeyInfo(appId), containsPair('present', false));
+        expect(
+          await _captureError(() => store.readString('canary')),
+          isA<KeyInvalidated>(),
+          reason: 'restored artifacts without their original KEK must fail',
+        );
+        expect(
+          _bytesEqual(paths.container.readAsBytesSync(), originalContainer),
+          isTrue,
+          reason: 'missing-KEK failure must leave the container unchanged',
+        );
+        expect(
+          _bytesEqual(paths.blob.readAsBytesSync(), originalBlob),
+          isTrue,
+          reason: 'missing-KEK failure must not replace the wrapped key blob',
+        );
+        expect(await _androidKeyInfo(appId), containsPair('present', false),
+            reason: 'a failed read must not silently provision a replacement');
+      });
+    });
   });
 }
+
+String _appleScenarioId(String suffix) =>
+    Platform.isMacOS ? 'KB-MAC-$suffix' : 'KB-IOS-$suffix';
 
 StorageScheme _requiredScheme() => switch (expectedScheme) {
       'native' => StorageScheme.nativeItems,
@@ -485,6 +551,13 @@ Future<Map<Object?, Object?>> _androidKeyInfo(String appId) async {
   return result;
 }
 
+Future<bool> _deleteAndroidAlias(String appId) async =>
+    await _androidChannel.invokeMethod<bool>(
+      'deleteAlias',
+      {'alias': '$appId.store-key'},
+    ) ??
+    false;
+
 Future<void> _resetAndroidStore(String appId) async {
   if (!appId.startsWith('$_appIdPrefix.')) {
     throw StateError('refusing to reset a non-security-harness appId');
@@ -493,10 +566,7 @@ Future<void> _resetAndroidStore(String appId) async {
   if (paths.directory.existsSync()) {
     paths.directory.deleteSync(recursive: true);
   }
-  await _androidChannel.invokeMethod<bool>(
-    'deleteAlias',
-    {'alias': '$appId.store-key'},
-  );
+  await _deleteAndroidAlias(appId);
 }
 
 ({Directory directory, File container, File blob}) _androidStorePaths(

@@ -19,17 +19,19 @@ Usage:
 
 Examples:
   ./tool/device_security.sh doctor android
-  ./tool/device_security.sh run android --device SERIAL
-  ./tool/device_security.sh run android --device SERIAL --tamper
+  ./tool/device_security.sh run android --device SERIAL --core-archive PATH
+  ./tool/device_security.sh run android --device SERIAL --tamper \
+    --allow-package-reset --core-archive PATH
   ./tool/device_security.sh doctor ios
-  ./tool/device_security.sh run ios --device UDID
-  ./tool/device_security.sh run macos
-  ./tool/device_security.sh run macos --tamper
+  ./tool/device_security.sh run ios --device UDID --core-archive PATH
+  ./tool/device_security.sh run macos --core-archive PATH
+  ./tool/device_security.sh run macos --tamper --core-archive PATH
 
 Baseline qualification changes only the dedicated Keybay security-harness app
-and test namespaces. `--tamper` adds self-restoring artifact corruption.
-Lifecycle actions such as reboot, restored-state simulation, or credential
-changes require separate explicit procedures and are never implied here.
+and test namespaces. `--tamper` adds self-restoring artifact corruption and a
+missing-KEK challenge that deletes only a dedicated harness key. Reboot,
+credential changes, or real backup/transfer require separate procedures and
+are never implied here.
 USAGE
 }
 

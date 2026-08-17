@@ -45,6 +45,9 @@ are retained.
 The suite evolves as platform guidance and attack techniques change; historical
 receipts remain scoped to their exact commit, target, OS, executable selection,
 and scenarios.
+Candidate-specific receipts feed a subject-scoped release assurance manifest;
+the publication workflows attest that manifest and verify the publicly hosted
+subject. These are reviewable evidence records, not certification.
 
 ## Cryptography
 

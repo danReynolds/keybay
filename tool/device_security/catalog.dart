@@ -71,6 +71,13 @@ const securityScenarios = <SecurityScenario>[
     destructive: false,
   ),
   SecurityScenario(
+    id: 'KB-AND-040',
+    platform: DevicePlatform.android,
+    guarantees: ['KB-INV-003', 'KB-INV-005'],
+    minimumEvidence: EvidenceClass.physicalDevice,
+    destructive: true,
+  ),
+  SecurityScenario(
     id: 'KB-IOS-001',
     platform: DevicePlatform.ios,
     guarantees: ['KB-INV-005'],
@@ -136,6 +143,7 @@ const scenarioSelections = <String, List<String>>{
     'KB-AND-011',
     'KB-AND-020',
     'KB-AND-030',
+    'KB-AND-040',
   ],
   'ios-baseline': ['KB-IOS-001', 'KB-IOS-010', 'KB-IOS-020'],
   'macos-baseline': ['KB-MAC-001', 'KB-MAC-010', 'KB-MAC-020'],

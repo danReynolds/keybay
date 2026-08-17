@@ -83,6 +83,14 @@ jobs:
       - run: dart test -x integration
         working-directory: packages/keybay
       - run: ./tool/validate_publish.sh packages/keybay cryptography ffi
+      - name: build and validate the exact core assurance subject
+        run: ./tool/build_core_assurance.sh build/core-assurance "$GITHUB_RUN_ID"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: core-assurance
+          path: build/core-assurance/*
+          if-no-files-found: error
+          retention-days: 7
 
   publish:
     needs: validate
@@ -102,3 +110,57 @@ jobs:
         working-directory: packages/keybay
       - name: publish or reconcile the exact pub.dev archive through OIDC
         run: ./tool/publish_pubdev.sh packages/keybay
+
+  attest-assurance:
+    needs: [validate, publish]
+    runs-on: ubuntu-24.04
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: core-assurance
+          path: assurance
+      - name: bind the canonical package-content subject
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          identity="assurance/keybay-$version.canonical-content"
+          test -f "$identity"
+          (cd assurance && sha256sum "keybay-$version.canonical-content" > subject.checksums.txt)
+      - name: attest the release assurance manifest
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-checksums: assurance/subject.checksums.txt
+          predicate-type: https://keybay.dev/attestations/release-assurance/v1
+          predicate-path: assurance/release-assurance.json
+      - name: verify hosted package identity and public assurance attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          manifest="assurance/release-assurance.json"
+          hosted="$RUNNER_TEMP/keybay-$version.hosted.tar.gz"
+          hosted_identity="$RUNNER_TEMP/keybay-$version.canonical-content"
+          curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
+            --output "$hosted" "https://pub.dev/api/archives/keybay-$version.tar.gz"
+          python3 tool/compare_pub_archives.py \
+            "assurance/keybay-$version.tar.gz" "$hosted"
+          python3 tool/compare_pub_archives.py --identity "$hosted" "$hosted_identity"
+          gh attestation verify "$hosted_identity" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/publish.yml" \
+            --source-ref "$GITHUB_REF" \
+            --predicate-type https://keybay.dev/attestations/release-assurance/v1 \
+            --deny-self-hosted-runners \
+            --format json > "$RUNNER_TEMP/verified-assurance.json"
+          jq -S . "$manifest" > "$RUNNER_TEMP/expected-predicate.json"
+          jq -S '.[0].verificationResult.statement.predicate' \
+            "$RUNNER_TEMP/verified-assurance.json" > "$RUNNER_TEMP/actual-predicate.json"
+          cmp "$RUNNER_TEMP/expected-predicate.json" "$RUNNER_TEMP/actual-predicate.json"

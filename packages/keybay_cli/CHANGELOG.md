@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1
 
 - Require Dart 3.11 or newer so the Dart-native install path uses the patched
   pub archive extractor; the minimum-SDK CI lane now enforces the lockfile.

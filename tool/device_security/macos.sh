@@ -14,6 +14,7 @@ macos_usage() {
   cat <<'USAGE'
 macOS options:
   --tamper            Add self-restoring encrypted-container corruption.
+  --core-archive PATH Exact candidate package archive to qualify.
 
 The signed Data Protection Keychain and entitlement-transition procedures are
 separately gated because they require a real development identity and
@@ -102,10 +103,11 @@ _macos_signing_mode() {
 device_security_main() {
   local action="$1"
   shift
-  local tamper="0"
+  local tamper="0" core_archive=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --tamper) tamper="1"; shift ;;
+      --core-archive) [[ $# -ge 2 ]] || ds_die "--core-archive needs a value"; core_archive="$2"; shift 2 ;;
       -h|--help) macos_usage; return 0 ;;
       *) ds_die "unknown macOS option: $1" ;;
     esac
@@ -122,60 +124,48 @@ device_security_main() {
   fi
 
   _macos_cleanup || ds_die "could not clean the dedicated macOS harness state"
-  trap '_macos_cleanup >/dev/null 2>&1 || true' EXIT INT TERM
+  trap '_macos_cleanup >/dev/null 2>&1 || true' EXIT
+  trap '_macos_cleanup >/dev/null 2>&1 || true; exit 130' INT
+  trap '_macos_cleanup >/dev/null 2>&1 || true; exit 143' TERM
   local selection="macos-baseline" security_mode="baseline"
   if [[ "$tamper" == "1" ]]; then
     selection="macos-tamper"
     security_mode="tamper"
   fi
   ds_new_run_dir macos "$selection"
-  local baseline_log="$DEVICE_SECURITY_RUN_DIR/baseline.log"
+  ds_prepare_core_subject "$core_archive"
   local challenge_log="$DEVICE_SECURITY_RUN_DIR/security-challenge.log"
-  local baseline_rc=0 challenge_rc=0 rc=0
+  local results="$DEVICE_SECURITY_RUN_DIR/$selection.results.json"
+  local challenge_rc=0 rc=0
 
   set +e
-  ds_flutter_test macos integration_test/keybay_test.dart "$baseline_log" \
+  ds_flutter_security_test macos "$selection" "$challenge_log" "$results" \
     --dart-define=APP_ID="$MACOS_STORE_APP_ID" \
     --dart-define=EXPECT_SCHEME=file \
-    --dart-define=EXPECT_LEVEL=login
-  baseline_rc=$?
-  if [[ "$baseline_rc" -eq 0 ]]; then
-    # Each Flutter test rebuild is ad-hoc signed and therefore has a new
-    # Keychain ACL identity. Remove the baseline's dedicated key/container so
-    # the second build cannot block on an authorization prompt for stale test
-    # state.
-    _macos_cleanup || {
-      printf 'Could not clean baseline state before the challenge.\n' \
-        >"$challenge_log"
-      challenge_rc=1
-    }
-  fi
-  if [[ "$baseline_rc" -eq 0 && "$challenge_rc" -eq 0 ]]; then
-    ds_flutter_test macos integration_test/device_security_test.dart \
-      "$challenge_log" \
-      --dart-define=APP_ID="$MACOS_STORE_APP_ID" \
-      --dart-define=EXPECT_SCHEME=file \
-      --dart-define=EXPECT_LEVEL=login \
-      --dart-define=SECURITY_MODE="$security_mode"
-    challenge_rc=$?
-  elif [[ "$baseline_rc" -ne 0 ]]; then
-    printf 'Not run because the baseline failed.\n' >"$challenge_log"
-    challenge_rc=1
-  fi
+    --dart-define=EXPECT_LEVEL=login \
+    --dart-define=SECURITY_MODE="$security_mode"
+  challenge_rc=$?
   set -e
-  [[ "$baseline_rc" -eq 0 && "$challenge_rc" -eq 0 ]] || rc=1
+  [[ "$challenge_rc" -eq 0 ]] || rc=1
 
-  local signing_mode="unverified" inventory_status="pass" cleanup_rc=0
+  local signing_mode="unverified" cleanup_rc=0
   signing_mode="$(_macos_signing_mode)" || {
     signing_mode="unverified"
-    inventory_status="inconclusive"
     rc=1
   }
+  local installer="$DEVICE_SECURITY_HARNESS/build/macos/Build/Products/Debug/example_flutter.app"
+  local install_status="pass"
+  [[ -d "$installer" && ! -L "$installer" ]] || install_status="fail"
+  if [[ "$install_status" == "pass" ]]; then
+    [[ "$(defaults read "$installer/Contents/Info.plist" CFBundleIdentifier)" == \
+      "$MACOS_BUNDLE_ID" ]] || install_status="fail"
+  fi
+  [[ "$install_status" == "pass" ]] || rc=1
   _macos_cleanup || cleanup_rc=1
   [[ "$cleanup_rc" -eq 0 ]] || rc=1
+  local cleanup_status="pass"
+  [[ "$cleanup_rc" -eq 0 ]] || cleanup_status="fail"
 
-  local status="pass" scenario_status="pass"
-  if [[ "$rc" -ne 0 ]]; then status="inconclusive"; scenario_status="inconclusive"; fi
   local receipt_args=(
     --field "model=$(sysctl -n hw.model 2>/dev/null || true)"
     --field "osVersion=$(sw_vers -productVersion)"
@@ -183,17 +173,10 @@ device_security_main() {
     --field "storageScheme=encryptedFile"
     --field "signingIdentity=$signing_mode"
     --field "protectionLevel=loginBound"
-    --scenario "KB-MAC-001=$inventory_status"
-    --scenario "KB-MAC-010=$scenario_status"
-    --scenario "KB-MAC-020=$scenario_status"
-    --evidence "$baseline_log"
-    --evidence "$challenge_log"
   )
-  if [[ "$tamper" == "1" ]]; then
-    receipt_args+=(--scenario "KB-MAC-030=$scenario_status")
-  fi
   ds_write_receipt "$DEVICE_SECURITY_RUN_DIR/receipt.json" macos "$selection" \
-    native-host "$status" "${receipt_args[@]}"
+    native-host "$results" app-tree-sha256 "$installer" "$install_status" \
+    "$cleanup_status" "${receipt_args[@]}"
   trap - EXIT INT TERM
   echo "Device-security receipt: $DEVICE_SECURITY_RUN_DIR/receipt.json"
   return "$rc"

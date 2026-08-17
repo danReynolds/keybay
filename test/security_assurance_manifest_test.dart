@@ -1,0 +1,243 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:test/test.dart';
+
+import 'support/clean_tool_repo.dart';
+
+void main() {
+  late Directory temp;
+  late String repo;
+  late File archive;
+  late String digest;
+  late File evidence;
+  late File receipt;
+  late Directory cleanToolRepo;
+  late String manifestScript;
+  late String cleanToolCommit;
+
+  setUp(() async {
+    temp = Directory.systemTemp.createTempSync('keybay-manifest-test.');
+    repo = Directory.current.path;
+    cleanToolRepo = await stageCleanToolRepo(temp, repo, const [
+      'tool/compare_pub_archives.py',
+      'tool/device_security/catalog.dart',
+      'tool/security_assurance/manifest.dart',
+    ]);
+    manifestScript =
+        '${cleanToolRepo.path}/tool/security_assurance/manifest.dart';
+    final commit = await Process.run(
+      '/usr/bin/git',
+      ['-C', cleanToolRepo.path, 'rev-parse', 'HEAD'],
+    );
+    expect(commit.exitCode, 0, reason: '${commit.stderr}');
+    cleanToolCommit = (commit.stdout as String).trim();
+    final package = Directory('${temp.path}/package')..createSync();
+    File('${package.path}/pubspec.yaml')
+        .writeAsStringSync('name: keybay\nversion: 1.2.3\n');
+    final lib = Directory('${package.path}/lib')..createSync();
+    File('${lib.path}/keybay.dart').writeAsStringSync('library;\n');
+    archive = File('${temp.path}/keybay-1.2.3.tar.gz');
+    final tar = await Process.run('tar', [
+      '-C',
+      package.path,
+      '-czf',
+      archive.path,
+      'pubspec.yaml',
+      'lib',
+    ]);
+    expect(tar.exitCode, 0, reason: '${tar.stderr}');
+    final identity = await Process.run('python3', [
+      '$repo/tool/compare_pub_archives.py',
+      '--digest',
+      archive.path,
+    ]);
+    expect(identity.exitCode, 0, reason: '${identity.stderr}');
+    digest = (identity.stdout as String).trim();
+    evidence = File('${temp.path}/results.json')..writeAsStringSync('{}');
+    final evidenceDigest = (await Process.run(
+      '/usr/bin/shasum',
+      ['-a', '256', evidence.path],
+    ))
+        .stdout
+        .toString()
+        .split(RegExp(r'\s+'))
+        .first;
+    receipt = File('${temp.path}/android.receipt.json')
+      ..writeAsStringSync(jsonEncode({
+        'schema': 'keybay.device-security-receipt',
+        'schema_version': 2,
+        'timestamp': '2026-08-16T20:00:00.000Z',
+        'status': 'pass',
+        'platform': 'android',
+        'selection': 'android-tamper',
+        'execution_class': 'physical-device',
+        'suite': {
+          'commit': cleanToolCommit,
+          'clean': true,
+        },
+        'run_nonce': List.filled(64, '2').join(),
+        'subject': {
+          'kind': 'core-pub-content-sha256',
+          'sha256': digest,
+        },
+        'installer': {
+          'kind': 'apk-sha256',
+          'sha256': List.filled(64, '3').join(),
+          'package_id': 'dev.keybay.securityharness',
+          'command': 'flutter-test-controlled',
+          'status': 'pass',
+        },
+        'cleanup': {'status': 'pass'},
+        'scenarios': [
+          for (final id in [
+            'KB-AND-001',
+            'KB-AND-010',
+            'KB-AND-011',
+            'KB-AND-020',
+            'KB-AND-030',
+            'KB-AND-040',
+          ])
+            {'id': id, 'status': 'pass'},
+        ],
+        'evidence': [
+          {
+            'path': 'results.json',
+            'sha256': evidenceDigest,
+            'bytes': evidence.lengthSync(),
+          },
+        ],
+      }));
+  });
+
+  tearDown(() => temp.deleteSync(recursive: true));
+
+  Future<ProcessResult> runManifest({
+    List<String> extra = const [],
+    String? output,
+  }) =>
+      Process.run(
+        Platform.resolvedExecutable,
+        [
+          manifestScript,
+          '--output',
+          output ?? '${temp.path}/manifest.json',
+          '--subject',
+          'core',
+          '--version',
+          '1.2.3',
+          '--ci-run-id',
+          '12345',
+          '--artifact',
+          'keybay-1.2.3.tar.gz=${archive.path}',
+          '--receipt',
+          receipt.path,
+          '--require-selection',
+          'android-tamper',
+          '--unqualified',
+          'Physical Apple qualification has not been performed',
+          '--limitation',
+          'https://github.com/danReynolds/keybay/blob/main/SECURITY.md',
+          ...extra,
+        ],
+        workingDirectory: repo,
+      );
+
+  test('assembles a scoped core manifest from matching retained evidence',
+      () async {
+    final result = await runManifest();
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+    final manifest = jsonDecode(
+      File('${temp.path}/manifest.json').readAsStringSync(),
+    ) as Map<String, dynamic>;
+    expect(manifest['schema_version'], 1);
+    expect(manifest['subject'], 'keybay-core');
+    expect(manifest['version'], '1.2.3');
+    expect(
+      (manifest['artifacts'] as List<dynamic>).single,
+      containsPair('sha256', digest),
+    );
+    expect(
+      (manifest['qualification_receipts'] as List<dynamic>).single,
+      containsPair('selection', 'android-tamper'),
+    );
+  });
+
+  test('rejects substituted receipt subjects and unresolved evidence',
+      () async {
+    final original =
+        jsonDecode(receipt.readAsStringSync()) as Map<String, dynamic>;
+    (original['subject'] as Map<String, dynamic>)['sha256'] =
+        List.filled(64, 'a').join();
+    receipt.writeAsStringSync(jsonEncode(original));
+    expect((await runManifest()).exitCode, 64);
+
+    (original['subject'] as Map<String, dynamic>)['sha256'] = digest;
+    receipt.writeAsStringSync(jsonEncode(original));
+    evidence.deleteSync();
+    expect(
+      (await runManifest(output: '${temp.path}/missing-evidence.json'))
+          .exitCode,
+      64,
+    );
+  });
+
+  test('CLI manifest binds exact archive bytes without device receipts',
+      () async {
+    final binaryArchive = File('${temp.path}/cli.tar.gz')
+      ..writeAsStringSync('cli bytes');
+    final result = await Process.run(
+      Platform.resolvedExecutable,
+      [
+        manifestScript,
+        '--output',
+        '${temp.path}/cli.json',
+        '--subject',
+        'cli',
+        '--version',
+        '1.2.3',
+        '--ci-run-id',
+        '12345',
+        '--artifact',
+        'keybay-1.2.3-linux-x64.tar.gz=${binaryArchive.path}',
+        '--unqualified',
+        'No independent third-party assessment has been completed',
+      ],
+      workingDirectory: repo,
+    );
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+    final manifest =
+        jsonDecode(File('${temp.path}/cli.json').readAsStringSync())
+            as Map<String, dynamic>;
+    expect(manifest['subject'], 'keybay-cli');
+    expect(manifest['qualification_receipts'], isEmpty);
+  });
+
+  test('dirty suite source cannot issue a release manifest', () async {
+    File('${cleanToolRepo.path}/tool/security_assurance/manifest.dart')
+        .writeAsStringSync('\n', mode: FileMode.append);
+    expect(
+      (await runManifest(output: '${temp.path}/dirty.json')).exitCode,
+      64,
+    );
+  });
+
+  test('receipt cannot carry across a later runner or oracle change', () async {
+    File('${cleanToolRepo.path}/tool/changed-after-receipt.txt')
+        .writeAsStringSync('invalidate receipt reuse\n');
+    for (final arguments in [
+      ['add', '--all'],
+      ['commit', '--quiet', '-m', 'change runner after receipt'],
+    ]) {
+      final result = await Process.run(
+        '/usr/bin/git',
+        ['-C', cleanToolRepo.path, ...arguments],
+      );
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+    }
+    expect(
+      (await runManifest(output: '${temp.path}/invalid-reuse.json')).exitCode,
+      64,
+    );
+  });
+}

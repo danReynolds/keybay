@@ -15,6 +15,7 @@ dart format --output=none --set-exit-if-changed .
 echo "==> analyze (--fatal-infos)"
 dart analyze --fatal-infos
 echo "==> unit tier"
+dart test
 (cd packages/keybay && dart test -x integration)
 (cd packages/keybay_cli && dart test -x integration)
 dart run tool/test_release.dart

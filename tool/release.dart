@@ -25,10 +25,12 @@
 // HEAD and pushes it, which triggers `publish.yml` (core, tag `vX.Y.Z`) or
 // `release_cli.yml` (cli, tag `keybay_cli-vX.Y.Z`). It refuses unless every
 // reference agrees, tracked files are clean, the matching CHANGELOG carries
-// the version, and the tag does not already exist. Core must be tagged from
-// the current `origin/main` tip. CLI must be tagged later from that exact
-// core-tag commit, after the core workflow succeeds and the version is live on
-// pub.dev.
+// the version, and the tag does not already exist. Before creating the core
+// tag it also rebuilds the candidate assurance manifest from the exact package,
+// latest successful CI run, and required qualification receipt. Core must be
+// tagged from the current `origin/main` tip. CLI must be tagged later from that
+// exact core-tag commit, after the core workflow succeeds and the version is
+// live on pub.dev.
 library;
 
 import 'dart:io';
@@ -329,6 +331,9 @@ void _publish(String root, String target,
   if (!yes && !_confirm('create and push signed tag $tag to origin?')) {
     _fail('aborted');
   }
+  if (target == 'core') {
+    _requireCoreAssurance(root, head);
+  }
 
   final tagged = _git(
       root, <String>['tag', '-s', tag, head, '-m', '${plan.package} $version']);
@@ -359,6 +364,50 @@ void _publish(String root, String target,
     stdout
         .writeln('\nCLI release triggered. GitHub Actions publishes the native '
             'channels first and pub.dev last.');
+  }
+}
+
+void _requireCoreAssurance(String root, String head) {
+  final run = Process.runSync(
+    'gh',
+    <String>[
+      'run',
+      'list',
+      '--workflow',
+      'ci.yml',
+      '--commit',
+      head,
+      '--status',
+      'success',
+      '--limit',
+      '20',
+      '--json',
+      'databaseId,headSha',
+      '--jq',
+      'map(select(.headSha == "$head")) | first | .databaseId // empty',
+    ],
+    workingDirectory: root,
+  );
+  final runId = _text(run.stdout);
+  if (run.exitCode != 0 || !RegExp(r'^[1-9][0-9]*$').hasMatch(runId)) {
+    _fail('no successful ci.yml run resolves to release commit $head; wait '
+        'for required CI before creating the core tag');
+  }
+
+  final temp = Directory.systemTemp.createTempSync('keybay-core-assurance.');
+  try {
+    final built = Process.runSync(
+      '$root/tool/build_core_assurance.sh',
+      <String>['${temp.path}/assurance', runId],
+      workingDirectory: root,
+    );
+    if (built.exitCode != 0) {
+      _fail('core assurance preflight failed before tag creation:\n'
+          '${_text(built.stdout)}\n${_text(built.stderr)}');
+    }
+    stdout.writeln('core assurance preflight passed against CI run $runId');
+  } finally {
+    temp.deleteSync(recursive: true);
   }
 }
 

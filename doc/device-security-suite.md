@@ -29,11 +29,13 @@ biometric enrollment, switch a personal backup transport, unlock a bootloader,
 or collect a PIN, account credential, signing secret, raw serial, or UDID.
 
 Baseline and `--tamper` runs may create and remove their own namespaced
-application/key state. Tamper tests must retain exact originals, restore them in
-a `finally` path, and re-prove readability. Package reset, uninstall, reboot,
-relock, platform-key deletion, provider locking, backup/restore, and transfer
-are separate procedures requiring an exact target and explicit authorization.
-Cleanup is an oracle: a release-eligible pass cannot survive failed cleanup.
+application/key state. Artifact-tamper tests retain exact originals, restore
+them in a `finally` path, and re-prove readability. `--tamper` also authorizes
+deletion of only the dedicated harness KEK for the missing-key challenge;
+package cleanup removes the remaining test state. Reset of any other package,
+reboot, relock, provider locking, backup/restore, and transfer are separate
+procedures requiring an exact target and explicit authorization. Cleanup is an
+oracle: a release-eligible pass cannot survive failed cleanup.
 
 ## Execution policy
 
@@ -58,15 +60,16 @@ From the repository root:
 
 ```sh
 ./tool/device_security.sh doctor android
-./tool/device_security.sh run android --device SERIAL
-./tool/device_security.sh run android --device SERIAL --tamper
+./tool/device_security.sh run android --device SERIAL --core-archive PATH
+./tool/device_security.sh run android --device SERIAL --tamper \
+  --allow-package-reset --core-archive PATH
 
 ./tool/device_security.sh doctor ios
-./tool/device_security.sh run ios --device UDID
+./tool/device_security.sh run ios --device UDID --core-archive PATH
 
 ./tool/device_security.sh doctor macos
-./tool/device_security.sh run macos
-./tool/device_security.sh run macos --tamper
+./tool/device_security.sh run macos --core-archive PATH
+./tool/device_security.sh run macos --tamper --core-archive PATH
 
 ./tool/device_security.sh doctor linux
 ```
@@ -93,6 +96,7 @@ source commit versions semantics.
 | `KB-AND-011` | android | `KB-INV-001`, `KB-INV-002` | physical-device | no |
 | `KB-AND-020` | android | `KB-INV-007` | physical-device | no |
 | `KB-AND-030` | android | `KB-INV-003` | physical-device | no |
+| `KB-AND-040` | android | `KB-INV-003`, `KB-INV-005` | physical-device | yes |
 | `KB-IOS-001` | ios | `KB-INV-005` | physical-device | no |
 | `KB-IOS-010` | ios | `KB-INV-005` | physical-device | no |
 | `KB-IOS-020` | ios | `KB-INV-007` | physical-device | no |
@@ -134,6 +138,15 @@ diagnostics, and no native crash or cross-store value.
 With `--tamper`, corrupt the container and wrapped blob separately. Each read
 must fail with the expected typed closed failure without returning the canary or
 creating replacement state. Restore the original bytes and re-prove readability.
+
+### `KB-AND-040`
+
+With `--tamper`, provision a dedicated harness store, retain its encrypted
+container and wrapped-key blob, then delete only that store's Android Keystore
+KEK through the debug-only native oracle. Reads must return `KeyInvalidated`,
+leave both artifacts byte-for-byte unchanged, and not silently provision a
+replacement KEK. Final package cleanup removes the intentionally unrecoverable
+test state.
 
 ### `KB-IOS-001`
 
@@ -182,14 +195,11 @@ Only `pass` is affirmative evidence. A security-oracle contradiction is
 `fail`; missing capability is `blocked`; infrastructure failure or unattributed
 aggregate-command failure is `inconclusive`.
 
-The current schema-v1 writer is development evidence. It validates the
-executable catalog/selection, platform fields, evidence names and hashes,
-private paths, no-overwrite publication, and fail-dominant aggregate status.
-It does not yet bind a release subject or nonce-derived per-scenario output, so
-it is not release-eligible evidence.
-
-A release-eligible receipt must derive scenario results from nonce-bound
-structured output and record:
+The schema-v2 writer derives release-eligible scenario status from nonce-bound
+structured Flutter reporter output. It validates the executable selection,
+platform fields, evidence hashes, private paths, no-overwrite publication,
+clean checkout, exact package subject, exact installer input, package identity,
+cleanup, and fail-dominant aggregate status. It records:
 
 - clean suite commit and exact subject identity;
 - exact APK or canonical signed app/IPA installer input, controlled install
@@ -222,3 +232,18 @@ decisions in their advisory/issue/PR; do not build a feed ledger.
 No suite result is a certification. Public statements name the exact release,
 subject, configuration, evidence class, scenarios, limitations, and date. A
 receipt proves only what its retained evidence and oracle establish.
+
+## Release binding
+
+For the core package, the pre-tag check and tag workflow rebuild the candidate
+archive, compute its canonical member-content identity, require the applicable
+reviewed receipt, and assemble one manifest. After pub.dev publication, CI
+recomputes that same identity from the hosted archive and verifies a GitHub
+custom-predicate attestation containing the manifest. Repacked tar metadata does
+not change the subject; any member path, type, mode, or byte does.
+
+For the CLI, the release workflow records every exact release-asset digest,
+attaches `release-assurance.json` to the immutable GitHub Release, and attests
+the manifest against the native archives. The manifest deliberately lists
+unqualified configurations and the absence of independent review rather than
+converting incomplete evidence into a pass.
