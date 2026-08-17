@@ -83,6 +83,14 @@ jobs:
       - run: dart test -x integration
         working-directory: packages/keybay
       - run: ./tool/validate_publish.sh packages/keybay cryptography ffi
+      - name: build and validate the exact core assurance subject
+        run: ./tool/build_core_assurance.sh build/core-assurance "$GITHUB_RUN_ID"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: core-assurance
+          path: build/core-assurance/*
+          if-no-files-found: error
+          retention-days: 7
 
   publish:
     needs: validate
@@ -102,3 +110,53 @@ jobs:
         working-directory: packages/keybay
       - name: publish or reconcile the exact pub.dev archive through OIDC
         run: ./tool/publish_pubdev.sh packages/keybay
+
+  attest-assurance:
+    needs: [validate, publish]
+    runs-on: ubuntu-24.04
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: core-assurance
+          path: assurance
+      - name: attest the release assurance manifest
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          # The subject is the canonical-content identity file itself; the
+          # action hashes it natively (and fails on an empty glob).
+          subject-path: assurance/*.canonical-content
+          predicate-type: https://keybay.dev/attestations/release-assurance/v1
+          predicate-path: assurance/release-assurance.json
+      - name: verify hosted package identity and public assurance attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          # The public verification path is the exact script a consumer runs
+          # (SECURITY.md). CI adds two checks a consumer cannot: the hosted
+          # archive matches the bytes this run built, and the verified
+          # predicate equals the manifest this run attested.
+          workdir="$RUNNER_TEMP/verify"
+          ./tool/verify_release.sh keybay "$version" \
+            --source-ref "$GITHUB_REF" \
+            --work-dir "$workdir"
+          # Byte-equal canonical identities <=> equal canonical content; the
+          # built archive was already reduced to its identity in validate.
+          cmp "assurance/keybay-$version.canonical-content" \
+            "$workdir/keybay-$version.canonical-content"
+          python3 - "$workdir/verified-assurance.json" \
+            assurance/release-assurance.json <<'PY'
+          import json, sys
+          verified, manifest = (json.load(open(path)) for path in sys.argv[1:3])
+          predicate = verified[0]["verificationResult"]["statement"]["predicate"]
+          if predicate != manifest:
+              sys.exit("verified predicate differs from the attested manifest")
+          PY

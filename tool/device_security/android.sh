@@ -8,10 +8,12 @@ android_usage() {
 Android options:
   --device SERIAL              Target one connected physical device.
   --device-user ID             Android user/profile (default: 0).
-  --tamper                     Add self-restoring artifact corruption.
+  --tamper                     Add artifact corruption and a dedicated
+                               harness-only missing-KEK challenge.
   --expect-level LEVEL         hardware or software (default: hardware).
   --allow-package-reset        Permit removing a pre-existing dedicated
                                harness package for the selected user first.
+  --core-archive PATH          Exact candidate package archive to qualify.
 
 The baseline never reboots, changes the screen credential, changes backup
 transport, alters biometric enrollment, or touches another application.
@@ -93,6 +95,45 @@ _android_package_present() {
   _android_package_present_for_user "$ANDROID_USER"
 }
 
+# Controlled install with installed-bytes verification. This must run BEFORE
+# the challenge: `flutter test` uninstalls the harness when it exits, so
+# package identity is provable only while the retained APK is demonstrably
+# what the device holds. The pulled copy closes the loop: built bytes ==
+# installed bytes, then the nonce-bound results prove that package ran.
+_android_controlled_install() {
+  local installer="$1"
+  (
+    cd "$DEVICE_SECURITY_HARNESS"
+    flutter build apk --debug
+  ) || return 1
+  [[ -f "$installer" && ! -L "$installer" ]] || return 1
+  ds_require apkanalyzer
+  [[ "$(apkanalyzer manifest application-id "$installer")" == \
+    "$ANDROID_HARNESS_PACKAGE" ]] || return 1
+  adb -s "$ANDROID_DEVICE" install -r --user "$ANDROID_USER" "$installer" \
+    >/dev/null || return 1
+  local device_path
+  device_path="$(adb -s "$ANDROID_DEVICE" shell pm path --user "$ANDROID_USER" \
+    "$ANDROID_HARNESS_PACKAGE" 2>/dev/null | tr -d '\r' |
+    sed -n 's/^package://p' | head -n 1)"
+  [[ -n "$device_path" ]] || return 1
+  local pulled="$DEVICE_SECURITY_RUN_DIR/installed-base.apk"
+  adb -s "$ANDROID_DEVICE" pull "$device_path" "$pulled" >/dev/null || return 1
+  local built_digest installed_digest
+  built_digest="$(_android_file_sha256 "$installer")"
+  installed_digest="$(_android_file_sha256 "$pulled")"
+  rm -f -- "$pulled"
+  [[ -n "$built_digest" && "$built_digest" == "$installed_digest" ]]
+}
+
+_android_file_sha256() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 -- "$1" | awk '{print $1}'
+  else
+    sha256sum -- "$1" | awk '{print $1}'
+  fi
+}
+
 _android_users_with_package() {
   local user users package_state parsed=0
   users="$(adb -s "$ANDROID_DEVICE" shell pm list users | tr -d '\r')" ||
@@ -144,48 +185,41 @@ _android_run_selection() {
     security_mode="tamper"
   fi
   ds_new_run_dir android "$selection"
-  local baseline_log="$DEVICE_SECURITY_RUN_DIR/baseline.log"
+  ds_prepare_core_subject "$ANDROID_CORE_ARCHIVE"
   local challenge_log="$DEVICE_SECURITY_RUN_DIR/security-challenge.log"
-  local rc=0 baseline_rc=0 challenge_rc=0
+  local results="$DEVICE_SECURITY_RUN_DIR/$selection.results.json"
+  local rc=0 challenge_rc=0
 
   # Flutter may leave its dedicated test application behind. The trap is a
   # best-effort interruption guard; the normal path verifies cleanup before it
   # can issue a pass receipt.
-  trap '_android_cleanup_harness >/dev/null 2>&1 || true' EXIT INT TERM
+  trap '_android_cleanup_harness >/dev/null 2>&1 || true' EXIT
+  trap '_android_cleanup_harness >/dev/null 2>&1 || true; exit 130' INT
+  trap '_android_cleanup_harness >/dev/null 2>&1 || true; exit 143' TERM
+
+  local installer="$DEVICE_SECURITY_HARNESS/build/app/outputs/flutter-apk/app-debug.apk"
+  local install_status="pass"
+  _android_controlled_install "$installer" || install_status="fail"
+  [[ "$install_status" == "pass" ]] || rc=1
 
   set +e
-  ds_flutter_test "$ANDROID_DEVICE" integration_test/keybay_test.dart \
-    "$baseline_log" \
+  ds_flutter_security_test "$ANDROID_DEVICE" "$selection" \
+    "$challenge_log" "$results" \
     --device-user "$ANDROID_USER" \
     --dart-define=APP_ID="$ANDROID_STORE_APP_ID" \
     --dart-define=EXPECT_SCHEME=file \
-    --dart-define=EXPECT_ANDROID_LEVEL="$ANDROID_EXPECT_LEVEL"
-  baseline_rc=$?
-  if [[ "$baseline_rc" -eq 0 ]]; then
-    ds_flutter_test "$ANDROID_DEVICE" \
-      integration_test/device_security_test.dart "$challenge_log" \
-      --device-user "$ANDROID_USER" \
-      --dart-define=APP_ID="$ANDROID_STORE_APP_ID" \
-      --dart-define=EXPECT_SCHEME=file \
-      --dart-define=EXPECT_ANDROID_LEVEL="$ANDROID_EXPECT_LEVEL" \
-      --dart-define=SECURITY_MODE="$security_mode"
-    challenge_rc=$?
-  else
-    printf 'Not run because the baseline failed.\n' >"$challenge_log"
-    challenge_rc=1
-  fi
+    --dart-define=EXPECT_ANDROID_LEVEL="$ANDROID_EXPECT_LEVEL" \
+    --dart-define=SECURITY_MODE="$security_mode"
+  challenge_rc=$?
   set -e
-  [[ "$baseline_rc" -eq 0 && "$challenge_rc" -eq 0 ]] || rc=1
+  [[ "$challenge_rc" -eq 0 ]] || rc=1
 
   local cleanup_rc=0
   _android_cleanup_harness || cleanup_rc=1
   [[ "$cleanup_rc" -eq 0 ]] || rc=1
+  local cleanup_status="pass"
+  [[ "$cleanup_rc" -eq 0 ]] || cleanup_status="fail"
 
-  local status="pass" scenario_status="pass"
-  if [[ "$rc" -ne 0 ]]; then
-    status="inconclusive"
-    scenario_status="inconclusive"
-  fi
   local receipt_args=(
     --field "model=$ANDROID_MANUFACTURER $ANDROID_MODEL"
     --field "osVersion=$ANDROID_RELEASE"
@@ -195,18 +229,10 @@ _android_run_selection() {
     --field "verifiedBoot=$ANDROID_AVB; vbmeta=$ANDROID_BOOT_STATE; flash-locked=$ANDROID_LOCKED"
     --field "selinux=$ANDROID_SELINUX"
     --field "fbe=${ANDROID_FBE:-unreported}"
-    --scenario "KB-AND-001=pass"
-    --scenario "KB-AND-010=$scenario_status"
-    --scenario "KB-AND-011=$scenario_status"
-    --scenario "KB-AND-020=$scenario_status"
-    --evidence "$baseline_log"
-    --evidence "$challenge_log"
   )
-  if [[ "$ANDROID_TAMPER" == "1" ]]; then
-    receipt_args+=(--scenario "KB-AND-030=$scenario_status")
-  fi
   ds_write_receipt "$DEVICE_SECURITY_RUN_DIR/receipt.json" android \
-    "$selection" physical-device "$status" "${receipt_args[@]}"
+    "$selection" physical-device "$results" apk-sha256 "$installer" \
+    "$install_status" "$cleanup_status" "${receipt_args[@]}"
 
   trap - EXIT INT TERM
   echo "Device-security receipt: $DEVICE_SECURITY_RUN_DIR/receipt.json"
@@ -223,6 +249,7 @@ device_security_main() {
   ANDROID_TAMPER="0"
   ANDROID_EXPECT_LEVEL="hardware"
   ANDROID_ALLOW_PACKAGE_RESET="0"
+  ANDROID_CORE_ARCHIVE=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -231,6 +258,7 @@ device_security_main() {
       --tamper) ANDROID_TAMPER="1"; shift ;;
       --expect-level) [[ $# -ge 2 ]] || ds_die "--expect-level needs a value"; ANDROID_EXPECT_LEVEL="$2"; shift 2 ;;
       --allow-package-reset) ANDROID_ALLOW_PACKAGE_RESET="1"; shift ;;
+      --core-archive) [[ $# -ge 2 ]] || ds_die "--core-archive needs a value"; ANDROID_CORE_ARCHIVE="$2"; shift 2 ;;
       -h|--help) android_usage; return 0 ;;
       *) ds_die "unknown Android option: $1" ;;
     esac

@@ -7,7 +7,8 @@ deterministically, and never by silently degrading.
 
 On first use the library derives the first authorized access group from the
 signed process entitlements, then verifies it with a tiny explicitly scoped
-write to the **Data Protection keychain**:
+write to the
+[**Data Protection keychain**](https://developer.apple.com/documentation/security/ksecusedataprotectionkeychain):
 
 - **Success** → the app is signed and carries the Keychain Sharing
   entitlement → [native items](#signed-apps-entitled).
@@ -49,8 +50,10 @@ OS-walled items and requires an explicit application migration decision.
 
 Each secret is a **native item in the Data Protection Keychain**. There is no
 Keybay secret container or separate Keybay store key on this path; only the
-non-secret scheme marker above. Every operation includes the one derived access
-group explicitly. Items use `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`
+non-secret scheme marker above. Every operation includes the one derived
+[access group](https://developer.apple.com/documentation/security/ksecattraccessgroup)
+explicitly. Items use
+[`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`](https://developer.apple.com/documentation/security/ksecattraccessibleafterfirstunlockthisdeviceonly)
 and are non-synchronizing; updates reassert both attributes rather than
 inheriting a colliding pre-existing item's policy.
 

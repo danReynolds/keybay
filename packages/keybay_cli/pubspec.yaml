@@ -1,6 +1,6 @@
 name: keybay_cli
 description: Austere, local secret injection backed by Keybay.
-version: 0.1.0
+version: 0.1.1
 repository: https://github.com/danReynolds/keybay/tree/main/packages/keybay_cli
 homepage: https://danreynolds.github.io/keybay/#cli
 
@@ -11,7 +11,7 @@ resolution: workspace
 
 dependencies:
   ffi: 2.2.0
-  keybay: 0.1.0
+  keybay: 0.1.1
 
 dev_dependencies:
   lints: ^5.0.0

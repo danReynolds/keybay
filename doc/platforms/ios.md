@@ -5,18 +5,21 @@ Keybay container or separate Keybay store key on this path; the operating
 system owns the item's at-rest protection and access policy.
 
 Unlike macOS, there is **no probe**: the Data Protection keychain is the only
-keychain on iOS, and every app can use it (via the default access group every
-signed app carries). Keybay derives the first group from the signed process and
-includes it explicitly on every add, read, update, enumerate, and delete. This
+keychain on iOS, and every app can use it (via the default
+[access group](https://developer.apple.com/documentation/security/ksecattraccessgroup)
+every signed app carries). Keybay derives the first group from the signed
+process and includes it explicitly on every add, read, update, enumerate, and
+delete. This
 prevents a colliding item in another entitled/shared group from being read,
 overwritten, listed, or removed. So the scheme is unconditional, but the item
 namespace is not ambiguous.
 
 **Item policy.** Items are created
-`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` — readable by background work
-after the first unlock following a boot, does not migrate to another device on
-restore, and is not synchronized through iCloud Keychain
-(`synchronizable = false`).
+[`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`](https://developer.apple.com/documentation/security/ksecattraccessibleafterfirstunlockthisdeviceonly)
+— readable by background work after the first unlock following a boot, does
+not migrate to another device on restore, and is not synchronized through
+iCloud Keychain
+([`synchronizable = false`](https://developer.apple.com/documentation/security/ksecattrsynchronizable)).
 Updates reassert both attributes, so a matching pre-existing item cannot retain
 a weaker/migratory accessibility or synchronization policy.
 

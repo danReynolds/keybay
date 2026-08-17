@@ -1,63 +1,73 @@
-# Security policy
+# Keybay Security
 
-`keybay` stores credential material. Please treat vulnerabilities
-accordingly.
+Keybay holds secrets for apps and CLIs on macOS, iOS, Android, and Linux.
+It is austere on purpose: the smallest design that can be trusted, no
+security knobs to misconfigure, and no claim without evidence.
+
+## Where your secrets live
+
+On each platform, Keybay uses the storage the platform itself provides for
+credentials — directly, with no plugin layer and no deprecated wrappers.
+
+| Platform | Storage | Key protection |
+| --- | --- | --- |
+| iOS | Data Protection Keychain items | Device-bound, never synced |
+| macOS (entitled app) | Data Protection Keychain items | Device-bound, access-group pinned |
+| macOS (CLI, `dart run`) | Encrypted container, XChaCha20-Poly1305 | Key in the login Keychain |
+| Android 12+ | Encrypted container, XChaCha20-Poly1305 | AES-256-GCM key in Android Keystore, StrongBox when available |
+| Linux desktop | Encrypted container, XChaCha20-Poly1305 | Key in Secret Service |
+
+Accessibility and sync policy are fixed constants chosen from each platform's
+current guidance — there is no setting that selects weaker storage. Hardware
+backing is measured from the platform's own key metadata, never assumed from
+the API used.
+
+Nothing is written to disk in the clear, and no failure downgrades silently:
+a corrupted store, a missing key, a lost entitlement, a changed signing
+identity — each is a typed error. An unreachable store never reads as an
+empty one. Lifecycle behavior — reboot, backup, restore, reinstall — is
+documented per platform ([macOS](doc/platforms/macos.md),
+[iOS](doc/platforms/ios.md), [Android](doc/platforms/android.md),
+[Linux](doc/platforms/linux.md)) and exercised by the
+[device security suite](doc/device-security-suite.md).
+
+The full threat model, and the numbered `KB-INV-*` invariants these
+properties decompose into: [doc/design.md](doc/design.md).
+
+## How it stays that way
+
+Every change runs against the real providers: login Keychain, GNOME Keyring,
+Android emulators, the iOS simulator. Release candidates run the device suite
+on physical hardware for qualified configurations, and each release carries a
+signed statement of what was verified on that exact build — and what wasn't:
+
+```sh
+./tool/verify_release.sh keybay <version>
+```
+
+A weekly canary build runs against current OS images. Dependency advisories
+are scanned on every commit; runtime dependencies: one (`cryptography`,
+exact-pinned), with CI failing if the tree changes. Platform guidance changes
+land as changelog entries with updated tests.
+
+Critical and High findings block a release. A release never claims what its
+evidence doesn't show; gaps are declared in its manifest.
+
+No independent security review has been performed yet. Keybay has a single
+maintainer. If development ever stops, the packages will be marked as
+discontinued on pub.dev with migration guidance.
+
+## What Keybay does not defend
+
+Code running as you while the store is unlocked reads what you can read. An
+attacker holding your unlocked device gets what you would get. Process
+memory, OS rollback, and timing side channels are out of scope — each
+decision recorded, with rationale, in [doc/design.md](doc/design.md).
 
 ## Reporting
 
-Use GitHub's [private vulnerability reporting](https://github.com/danReynolds/keybay/security/advisories/new)
-for suspected vulnerabilities. If GitHub is unsuitable, email
-**me@danreynolds.ca**. Do not open a public issue for an undisclosed security
-bug.
-
-Include the affected version/configuration, impact, and the smallest safe
-reproduction you can provide. Do not include real credentials or device
-identifiers. Expect acknowledgement within three business days and an initial
-scope/severity assessment within ten business days. Fix and disclosure timing
-depends on impact and platform coordination; Keybay will coordinate publication
-with the reporter rather than silently closing a valid report.
-
-## Supported versions
-
-While Keybay is pre-1.0, security fixes target the latest published minor line
-and `main`. Older 0.x releases do not receive routine backports. A critical fix
-may be backported when upgrading is not a practical mitigation; that decision
-is stated in the advisory. Unsupported versions remain available but are not a
-security-maintained configuration.
-
-## Threat model
-
-The threat model — what Keybay protects against and, just as importantly, what
-it does **not** — is summarized for the [SDK](doc/sdk.md#threat-model) and
-[CLI](packages/keybay_cli/README.md#security-boundary), then derived in full in
-[doc/design.md](doc/design.md). Read it before relying on Keybay: it is
-deliberate about its limits (process-memory disclosure, rollback, same-user
-malware while the keystore is unlocked, and timing side-channels are out of
-scope, with rationale).
-
-## Device assurance
-
-The [device security suite](doc/device-security-suite.md) turns platform and
-lifecycle claims into versioned scenarios for Android, iOS, macOS, and later
-Linux provider qualification. It distinguishes hermetic, native-host,
-virtual-device, and physical-device evidence and defines how reviewed receipts
-are retained.
-The suite evolves as platform guidance and attack techniques change; historical
-receipts remain scoped to their exact commit, target, OS, executable selection,
-and scenarios.
-
-## Cryptography
-
-- Container confidentiality/integrity: XChaCha20-Poly1305 (AEAD), via
-  `package:cryptography`, exercised against RFC 8439 and draft-arciszewski
-  vectors in this package's own test suite so incompatible behavior is caught
-  before the exact dependency pin moves. These checks do not prove a dependency
-  uncompromised.
-- Key derivation: HKDF-SHA256, RFC 5869, vector-tested here.
-- Randomness: `Random.secure()` (OS CSPRNG) only.
-
-## Dependencies
-
-Exactly one third-party runtime dependency (`cryptography`, exact-pinned), whose
-transitive closure is entirely dart-lang official. A dependency-closure snapshot
-test fails CI if the tree changes; CI also runs advisory scanning.
+Use GitHub [private vulnerability reporting](https://github.com/danReynolds/keybay/security/advisories/new)
+or email **me@danreynolds.ca**. Do not open a public issue for an undisclosed
+security bug. Expect acknowledgement within three business days and an
+initial severity assessment within ten. Security fixes target the latest
+minor release and `main`.

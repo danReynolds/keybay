@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import pathlib
 import sys
 import tarfile
+from typing import BinaryIO
 
 _MAX_MEMBERS = 10_000
 _MAX_CONTENT_BYTES = 256 * 1024 * 1024
@@ -17,13 +19,13 @@ class ArchiveError(ValueError):
     """The archive is malformed or contains an unsafe member."""
 
 
-def _field(digest: hashlib._Hash, value: bytes) -> None:
-    digest.update(len(value).to_bytes(8, "big"))
-    digest.update(value)
+def _field(sink: BinaryIO, value: bytes) -> None:
+    sink.write(len(value).to_bytes(8, "big"))
+    sink.write(value)
 
 
-def canonical_digest(path: pathlib.Path) -> str:
-    """Hash every path, type, mode, and file byte in a safe pub archive."""
+def canonical_identity(path: pathlib.Path) -> bytes:
+    """Serialize every path, type, mode, and file digest in a safe archive."""
     records: dict[str, tuple[bytes, int, int, bytes]] = {}
     total_bytes = 0
     try:
@@ -82,23 +84,50 @@ def canonical_digest(path: pathlib.Path) -> str:
         raise
     except (OSError, EOFError, tarfile.TarError) as error:
         raise ArchiveError(f"could not read {path}: {error}") from error
-    digest = hashlib.sha256()
+    identity = io.BytesIO()
     for name in sorted(records):
         kind, mode, size, content_digest = records[name]
-        _field(digest, kind)
-        _field(digest, name.encode("utf-8", "surrogateescape"))
-        _field(digest, mode.to_bytes(2, "big"))
+        _field(identity, kind)
+        _field(identity, name.encode("utf-8", "surrogateescape"))
+        _field(identity, mode.to_bytes(2, "big"))
         if kind == b"directory":
-            _field(digest, b"")
+            _field(identity, b"")
         else:
-            _field(digest, size.to_bytes(8, "big"))
-            _field(digest, content_digest)
-    return digest.hexdigest()
+            _field(identity, size.to_bytes(8, "big"))
+            _field(identity, content_digest)
+    return identity.getvalue()
+
+
+def canonical_digest(path: pathlib.Path) -> str:
+    """Hash the canonical package-content identity for a safe pub archive."""
+    return hashlib.sha256(canonical_identity(path)).hexdigest()
 
 
 def main() -> int:
+    if len(sys.argv) == 3 and sys.argv[1] == "--digest":
+        try:
+            print(canonical_digest(pathlib.Path(sys.argv[2])))
+        except ArchiveError as error:
+            print(f"pub archive digest failed: {error}", file=sys.stderr)
+            return 1
+        return 0
+    if len(sys.argv) == 4 and sys.argv[1] == "--identity":
+        output = pathlib.Path(sys.argv[3])
+        try:
+            identity = canonical_identity(pathlib.Path(sys.argv[2]))
+            with output.open("xb") as sink:
+                sink.write(identity)
+        except (ArchiveError, OSError) as error:
+            print(f"pub archive identity failed: {error}", file=sys.stderr)
+            return 1
+        return 0
     if len(sys.argv) != 3:
-        print("usage: compare_pub_archives.py EXPECTED.tar.gz HOSTED.tar.gz", file=sys.stderr)
+        print(
+            "usage: compare_pub_archives.py EXPECTED.tar.gz HOSTED.tar.gz\n"
+            "       compare_pub_archives.py --digest ARCHIVE.tar.gz\n"
+            "       compare_pub_archives.py --identity ARCHIVE.tar.gz OUTPUT",
+            file=sys.stderr,
+        )
         return 2
     expected = pathlib.Path(sys.argv[1])
     hosted = pathlib.Path(sys.argv[2])

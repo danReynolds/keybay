@@ -7,8 +7,10 @@ Every secret lives in **one authenticated encrypted file** in the app-private
 files directory (`<dataDir>/files/<appId>/secrets.enc`), sealed with
 **XChaCha20-Poly1305** under an HKDF-SHA256-derived key with a key-commitment
 header. The 32-byte file key is wrapped by an **AES-256-GCM key created in
-Android Keystore**. Keybay requests StrongBox, then retries without that request
-when StrongBox is unavailable. The resulting provider can be StrongBox, TEE, or
+[Android Keystore](https://developer.android.com/privacy-and-security/keystore)**.
+Keybay requests
+[StrongBox](https://developer.android.com/privacy-and-security/keystore#StrongBoxKeyMint),
+then retries without that request when StrongBox is unavailable. The resulting provider can be StrongBox, TEE, or
 software-backed; `describe().level` inspects and reports which level Android
 returns. Only the *wrapped* key blob (`store-key.wrapped`, a small versioned
 `SKW1` format) sits beside the container; Keybay writes no plaintext copy of the
@@ -51,7 +53,9 @@ best-case reliability profile and to fail loudly, never silently:
   typed **`KeyInvalidated`** instead of silently starting an empty store.
   Recovery is deleting the store's data directory and re-provisioning.
 - **Hardware backing is measured, not assumed.** `describe().level` reads the
-  KEK's `KeyInfo.getSecurityLevel()`: `hardwareBacked` only when the Keystore
+  KEK's
+  [`KeyInfo.getSecurityLevel()`](https://developer.android.com/reference/android/security/keystore/KeyInfo#getSecurityLevel()):
+  `hardwareBacked` only when the Keystore
   reports `TRUSTED_ENVIRONMENT` or `STRONGBOX`, otherwise `softwareBacked`
   (a software Keystore implementation, or an emulator). Presence of the
   Keystore is never taken as proof of hardware.
@@ -91,7 +95,7 @@ that transfer mode, configure it explicitly and exclude every Keybay `appId`;
 an omitted mode must not be treated as proof of exclusion. Physical or
 service-backed transfer is not currently release-qualified; it is part of the
 bounded pre-1.0 lifecycle work in the
-[assurance plan](../security-assurance-plan.md#minimum-pre-10-qualification).
+[device security suite](../device-security-suite.md#pre-10-exploit-chain-baseline).
 See the current [Android backup and transfer rules](https://developer.android.com/identity/data/autobackup).
 
 **Validation.** The full round-trip and the on-disk shape (container is

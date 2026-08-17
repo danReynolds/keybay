@@ -204,6 +204,40 @@ void main() {
       }
     });
 
+    test('deterministic valid-envelope mutation corpus always fails typed',
+        () async {
+      final c = Container(contextSalt: salt);
+      final sealed = await c.seal(entries, key(1));
+
+      // Mutate every byte of one valid envelope. This is deterministic and
+      // covers parser, commitment, nonce, ciphertext, and tag boundaries
+      // without relying on random malformed inputs to reach them.
+      for (var offset = 0; offset < sealed.length; offset++) {
+        final mutated = Uint8List.fromList(sealed)..[offset] ^= 0x01;
+        try {
+          await c.open(mutated, key(1));
+          fail('mutated envelope authenticated at byte $offset');
+        } on SecretStoreException {
+          // Required fail-closed surface: no RangeError/FormatException escape.
+        } catch (error) {
+          fail('byte $offset escaped as ${error.runtimeType}: $error');
+        }
+      }
+
+      // Retain every prefix of the same valid envelope as the reproducible
+      // truncation corpus.
+      for (var length = 0; length < sealed.length; length++) {
+        try {
+          await c.open(Uint8List.sublistView(sealed, 0, length), key(1));
+          fail('truncated envelope opened at length $length');
+        } on SecretStoreException {
+          // Required typed rejection.
+        } catch (error) {
+          fail('prefix $length escaped as ${error.runtimeType}: $error');
+        }
+      }
+    });
+
     test('bad magic / version / cipher -> ContainerCorrupt', () async {
       final c = Container(contextSalt: salt);
       final sealed = await c.seal(entries, key(1));

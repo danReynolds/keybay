@@ -542,6 +542,12 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
+        with:
+          sdk: ${{ env.RELEASE_DART_SDK }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: release-payload
@@ -577,10 +583,40 @@ jobs:
               keybay.rb > SHA256SUMS
           )
           test "$(find dist -maxdepth 1 -type f | wc -l | tr -d ' ')" = 7
+      - name: assemble the CLI release assurance manifest
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#keybay_cli-v}"
+          artifact_args=()
+          for artifact in \
+            "keybay-$version-linux-arm64.tar.gz" \
+            "keybay-$version-linux-x64.tar.gz" \
+            "keybay-$version-macos-arm64.tar.gz" \
+            "keybay-$version-macos-x64.tar.gz" \
+            "keybay-$version-macos.notary-log.json" \
+            keybay.rb \
+            SHA256SUMS; do
+            artifact_args+=(--artifact "$artifact=dist/$artifact")
+          done
+          dart run tool/security_assurance/manifest.dart \
+            --output dist/release-assurance.json \
+            --subject cli \
+            --version "$version" \
+            --ci-run-id "$GITHUB_RUN_ID" \
+            --unqualified "No independent third-party assessment has been completed" \
+            --limitation "https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/SECURITY.md" \
+            "${artifact_args[@]}"
+          test "$(find dist -maxdepth 1 -type f | wc -l | tr -d ' ')" = 8
       - name: attest final archives
         uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
           subject-path: dist/*.tar.gz
+      - name: attest CLI release assurance
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-path: dist/*.tar.gz
+          predicate-type: https://keybay.dev/attestations/release-assurance/v1
+          predicate-path: dist/release-assurance.json
       - name: publish or accept one exact immutable GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -598,6 +634,7 @@ jobs:
             "keybay-$version-macos-arm64.tar.gz"
             "keybay-$version-macos-x64.tar.gz"
             "keybay-$version-macos.notary-log.json"
+            release-assurance.json
             keybay.rb
             SHA256SUMS
           )
@@ -613,7 +650,7 @@ jobs:
             mkdir "$existing"
             gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
               --dir "$existing"
-            test "$(find "$existing" -maxdepth 1 -type f | wc -l | tr -d ' ')" = 7
+            test "$(find "$existing" -maxdepth 1 -type f | wc -l | tr -d ' ')" = 8
             for name in "${assets[@]}"; do
               test -f "$existing/$name"
               cmp "dist/$name" "$existing/$name"
@@ -633,7 +670,7 @@ jobs:
             --draft \
             --repo "$GITHUB_REPOSITORY"
           test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
-          test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')" = 7
+          test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')" = 8
           gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
             --draft=false
           test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false
@@ -665,7 +702,8 @@ jobs:
           cd "$RUNNER_TEMP/keybay-release"
           gh release verify "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"
           gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-            --pattern "$asset" --pattern SHA256SUMS
+            --pattern "$asset" --pattern SHA256SUMS \
+            --pattern release-assurance.json
           gh release verify-asset "$GITHUB_REF_NAME" "$asset" \
             --repo "$GITHUB_REPOSITORY"
           checksum_line="$(awk -v name="$asset" '$2 == name { print }' SHA256SUMS)"
@@ -676,6 +714,17 @@ jobs:
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release_cli.yml" \
             --source-ref "$GITHUB_REF" \
             --deny-self-hosted-runners
+          gh attestation verify "$asset" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release_cli.yml" \
+            --source-ref "$GITHUB_REF" \
+            --predicate-type https://keybay.dev/attestations/release-assurance/v1 \
+            --deny-self-hosted-runners \
+            --format json > assurance-verification.json
+          jq -S . release-assurance.json > expected-assurance.json
+          jq -S '.[0].verificationResult.statement.predicate' \
+            assurance-verification.json > actual-assurance.json
+          cmp expected-assurance.json actual-assurance.json
       - name: exercise the downloaded channel without a token or Dart
         run: |
           set -euo pipefail

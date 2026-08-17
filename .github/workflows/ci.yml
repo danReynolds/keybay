@@ -8,8 +8,9 @@ on:
   pull_request:
   schedule:
     # Weekly, and it runs ONLY the canary tier (crypto-pin-canary +
-    # supply-chain; the test jobs skip scheduled runs): the point is to fail on
-    # a newly published `cryptography` release even when the repo is idle.
+    # fuzz-canary + supply-chain; the test jobs skip scheduled runs): the point
+    # is to fail on a newly published `cryptography` release — and to keep
+    # exploring the container parser — even when the repo is idle.
     # Caveat: GitHub disables cron on public repos after ~60 days without
     # activity, so this is best-effort — the canary also runs on every push to
     # main and every PR.
@@ -56,7 +57,7 @@ jobs:
       # Repository-only assurance tooling tests. Keep these outside the core
       # package so its published archive never contains tests that depend on
       # repository documents or shell adapters.
-      - run: dart test test/device_security_receipt_test.dart
+      - run: dart test
       # Unit tier (hermetic): crypto vectors, container/fuzz, POSIX perms,
       # backend logic over fakes, and the dependency-closure firewall. Each
       # package's tests run from its own directory (they read cwd-relative
@@ -306,3 +307,57 @@ jobs:
             echo "::error::cryptography $latest published (pin is 2.9.0). Review the diff and advisories, re-run the vector firewall, then bump the pin deliberately."
             exit 1
           fi
+
+  # Oracle-based peer watch: a new OSV advisory against a peer secret-storage
+  # library is free red-team output for Keybay's own failure surface. The
+  # seen-list update is the recorded triage decision; the opened issue is the
+  # triage container.
+  peer-advisory-watch:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: check OSV for new peer advisories
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          # `|| status=$?` keeps the runner's default `-e` from aborting the
+          # step before the triage-issue handling below can run.
+          status=0
+          python3 tool/peer_advisories.py > advisories.txt 2>&1 || status=$?
+          cat advisories.txt
+          if [ "$status" -eq 1 ]; then
+            open_issue="$(gh issue list --repo "$GITHUB_REPOSITORY" \
+              --state open --search 'Peer advisory triage in:title' \
+              --json number --jq 'length')"
+            if [ "$open_issue" = 0 ]; then
+              gh issue create --repo "$GITHUB_REPOSITORY" \
+                --title "Peer advisory triage: new OSV IDs for watched packages" \
+                --body-file advisories.txt || true
+            fi
+          fi
+          exit "$status"
+
+  # Structure-aware container fuzz at canary depth. Every PR already runs the
+  # same test at its small deterministic default inside the package test tier;
+  # the weekly canary explores with a fresh seed and three orders more cases.
+  # A failure prints the seed and case index — pin the reproduction into the
+  # deterministic corpus in container_test.dart before fixing.
+  fuzz-canary:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
+      - run: dart pub get --enforce-lockfile
+      - name: structural container fuzz (fresh seed)
+        working-directory: packages/keybay
+        run: |
+          seed="$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')"
+          echo "KEYBAY_FUZZ_SEED=$seed"
+          KEYBAY_FUZZ_ITERATIONS=200000 KEYBAY_FUZZ_SEED="$seed" \
+            dart test test/container_fuzz_test.dart

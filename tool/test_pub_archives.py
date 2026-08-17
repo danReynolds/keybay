@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import io
+import hashlib
 import os
 import pathlib
 import subprocess
@@ -13,7 +14,7 @@ import tempfile
 
 sys.dont_write_bytecode = True
 
-from compare_pub_archives import ArchiveError, canonical_digest
+from compare_pub_archives import ArchiveError, canonical_digest, canonical_identity
 
 
 def _write_archive(
@@ -105,6 +106,30 @@ def main() -> int:
             raise AssertionError("changed file bytes matched the expected archive")
         if canonical_digest(expected) == canonical_digest(changed_mode):
             raise AssertionError("changed file mode matched the expected archive")
+        if hashlib.sha256(canonical_identity(expected)).hexdigest() != canonical_digest(
+            expected
+        ):
+            raise AssertionError("canonical identity bytes did not reproduce the digest")
+
+        identity = tmp / "identity"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(repo / "tool" / "compare_pub_archives.py"),
+                "--identity",
+                str(expected),
+                str(identity),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise AssertionError(f"identity command failed: {result.stderr}")
+        if hashlib.sha256(identity.read_bytes()).hexdigest() != canonical_digest(
+            expected
+        ):
+            raise AssertionError("identity command emitted the wrong bytes")
 
         duplicate = tmp / "duplicate.tar.gz"
         traversal = tmp / "traversal.tar.gz"

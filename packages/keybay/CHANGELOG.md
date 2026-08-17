@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1
 
 - Make `deleteAll()` a single backend transaction. Production backends clear
   natively or replace the encrypted container once; custom backends must opt in

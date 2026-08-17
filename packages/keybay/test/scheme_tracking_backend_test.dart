@@ -1,6 +1,10 @@
 @Tags(['unit'])
 library;
 
+// Falsifies KB-INV-006: storage-scheme, entitlement, and access-group
+// transitions fail closed instead of silently downgrading protection or
+// presenting abandoned data as a fresh empty store.
+
 import 'dart:io';
 import 'dart:typed_data';
 

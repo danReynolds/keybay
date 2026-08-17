@@ -3,14 +3,16 @@
 Every secret lives in **one authenticated encrypted file** at
 `${XDG_DATA_HOME:-~/.local/share}/<appId>/secrets.enc` (mode `0600`, written
 atomically), sealed with **XChaCha20-Poly1305** under an HKDF-SHA256-derived key
-with a key-commitment header. The 32-byte file key is stored in the **Secret
-Service** (GNOME Keyring or KWallet) via `secret-tool`. Keybay writes no
+with a key-commitment header. The 32-byte file key is stored in the
+[**Secret Service**](https://specifications.freedesktop.org/secret-service/latest/)
+(GNOME Keyring or KWallet) via `secret-tool`. Keybay writes no
 plaintext copy of that key beside the container; the service owns how it
 persists credential data.
 
 Because `HOME` or `XDG_DATA_HOME` can select different container roots while
 the Secret Service identity remains the same `appId`, first key creation also
-takes an identity lock under the desktop session's private `XDG_RUNTIME_DIR`.
+takes an identity lock under the desktop session's private
+[`XDG_RUNTIME_DIR`](https://specifications.freedesktop.org/basedir/latest/).
 Racing writers therefore cannot replace the shared store key and orphan a
 container under another root, while another OS user cannot pre-create a
 predictable shared-`/tmp` directory to deny writes. A missing or relative
@@ -38,4 +40,4 @@ gnome-keyring under a throwaway D-Bus session — in CI on every push, and
 re-runnable from a Mac via `tool/test_linux.sh` (Docker). That is native-service
 evidence, not a claim about every Secret Service provider. Locked/disconnected
 provider behavior remains in the bounded pre-1.0 work in the
-[assurance plan](../security-assurance-plan.md#minimum-pre-10-qualification).
+[device security suite](../device-security-suite.md#pre-10-exploit-chain-baseline).

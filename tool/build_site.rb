@@ -27,7 +27,7 @@ DOCUMENTS = [
   {source: "doc/platforms/linux.md", route: "docs/platforms/linux/", label: "Linux", summary: "An authenticated local file whose store key is kept by an unlocked Secret Service provider."},
   {source: "doc/architecture.md", route: "docs/architecture/", label: "Architecture", summary: "Two storage shapes, one automatic production resolver, and an explicit test-backend hatch."},
   {source: "doc/design.md", route: "docs/design/", label: "Cryptography and design", summary: "The container format, FFI boundaries, threat model, concurrency, supply-chain controls, and design rationale."},
-  {source: "SECURITY.md", route: "docs/security/", label: "Security policy", summary: "The supported threat model, cryptographic primitives, dependency posture, and private vulnerability-reporting route."},
+  {source: "SECURITY.md", route: "docs/security/", label: "Security", summary: "Where secrets live on each platform, how each release is verified, declared gaps, and the private vulnerability-reporting route."},
   {source: "doc/cli-recovery.md", route: "docs/recovery/", label: "CLI recovery", summary: "Preserve evidence, diagnose platform-store failures, and deliberately re-provision an unreadable local CLI store."},
   {source: "doc/ecosystem-comparison.md", route: "docs/comparison/", label: "Choosing Keybay", summary: "Choose the smallest tool that matches whether you need local storage, provider portability, team sharing, or encrypted files."},
 ].freeze

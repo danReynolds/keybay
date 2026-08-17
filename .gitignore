@@ -1,6 +1,9 @@
 .dart_tool/
 .packages
 build/
+# Release-asset staging (release_cli.yml downloads artifacts here inside the
+# checkout; the assurance manifest requires a clean tree including untracked).
+dist/
 doc/api/
 # pubspec.lock IS committed (RFC 0005 §4a: dependency-closure firewall).
 !pubspec.lock

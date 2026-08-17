@@ -68,8 +68,8 @@ stack per OS.
   Protection Keychain holds arbitrary secret items and supplies device-bound
   accessibility and access-group policy, so Keybay uses it directly rather than
   layering a second container over it.
-- **Uniform, integrity-protected at-rest crypto everywhere else — audited
-  once.** On the legacy stores (macOS login keychain: 3DES; gnome-keyring:
+- **Uniform, integrity-protected at-rest crypto everywhere else — one
+  implementation to audit.** On the legacy stores (macOS login keychain: 3DES; gnome-keyring:
   AES-128-CBC + ad-hoc KDF; kwallet: Blowfish) our AEAD file adds **integrity**
   and a **portable** encrypted container the native stores can't give. It is
   *not* categorically stronger at rest: when the file's key lives in that same
