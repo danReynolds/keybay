@@ -9,7 +9,7 @@ files directory (`<dataDir>/files/<appId>/secrets.enc`), sealed with
 header. The 32-byte file key is wrapped by an **AES-256-GCM key created in
 [Android Keystore](https://developer.android.com/privacy-and-security/keystore)**.
 Keybay requests
-[StrongBox](https://developer.android.com/privacy-and-security/keystore#HardwareSecurityModule),
+[StrongBox](https://developer.android.com/privacy-and-security/keystore#StrongBoxKeyMint),
 then retries without that request when StrongBox is unavailable. The resulting provider can be StrongBox, TEE, or
 software-backed; `describe().level` inspects and reports which level Android
 returns. Only the *wrapped* key blob (`store-key.wrapped`, a small versioned

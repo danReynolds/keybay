@@ -12,7 +12,7 @@ persists credential data.
 Because `HOME` or `XDG_DATA_HOME` can select different container roots while
 the Secret Service identity remains the same `appId`, first key creation also
 takes an identity lock under the desktop session's private
-[`XDG_RUNTIME_DIR`](https://specifications.freedesktop.org/basedir-spec/latest/).
+[`XDG_RUNTIME_DIR`](https://specifications.freedesktop.org/basedir/latest/).
 Racing writers therefore cannot replace the shared store key and orphan a
 container under another root, while another OS user cannot pre-create a
 predictable shared-`/tmp` directory to deny writes. A missing or relative
