@@ -167,6 +167,8 @@ void main() {
   });
 
   test(
+      // Locked-provider behavior matching the documented policy is part of
+      // KB-INV-004: a locked collection is a typed, bounded failure.
       'delete fails CLOSED on a locked collection: KeystoreLocked, never '
       'silent success', () async {
     // Mirrors real gnome-keyring under a locked login collection (verified in

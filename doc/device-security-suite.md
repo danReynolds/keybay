@@ -96,7 +96,7 @@ source commit versions semantics.
 | `KB-AND-011` | android | `KB-INV-001`, `KB-INV-002` | physical-device | no |
 | `KB-AND-020` | android | `KB-INV-007` | physical-device | no |
 | `KB-AND-030` | android | `KB-INV-003` | physical-device | no |
-| `KB-AND-040` | android | `KB-INV-003`, `KB-INV-005` | physical-device | yes |
+| `KB-AND-040` | android | `KB-INV-003`, `KB-INV-004`, `KB-INV-005`, `KB-INV-008` | physical-device | yes |
 | `KB-IOS-001` | ios | `KB-INV-005` | physical-device | no |
 | `KB-IOS-010` | ios | `KB-INV-005` | physical-device | no |
 | `KB-IOS-020` | ios | `KB-INV-007` | physical-device | no |

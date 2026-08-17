@@ -73,7 +73,11 @@ const securityScenarios = <SecurityScenario>[
   SecurityScenario(
     id: 'KB-AND-040',
     platform: DevicePlatform.android,
-    guarantees: ['KB-INV-003', 'KB-INV-005'],
+    // Deleting only the harness KEK and proving KeyInvalidated with unchanged
+    // artifacts and no silent re-provision is also the executable check that
+    // restore behavior matches the documented policy (KB-INV-004) and that
+    // device-bound state does not survive transfer (KB-INV-008).
+    guarantees: ['KB-INV-003', 'KB-INV-004', 'KB-INV-005', 'KB-INV-008'],
     minimumEvidence: EvidenceClass.physicalDevice,
     destructive: true,
   ),
