@@ -145,22 +145,22 @@ jobs:
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          manifest="assurance/release-assurance.json"
-          hosted="$RUNNER_TEMP/keybay-$version.hosted.tar.gz"
-          hosted_identity="$RUNNER_TEMP/keybay-$version.canonical-content"
-          curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
-            --output "$hosted" "https://pub.dev/api/archives/keybay-$version.tar.gz"
-          python3 tool/compare_pub_archives.py \
-            "assurance/keybay-$version.tar.gz" "$hosted"
-          python3 tool/compare_pub_archives.py --identity "$hosted" "$hosted_identity"
-          gh attestation verify "$hosted_identity" \
-            --repo "$GITHUB_REPOSITORY" \
-            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/publish.yml" \
+          # The public verification path is the exact script a consumer runs
+          # (SECURITY.md). CI adds two checks a consumer cannot: the hosted
+          # archive matches the bytes this run built, and the verified
+          # predicate equals the manifest this run attested.
+          workdir="$RUNNER_TEMP/verify"
+          ./tool/verify_release.sh keybay "$version" \
             --source-ref "$GITHUB_REF" \
-            --predicate-type https://keybay.dev/attestations/release-assurance/v1 \
-            --deny-self-hosted-runners \
-            --format json > "$RUNNER_TEMP/verified-assurance.json"
-          jq -S . "$manifest" > "$RUNNER_TEMP/expected-predicate.json"
-          jq -S '.[0].verificationResult.statement.predicate' \
-            "$RUNNER_TEMP/verified-assurance.json" > "$RUNNER_TEMP/actual-predicate.json"
-          cmp "$RUNNER_TEMP/expected-predicate.json" "$RUNNER_TEMP/actual-predicate.json"
+            --work-dir "$workdir" \
+            --output-predicate "$RUNNER_TEMP/actual-predicate.json"
+          python3 tool/compare_pub_archives.py \
+            "assurance/keybay-$version.tar.gz" \
+            "$workdir/keybay-$version.hosted.tar.gz"
+          python3 - "$RUNNER_TEMP/actual-predicate.json" \
+            assurance/release-assurance.json <<'PY'
+          import json, sys
+          actual, expected = (json.load(open(path)) for path in sys.argv[1:3])
+          if actual != expected:
+              sys.exit("verified predicate differs from the attested manifest")
+          PY
