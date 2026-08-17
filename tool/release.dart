@@ -543,16 +543,17 @@ void _gitCheck(String root, List<String> args, String what) {
 }
 
 void _requireCleanTrackedTree(String root) {
-  // Untracked files count: the assurance preflight this gate feeds
-  // (build_core_assurance.sh -> manifest.dart) requires a fully clean
-  // checkout, and failing here is kinder than failing after the operator
-  // has already confirmed the tag prompt.
+  // Deliberately tracked-only (tool/test_release.dart enforces it): unrelated
+  // untracked local files must not block a release. The assurance preflight
+  // still requires a fully clean checkout before any real tag is created, so
+  // an untracked file that could leak into the published archive fails
+  // closed there.
   if (_gitOut(
     root,
-    <String>['status', '--porcelain', '--untracked-files=all'],
+    <String>['status', '--porcelain', '--untracked-files=no'],
   ).isNotEmpty) {
-    _fail('working tree is not clean (including untracked files); commit, '
-        'remove, or gitignore them before releasing');
+    _fail('tracked working tree is not clean; commit or restore tracked '
+        'changes before releasing');
   }
 }
 
