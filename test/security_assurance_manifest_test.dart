@@ -223,7 +223,7 @@ void main() {
   });
 
   test('receipt cannot carry across a later runner or oracle change', () async {
-    File('${cleanToolRepo.path}/tool/changed-after-receipt.txt')
+    File('${cleanToolRepo.path}/tool/device_security/changed-after-receipt.txt')
         .writeAsStringSync('invalidate receipt reuse\n');
     for (final arguments in [
       ['add', '--all'],
@@ -237,6 +237,53 @@ void main() {
     }
     expect(
       (await runManifest(output: '${temp.path}/invalid-reuse.json')).exitCode,
+      64,
+    );
+  });
+
+  test('changes outside suite semantics do not invalidate a receipt', () async {
+    // The subject digest pins the tested package bytes; a docs-only commit
+    // after the receipt must not force a redundant device run.
+    Directory('${cleanToolRepo.path}/doc').createSync(recursive: true);
+    File('${cleanToolRepo.path}/doc/notes.md')
+        .writeAsStringSync('unrelated docs change\n');
+    for (final arguments in [
+      ['add', '--all'],
+      ['commit', '--quiet', '-m', 'docs change after receipt'],
+    ]) {
+      final result = await Process.run(
+        '/usr/bin/git',
+        ['-C', cleanToolRepo.path, ...arguments],
+      );
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+    }
+    final result = await runManifest(output: '${temp.path}/docs-change.json');
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+  });
+
+  test('required baseline is satisfied by a superset tamper receipt', () async {
+    final result = await runManifest(
+      output: '${temp.path}/superset.json',
+      extra: ['--require-selection', 'android-baseline'],
+    );
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+  });
+
+  test('an uncovered required selection fails the manifest', () async {
+    expect(
+      (await runManifest(
+        output: '${temp.path}/uncovered.json',
+        extra: ['--require-selection', 'ios-baseline'],
+      ))
+          .exitCode,
+      64,
+    );
+    expect(
+      (await runManifest(
+        output: '${temp.path}/unknown.json',
+        extra: ['--require-selection', 'not-a-selection'],
+      ))
+          .exitCode,
       64,
     );
   });

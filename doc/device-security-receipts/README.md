@@ -20,6 +20,12 @@ receipt beside the exact structured-results file it names. Absence of a receipt
 is an evidence gap, not a product pass or failure; Apple remains unqualified
 until an eligible physical/signed-host run is deliberately performed.
 
+Subject directories accumulate as immutable history and need no pruning: the
+manifest build reads only the current candidate's digest directory, and a
+receipt can also be invalidated later by suite-semantics changes (runners,
+oracles, harness, procedure text) — never by unrelated repository changes,
+which the subject digest already makes irrelevant.
+
 After reviewing a private run directory, promote only its receipt and sanitized
 result (never its raw log) with:
 

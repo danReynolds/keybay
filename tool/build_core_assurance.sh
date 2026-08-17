@@ -35,13 +35,37 @@ identity="$output/keybay-$version.canonical-content"
 dart pub -C packages/keybay publish --to-archive="$archive"
 python3 tool/compare_pub_archives.py --identity "$archive" "$identity"
 
+# Receipts live in a digest-named directory per candidate subject. Only the
+# current candidate's directory feeds this manifest; prior subjects' receipt
+# directories are immutable history and are deliberately ignored here.
+subject_digest="$(python3 tool/compare_pub_archives.py --digest "$archive")"
+[[ "$subject_digest" =~ ^[0-9a-f]{64}$ ]]
+
 shopt -s nullglob
 receipt_args=()
-for receipt in \
-  doc/device-security-receipts/*.receipt.json \
-  doc/device-security-receipts/*/*.receipt.json; do
+android_receipt=false
+for receipt in "doc/device-security-receipts/$subject_digest"/*.receipt.json; do
   receipt_args+=(--receipt "$receipt")
+  case "$(basename "$receipt")" in
+    android-*) android_receipt=true ;;
+  esac
 done
+
+# Qualification policy (doc/device-security-suite.md): a minor/major release
+# (x.y.0) requires the non-destructive Android baseline for this exact
+# candidate. A patch release may ship without re-running it, but then the
+# manifest must say so — the gate enforces honesty, not ceremony. Destructive
+# scenarios are change-triggered; when a tamper receipt is present it also
+# satisfies the baseline requirement, but it is never demanded here.
+patch_component="${version##*.}"
+policy_args=()
+if [[ "$patch_component" == 0 ]]; then
+  policy_args+=(--require-selection android-baseline)
+elif [[ "$android_receipt" == false ]]; then
+  policy_args+=(--unqualified \
+    "Android device qualification was not re-run for this patch release")
+fi
+
 repository="${GITHUB_REPOSITORY:-danReynolds/keybay}"
 commit="${GITHUB_SHA:-$(git rev-parse HEAD)}"
 dart run tool/security_assurance/manifest.dart \
@@ -50,7 +74,7 @@ dart run tool/security_assurance/manifest.dart \
   --version "$version" \
   --ci-run-id "$ci_run_id" \
   --artifact "keybay-$version.tar.gz=$archive" \
-  --require-selection android-tamper \
+  "${policy_args[@]}" \
   --unqualified "Physical iOS Keychain qualification has not been performed" \
   --unqualified "Entitled macOS Data Protection Keychain qualification has not been performed" \
   --unqualified "No independent third-party assessment has been completed" \

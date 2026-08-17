@@ -225,9 +225,24 @@ Future<Map<String, Object?>> _build(_Config config) async {
       'evidence': retained,
     });
   }
-  final missing = config.requiredSelections
-      .where((selection) => !observedSelections.contains(selection))
-      .toList();
+  // A required selection is satisfied by any observed receipt whose scenario
+  // set covers it: a change-triggered tamper run subsumes the baseline it
+  // extends, so requiring the baseline never forces a redundant second run.
+  final observedScenarioIds = [
+    for (final selection in observedSelections)
+      scenariosForSelection(selection).map((scenario) => scenario.id).toSet(),
+  ];
+  final missing = config.requiredSelections.where((required) {
+    final List<SecurityScenario> scenarios;
+    try {
+      scenarios = scenariosForSelection(required);
+    } on ArgumentError {
+      throw ManifestException('unknown required selection: $required');
+    }
+    final requiredIds = scenarios.map((scenario) => scenario.id).toSet();
+    return !observedScenarioIds
+        .any((observed) => observed.containsAll(requiredIds));
+  }).toList();
   if (missing.isNotEmpty) {
     throw ManifestException(
         'missing required qualification receipts: ${missing.join(', ')}');
@@ -357,14 +372,26 @@ Future<void> _validateSuiteApplicability(
     '--name-only',
     '$receiptCommit..$releaseCommit',
   ]);
+  // The subject content digest already pins the exact package bytes a receipt
+  // tested, so unrelated repository changes cannot alter what the receipt
+  // proved. What can change a receipt's meaning after the fact is the
+  // machinery that produced and defined it: the suite runners and oracles, the
+  // reference harness, the procedure text, and the subject-identity
+  // computation itself. Only those paths invalidate reuse.
+  const receiptSemanticsPaths = [
+    'tool/device_security/',
+    'tool/compare_pub_archives.py',
+    'example_flutter/',
+    'doc/device-security-suite.md',
+  ];
   final invalidating = changed
       .split('\n')
       .where((path) =>
-          path.isNotEmpty && !path.startsWith('doc/device-security-receipts/'))
+          path.isNotEmpty && receiptSemanticsPaths.any(path.startsWith))
       .toList();
   if (invalidating.isNotEmpty) {
     throw ManifestException(
-      'receipt predates release-affecting changes: ${invalidating.join(', ')}',
+      'receipt predates suite-semantics changes: ${invalidating.join(', ')}',
     );
   }
 }
