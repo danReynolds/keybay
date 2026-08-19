@@ -182,6 +182,9 @@ jobs:
     if: github.event_name != 'schedule'
     name: integration-android (API ${{ matrix.api-level }})
     runs-on: ubuntu-latest
+    # The emulator can stall the same way the simulator does. Boot is slower
+    # here, but healthy runs still land at five to six minutes.
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -216,6 +219,14 @@ jobs:
     # runners have exhibited intermittent xcodebuild deadlocks, which can turn
     # an otherwise deterministic security gate into an unbounded hang.
     runs-on: macos-15
+    # Pinning the toolchain narrowed that deadlock without removing it: the
+    # app still builds in under a minute and then `flutter test` waits on a
+    # simulator that never answers. Without a bound the job runs to GitHub's
+    # six-hour ceiling, so a hang costs six hours of runner time and reports
+    # as an ordinary failure. A gate is worth trusting only if it answers in
+    # bounded time. Healthy runs have taken up to nine minutes, so the bound
+    # leaves real headroom rather than sitting on top of the slowest good run.
+    timeout-minutes: 15
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     steps:
