@@ -1,0 +1,75 @@
+name: audit-release
+
+# keybay is published from a maintainer workstation by rk. This workflow runs
+# afterwards and holds no credentials of any kind: it re-reads what the public
+# registry actually serves and checks it against evidence that was committed
+# before the tag was signed.
+#
+# It is deliberately an auditor, not a publisher. A workstation release can be
+# tampered with by anything running on that workstation; an independent witness
+# that recomputes the digests cannot be silenced by the same compromise, and it
+# has no secret to steal.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keybay-audit-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      # The tag is the root of the release chain, so the first question is
+      # whether it was signed by a key this account actually publishes. The
+      # allowed-signers list is built from GitHub's API rather than from the
+      # repository, because a repository an attacker can push to is one they
+      # could also add a key to.
+      - name: the tag carries a signature from a published account key
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          signers="$RUNNER_TEMP/allowed_signers"
+          gh api "users/${GITHUB_REPOSITORY_OWNER}/ssh_signing_keys" \
+            --jq '.[].key' |
+            while read -r key; do printf 'release %s\n' "$key"; done > "$signers"
+          test -s "$signers"
+          git config gpg.ssh.allowedSignersFile "$signers"
+          git verify-tag "$GITHUB_REF_NAME"
+
+      # pub.dev is asked what it serves, and the answer is reduced to the same
+      # canonical member-content identity the device suite bound its receipt to.
+      # Repacked tar metadata does not change that identity; any member path,
+      # mode, or byte does.
+      - name: pub.dev serves an archive this tag has evidence for
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          hosted="$RUNNER_TEMP/keybay-$version.tar.gz"
+          curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
+            --output "$hosted" \
+            "https://pub.dev/api/archives/keybay-$version.tar.gz"
+          digest="$(python3 tool/compare_pub_archives.py --digest "$hosted")"
+          echo "canonical content: $digest"
+          receipts="doc/device-security-receipts/$digest"
+          if [ ! -d "$receipts" ]; then
+            echo "::error::pub.dev serves keybay $version with canonical" \
+              "content $digest, and this tag commits no qualification" \
+              "evidence for those bytes."
+            echo "Either the published archive is not what was qualified," \
+              "or the release was tagged without promoting its receipt."
+            exit 1
+          fi
+          echo "qualification evidence committed at this tag:"
+          ls -1 "$receipts"

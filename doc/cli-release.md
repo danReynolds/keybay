@@ -1,5 +1,11 @@
 # Keybay release runbook
 
+> **Superseded.** This document describes the CI-published release flow
+> that `publish.yml` and `release_cli.yml` performed. Releases are now cut
+> locally with rk (see `release.toml`), and this page has not yet been
+> rewritten for it. Treat every command here as historical.
+
+
 Keybay releases are deliberately tag-triggered and one-way. A maintainer makes
 three decisions; GitHub Actions performs the rest:
 
