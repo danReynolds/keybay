@@ -42,7 +42,7 @@ void main() {
       references.values.toSet(),
       hasLength(1),
       reason: 'version references drifted: $references — run '
-          '`dart run tool/release.dart set <x.y.z>` to synchronize',
+          '`dart run tool/release.dart set <x.y.z>` to synchronize (rk releases; this only syncs versions)',
     );
   });
 
