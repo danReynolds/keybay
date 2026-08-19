@@ -183,8 +183,8 @@ jobs:
     name: integration-android (API ${{ matrix.api-level }})
     runs-on: ubuntu-latest
     # The emulator can stall the same way the simulator does. Boot is slower
-    # here, so the bound is looser; a healthy run takes about six minutes.
-    timeout-minutes: 40
+    # here, but healthy runs still land at five to six minutes.
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -224,8 +224,9 @@ jobs:
     # simulator that never answers. Without a bound the job runs to GitHub's
     # six-hour ceiling, so a hang costs six hours of runner time and reports
     # as an ordinary failure. A gate is worth trusting only if it answers in
-    # bounded time; this one normally finishes in about six minutes.
-    timeout-minutes: 25
+    # bounded time. Healthy runs have taken up to nine minutes, so the bound
+    # leaves real headroom rather than sitting on top of the slowest good run.
+    timeout-minutes: 15
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     steps:
