@@ -1,0 +1,66 @@
+{
+  "schema": "keybay.device-security-receipt",
+  "schema_version": 2,
+  "timestamp": "2026-08-18T13:49:49.145125Z",
+  "suite": {
+    "commit": "67b4bb2ec00f74ad563f979877ea03819b949da0",
+    "clean": true
+  },
+  "subject": {
+    "kind": "core-pub-content-sha256",
+    "name": "keybay-core",
+    "sha256": "582fd4d6c0f41be8517fa57235d849656d336fb8f0f369fa82c04ad151f3ffbb"
+  },
+  "run_nonce": "a8ae6e2b07e40a2ebaa5bc767e298edc033184d9e3e15351aaf60cde45609ea4",
+  "platform": "android",
+  "selection": "android-baseline",
+  "execution_class": "physical-device",
+  "status": "pass",
+  "device": {
+    "model": "Google Pixel 6a",
+    "build": "google/bluejay/bluejay:16/CP1A.260405.005/15001963:user/release-keys",
+    "api_level": 36,
+    "security_patch": "2026-04-05"
+  },
+  "installer": {
+    "kind": "apk-sha256",
+    "sha256": "ad51cdd2078cbedc063dbef4386cf6d052692f8ca86e0231b79f1fe1f41158b4",
+    "package_id": "dev.keybay.securityharness",
+    "command": "adb-install-pull-verified",
+    "status": "pass"
+  },
+  "cleanup": {
+    "status": "pass"
+  },
+  "scenarios": [
+    {
+      "id": "KB-AND-001",
+      "status": "pass"
+    },
+    {
+      "id": "KB-AND-010",
+      "status": "pass"
+    },
+    {
+      "id": "KB-AND-011",
+      "status": "pass"
+    },
+    {
+      "id": "KB-AND-020",
+      "status": "pass"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "android-baseline.results.json",
+      "sha256": "2e8823ae90eabe5af7d220edd4ce3328bba580bbb2a63c10832d47a3877273aa",
+      "bytes": 675
+    }
+  ],
+  "fields": {
+    "os_version": "16",
+    "verified_boot": "green; vbmeta=locked; flash-locked=1",
+    "selinux": "Enforcing",
+    "fbe": "native"
+  }
+}
