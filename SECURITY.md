@@ -38,12 +38,24 @@ properties decompose into: [doc/design.md](doc/design.md).
 
 Every change runs against the real providers: login Keychain, GNOME Keyring,
 Android emulators, the iOS simulator. Release candidates run the device suite
-on physical hardware for qualified configurations, and each release carries a
-signed statement of what was verified on that exact build — and what wasn't:
+on physical hardware for qualified configurations, and the evidence is
+committed before the release is tagged — so the tag's signature covers both
+the code and the record of what was checked on it.
+
+Releases are signed with a key held in this machine's Secure Enclave, which
+cannot be copied off it and cannot be used without the maintainer's
+fingerprint. To check a release yourself:
 
 ```sh
-./tool/verify_release.sh keybay <version>
+git verify-tag v<version>          # signed by the key published at
+                                   # github.com/danReynolds.keys
 ```
+
+The qualification evidence for a release lives in
+`doc/device-security-receipts/`, in a directory named by the canonical
+content digest of the exact archive pub.dev serves — so a receipt cannot be
+transferred to a build it was not run against. An independent CI job
+recomputes that digest after every release and fails if the two disagree.
 
 A weekly canary build runs against current OS images. Dependency advisories
 are scanned on every commit; runtime dependencies: one (`cryptography`,

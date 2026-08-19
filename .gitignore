@@ -1,7 +1,7 @@
 .dart_tool/
 .packages
 build/
-# Release-asset staging (release_cli.yml downloads artifacts here inside the
+# Release-asset staging (a release workflow may download artifacts here inside
 # checkout; the assurance manifest requires a clean tree including untracked).
 dist/
 # rk's working directory: staged releases and crash diagnoses. rk requires a

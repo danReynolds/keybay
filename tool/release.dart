@@ -22,8 +22,6 @@
 // Options: --dry-run (change and tag nothing), --yes (skip the publish prompt).
 //
 // `publish` is the only outward-facing verb. It creates a *signed* git tag on
-// HEAD and pushes it, which triggers `publish.yml` (core, tag `vX.Y.Z`) or
-// `release_cli.yml` (cli, tag `keybay_cli-vX.Y.Z`). It refuses unless every
 // reference agrees, tracked files are clean, the matching CHANGELOG carries
 // the version, and the tag does not already exist. Before creating the core
 // tag it also rebuilds the candidate assurance manifest from the exact package,
@@ -174,16 +172,6 @@ const Map<VersionField, String> _fieldFiles = <VersionField, String>{
 
 const String _coreChangelog = 'packages/keybay/CHANGELOG.md';
 const String _cliChangelog = 'packages/keybay_cli/CHANGELOG.md';
-const List<String> _releaseFiles = <String>[
-  'packages/keybay/pubspec.yaml',
-  'packages/keybay_cli/pubspec.yaml',
-  'packages/keybay_cli/lib/src/command.dart',
-  _coreChangelog,
-  _cliChangelog,
-];
-const String _releaseTagSignerFingerprint =
-    'SHA256:4ozSnfVaMzZ/qrzo51I8FPKawmZSIojAB5Ll+qhguFM';
-
 String _repoRoot() {
   final fromScript =
       File(Platform.script.toFilePath()).parent.parent.path; // tool/ -> root
@@ -292,416 +280,12 @@ void _bump(String root, String part, {required bool dryRun}) {
   _set(root, next.toString(), dryRun: dryRun);
 }
 
-void _publish(String root, String target,
-    {required bool dryRun, required bool yes}) {
-  if (!const <String>{'core', 'cli'}.contains(target)) {
-    _fail('publish target must be core or cli');
-  }
-  final version = _agreedVersion(_readAll(root)); // fails closed on drift
-
-  _requireCleanTrackedTree(root);
-  final head = _gitOut(root, <String>['rev-parse', 'HEAD']);
-  if (target == 'core') {
-    _requireCurrentMainHead(root, head);
-  } else {
-    _requireCoreTagCommit(root, head, version);
-  }
-
-  final plan = target == 'core'
-      ? const _TagPlan('keybay', _coreChangelog, 'publish.yml (pub.dev)')
-      : const _TagPlan('keybay_cli', _cliChangelog,
-          'release_cli.yml (GitHub release + Homebrew + pub.dev)');
-  final tag = plan.tagFor(version);
-  if (_changelogState(root, plan.changelog, '$version') == 'MISSING') {
-    _fail('${plan.changelog} has no "## $version" section; write release '
-        'notes before releasing');
-  }
-  if (_tagExists(root, tag)) {
-    _fail('tag $tag already exists (locally or on origin)');
-  }
-  stdout.writeln('release plan for $version at $head:');
-  stdout.writeln(
-      '  ${plan.package.padRight(11)} tag ${tag.padRight(22)} -> ${plan.workflow}');
-
-  if (dryRun) {
-    stdout.writeln('(dry-run) no tag created or pushed');
-    return;
-  }
-  final signingKey = _requireConfiguredReleaseSigner(root);
-  if (!yes && !_confirm('create and push signed tag $tag to origin?')) {
-    _fail('aborted');
-  }
-  if (target == 'core') {
-    _requireCoreAssurance(root, head);
-  }
-
-  final tagged = _git(
-      root, <String>['tag', '-s', tag, head, '-m', '${plan.package} $version']);
-  if (tagged.exitCode != 0) {
-    _fail('git tag $tag failed (is commit signing configured?):\n'
-        '${_text(tagged.stderr)}');
-  }
-  _verifyNewLocalTag(root, tag, signingKey);
-  final pushed = target == 'core'
-      ? _git(root, <String>[
-          'push',
-          '--atomic',
-          '--force-with-lease=refs/heads/main:$head',
-          'origin',
-          'refs/tags/$tag',
-          '$head:refs/heads/main',
-        ])
-      : _git(root, <String>['push', 'origin', tag]);
-  if (pushed.exitCode != 0) {
-    _fail('git push $tag failed:\n${_text(pushed.stderr)}');
-  }
-  stdout.writeln('pushed $tag');
-  if (target == 'core') {
-    stdout.writeln('\nCore publication triggered. Wait for publish.yml to pass '
-        'and for keybay $version to be live on pub.dev, then run '
-        '`keybay-release publish cli` from this same commit.');
-  } else {
-    stdout
-        .writeln('\nCLI release triggered. GitHub Actions publishes the native '
-            'channels first and pub.dev last.');
-  }
-}
-
-void _requireCoreAssurance(String root, String head) {
-  final run = Process.runSync(
-    'gh',
-    <String>[
-      'run',
-      'list',
-      '--workflow',
-      'ci.yml',
-      '--commit',
-      head,
-      '--status',
-      'success',
-      '--limit',
-      '20',
-      '--json',
-      'databaseId,headSha',
-      '--jq',
-      'map(select(.headSha == "$head")) | first | .databaseId // empty',
-    ],
-    workingDirectory: root,
-  );
-  final runId = _text(run.stdout);
-  if (run.exitCode != 0 || !RegExp(r'^[1-9][0-9]*$').hasMatch(runId)) {
-    _fail('no successful ci.yml run resolves to release commit $head; wait '
-        'for required CI before creating the core tag');
-  }
-
-  final temp = Directory.systemTemp.createTempSync('keybay-core-assurance.');
-  try {
-    final built = Process.runSync(
-      '$root/tool/build_core_assurance.sh',
-      <String>['${temp.path}/assurance', runId],
-      workingDirectory: root,
-    );
-    if (built.exitCode != 0) {
-      _fail('core assurance preflight failed before tag creation:\n'
-          '${_text(built.stdout)}\n${_text(built.stderr)}');
-    }
-    stdout.writeln('core assurance preflight passed against CI run $runId');
-  } finally {
-    temp.deleteSync(recursive: true);
-  }
-}
-
-void _releaseCommand(String root, String arg, {required bool dryRun}) {
-  final current = _agreedVersion(_readAll(root)); // fails closed on drift
-  final next = RegExp(r'^\d+\.\d+\.\d+$').hasMatch(arg)
-      ? Version.parse(arg)
-      : current.bump(arg);
-  if (next.compareTo(current) <= 0) {
-    _fail('release version must increase from $current (got $next)');
-  }
-  final version = next.toString();
-  final branch = 'release/v$version';
-
-  if (!dryRun) {
-    _requireCleanTrackedTree(root);
-    final onBranch =
-        _gitOut(root, <String>['rev-parse', '--abbrev-ref', 'HEAD']);
-    if (onBranch != 'main') {
-      _fail('run `release` from an up-to-date main (currently on "$onBranch")');
-    }
-    if (_git(root, <String>['rev-parse', '--verify', 'refs/heads/$branch'])
-            .exitCode ==
-        0) {
-      _fail('branch $branch already exists');
-    }
-  }
-
-  stdout.writeln('${dryRun ? '(dry-run) ' : ''}release $current -> $version');
-  for (final field in VersionField.values) {
-    final path = '$root/${_fieldFiles[field]}';
-    final after =
-        setVersionField(File(path).readAsStringSync(), field, version);
-    if (!dryRun) File(path).writeAsStringSync(after);
-  }
-  stdout.writeln('  synchronized all four version references to $version');
-  for (final relative in <String>[_coreChangelog, _cliChangelog]) {
-    final path = '$root/$relative';
-    final before = File(path).readAsStringSync();
-    final after = insertChangelogStub(before, version);
-    if (before != after) {
-      if (!dryRun) File(path).writeAsStringSync(after);
-      stdout.writeln('  added a "## $version" changelog stub to $relative');
-    }
-  }
-
-  if (dryRun) {
-    stdout.writeln('  would branch $branch, commit, push, and open a PR to '
-        'main titled "Release $version"');
-    stdout.writeln('(dry-run) nothing written, no branch, no PR');
-    return;
-  }
-
-  _gitCheck(root, <String>['checkout', '-b', branch], 'create branch');
-  _gitCheck(
-      root, <String>['add', '--', ..._releaseFiles], 'stage release files');
-  _gitCheck(root, <String>['commit', '-m', 'Release $version'], 'commit');
-  _gitCheck(root, <String>['push', '-u', 'origin', branch], 'push branch');
-  final pr = Process.runSync(
-      'gh',
-      <String>[
-        'pr',
-        'create',
-        '--base',
-        'main',
-        '--head',
-        branch,
-        '--title',
-        'Release $version',
-        '--body',
-        _releasePrBody(version),
-      ],
-      workingDirectory: root);
-  if (pr.exitCode != 0) {
-    _fail('gh pr create failed (is the GitHub CLI installed and authed?):\n'
-        '${_text(pr.stderr)}');
-  }
-  stdout.writeln(_text(pr.stdout));
-  stdout.writeln(
-      '\nOpened the release PR. Fill in both "## $version" changelog '
-      'notes and merge it. From the merged commit, run `keybay-release publish '
-      'core`, wait for publish.yml to pass and keybay $version to be live on '
-      'pub.dev, then run `keybay-release publish cli`.');
-}
-
-String _releasePrBody(String version) => '''
-Release $version. Version synchronized across both packages by `tool/release.dart`.
-
-Before merging, replace the `## $version` changelog placeholders in
-`packages/keybay/CHANGELOG.md` and `packages/keybay_cli/CHANGELOG.md` with real
-notes.
-
-After merging, publish the two signed tags deliberately and in order:
-
-1. `keybay-release publish core`
-2. Wait for `publish.yml` to pass and `keybay $version` to be live on pub.dev.
-3. `keybay-release publish cli` from the same commit.
-''';
-
-// ---------------------------------------------------------------------------
-// git + terminal helpers.
-// ---------------------------------------------------------------------------
-
-final class _TagPlan {
-  const _TagPlan(this.package, this.changelog, this.workflow);
-
-  final String package;
-  final String changelog;
-  final String workflow;
-
-  String tagFor(Version version) =>
-      package == 'keybay' ? 'v$version' : '$package-v$version';
-}
-
-ProcessResult _git(String root, List<String> args) =>
-    Process.runSync('git', args, workingDirectory: root);
-
-String _text(Object? stdio) => stdio is String ? stdio.trim() : '';
-
-String _gitOut(String root, List<String> args) {
-  final result = _git(root, args);
-  if (result.exitCode != 0) {
-    _fail('git ${args.join(' ')} failed: ${_text(result.stderr)}');
-  }
-  return _text(result.stdout);
-}
-
-void _gitCheck(String root, List<String> args, String what) {
-  final result = _git(root, args);
-  if (result.exitCode != 0) {
-    _fail('$what failed (git ${args.first}): ${_text(result.stderr)}');
-  }
-}
-
-void _requireCleanTrackedTree(String root) {
-  // Deliberately tracked-only (tool/test_release.dart enforces it): unrelated
-  // untracked local files must not block a release. The assurance preflight
-  // still requires a fully clean checkout before any real tag is created, so
-  // an untracked file that could leak into the published archive fails
-  // closed there.
-  if (_gitOut(
-    root,
-    <String>['status', '--porcelain', '--untracked-files=no'],
-  ).isNotEmpty) {
-    _fail('tracked working tree is not clean; commit or restore tracked '
-        'changes before releasing');
-  }
-}
-
-String _requireConfiguredReleaseSigner(String root) {
-  final format = _git(root, <String>['config', '--get', 'gpg.format']);
-  if (format.exitCode != 0 || _text(format.stdout) != 'ssh') {
-    _fail('release tags require git SSH signing (set gpg.format=ssh)');
-  }
-  final configured = _git(root, <String>['config', '--get', 'user.signingKey']);
-  if (configured.exitCode != 0 || _text(configured.stdout).isEmpty) {
-    _fail(
-        'release tags require user.signingKey to name the reviewed SSH public '
-        'key');
-  }
-  final value = _text(configured.stdout);
-  final publicKey = File(value.startsWith('/') ? value : '$root/$value');
-  if (!FileSystemEntity.isFileSync(publicKey.path)) {
-    _fail(
-        'configured SSH signing public key does not exist: ${publicKey.path}');
-  }
-  final inspected = Process.runSync(
-      'ssh-keygen', <String>['-lf', publicKey.path],
-      workingDirectory: root);
-  final fingerprint = RegExp(r'SHA256:[A-Za-z0-9+/=]+')
-      .firstMatch(_text(inspected.stdout))
-      ?.group(0);
-  if (inspected.exitCode != 0 || fingerprint != _releaseTagSignerFingerprint) {
-    _fail(
-        'configured release signer was ${fingerprint ?? 'unreadable'}, expected '
-        '$_releaseTagSignerFingerprint');
-  }
-  return publicKey.path;
-}
-
-void _verifyNewLocalTag(String root, String tag, String publicKeyPath) {
-  final temp = Directory.systemTemp.createTempSync('keybay-release-signer.');
-  String? failure;
-  try {
-    final allowedSigners = File('${temp.path}/allowed_signers');
-    final publicKey = File(publicKeyPath).readAsStringSync().trim();
-    allowedSigners.writeAsStringSync('keybay-release $publicKey\n',
-        flush: true);
-    final verified = _git(root, <String>[
-      '-c',
-      'gpg.ssh.allowedSignersFile=${allowedSigners.path}',
-      'verify-tag',
-      tag,
-    ]);
-    final verificationOutput =
-        '${_text(verified.stdout)}\n${_text(verified.stderr)}';
-    if (verified.exitCode == 0 &&
-        verificationOutput.contains(_releaseTagSignerFingerprint)) {
-      return;
-    }
-    final deleted = _git(root, <String>['tag', '-d', tag]);
-    final cleanup = deleted.exitCode == 0
-        ? 'the unpushed local tag was removed'
-        : 'delete the unpushed local tag manually before retrying';
-    failure = 'new tag $tag did not verify with the frozen release key; '
-        '$cleanup';
-  } finally {
-    temp.deleteSync(recursive: true);
-  }
-  _fail(failure);
-}
-
-void _fetchMain(String root) {
-  _gitCheck(root, <String>['fetch', 'origin', 'main'], 'fetch origin/main');
-}
-
-void _requireCurrentMainHead(String root, String head) {
-  _fetchMain(root);
-  final mainHead = _gitOut(root, <String>['rev-parse', 'origin/main']);
-  if (head != mainHead) {
-    _fail('HEAD ($head) is not the current origin/main tip ($mainHead); '
-        'publish core only from the latest reviewed main commit');
-  }
-}
-
-void _requireCoreTagCommit(String root, String head, Version version) {
-  _fetchMain(root);
-  final coreTag = 'v$version';
-  final coreCommit = _remoteAnnotatedTagCommit(root, coreTag);
-  if (head != coreCommit) {
-    _fail('HEAD ($head) is not the $coreTag commit ($coreCommit); publish the '
-        'CLI from exactly the source commit used for the core package');
-  }
-  final ancestor =
-      _git(root, <String>['merge-base', '--is-ancestor', head, 'origin/main']);
-  if (ancestor.exitCode != 0) {
-    _fail('$coreTag commit $head is no longer contained in origin/main');
-  }
-}
-
-String _remoteAnnotatedTagCommit(String root, String tag) {
-  final output = _gitOut(root, <String>[
-    'ls-remote',
-    '--tags',
-    'origin',
-    'refs/tags/$tag',
-    'refs/tags/$tag^{}',
-  ]);
-  if (output.isEmpty) {
-    _fail('remote core tag $tag does not exist; publish core first, then wait '
-        'for publish.yml to pass and the version to be live on pub.dev');
-  }
-  for (final line in output.split('\n')) {
-    final fields = line.split(RegExp(r'\s+'));
-    if (fields.length == 2 && fields[1] == 'refs/tags/$tag^{}') {
-      return fields[0];
-    }
-  }
-  _fail(
-      'remote core tag $tag is not annotated; the release workflow separately '
-      'requires GitHub-verified signatures');
-}
-
-bool _tagExists(String root, String tag) {
-  final local =
-      _git(root, <String>['rev-parse', '-q', '--verify', 'refs/tags/$tag'])
-              .exitCode ==
-          0;
-  final remote =
-      _gitOut(root, <String>['ls-remote', '--tags', 'origin', 'refs/tags/$tag'])
-          .isNotEmpty;
-  return local || remote;
-}
-
-bool _confirm(String prompt) {
-  if (!stdin.hasTerminal) {
-    _fail('cannot prompt on a non-terminal stdin; re-run with --yes');
-  }
-  stdout.write('$prompt [y/N] ');
-  final line = stdin.readLineSync()?.trim().toLowerCase() ?? '';
-  return line == 'y' || line == 'yes';
-}
-
-Never _fail(String message) {
-  stderr.writeln('release: $message');
-  exit(1);
-}
-
 // ---------------------------------------------------------------------------
 // Entry point.
 // ---------------------------------------------------------------------------
 
 const String _usage = '''
-Keybay release tool — one version across both packages, tag-triggered publishing.
+Keybay version tool — one version across both packages.
 
 Usage: dart run tool/release.dart <command> [options]
 
@@ -709,30 +293,27 @@ Usage: dart run tool/release.dart <command> [options]
   check                        Assert all four references agree (exit 1 on drift).
   set <x.y.z>                  Write one version to all four references.
   bump <major|minor|patch>     Increment the agreed version across all references.
-  release <part|x.y.z>         bump + changelog stubs + commit + push + open a PR.
-  publish <core|cli>           Sign and push one release tag. Publish core first;
-                               wait for its workflow and pub.dev; then publish CLI
-                               from the same commit.
 
 Options:
-  --dry-run                    Show what would happen; write nothing, tag nothing.
-  --yes, -y                    Skip the publish confirmation prompt.
+  --dry-run                    Show what would happen; write nothing.
   --help, -h                   Show this help.
 
-The two packages version in lockstep. `release` prepares the reviewed PR only.
-Publishing stays explicit because the CLI pins an already-hosted core version.
+The two packages version in lockstep. Releasing is rk's job (see release.toml):
+this tool only keeps the version references agreeing before a release is cut.
 ''';
+
+Never _fail(String message) {
+  stderr.writeln('release: $message');
+  exit(1);
+}
 
 void main(List<String> args) {
   final positional = <String>[];
   var dryRun = false;
-  var yes = false;
   for (final arg in args) {
     switch (arg) {
       case '--dry-run':
         dryRun = true;
-      case '--yes' || '-y':
-        yes = true;
       case '--help' || '-h':
         stdout.write(_usage);
         return;
@@ -763,12 +344,6 @@ void main(List<String> args) {
       case 'bump':
         if (rest.length != 1) _fail('usage: bump <major|minor|patch>');
         _bump(root, rest.first, dryRun: dryRun);
-      case 'release':
-        if (rest.length != 1) _fail('usage: release <major|minor|patch|x.y.z>');
-        _releaseCommand(root, rest.first, dryRun: dryRun);
-      case 'publish':
-        if (rest.length != 1) _fail('usage: publish <core|cli>');
-        _publish(root, rest.first, dryRun: dryRun, yes: yes);
       default:
         _fail('unknown command: ${positional.first} (try --help)');
     }

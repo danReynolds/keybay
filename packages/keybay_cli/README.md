@@ -102,20 +102,21 @@ gh release verify-asset "keybay_cli-v$VERSION" \
 #    (macOS: `shasum -a 256 --check --ignore-missing SHA256SUMS`)
 sha256sum --check --ignore-missing SHA256SUMS
 
-# 3. The archive must prove it was built by this repository's release
-#    workflow from the tag you expect (uses the GitHub CLI).
-gh attestation verify "keybay-$VERSION-$OS-$ARCH.tar.gz" \
-  --repo danReynolds/keybay \
-  --signer-workflow danReynolds/keybay/.github/workflows/release_cli.yml \
-  --source-ref "refs/tags/keybay_cli-v$VERSION" \
-  --deny-self-hosted-runners
+# 3. The release tag must carry the maintainer's signature, and SHA256SUMS
+#    must be the file that tag published.
+git verify-tag "keybay_cli-v$VERSION"
 ```
 
+Verifying the tag needs the maintainer's public signing key in an
+allowed-signers file; it is published at
+[github.com/danReynolds.keys](https://github.com/danReynolds.keys). The
+signing key is held in a Secure Enclave: it cannot be copied off the release
+machine, and cannot sign without the maintainer's fingerprint.
+
 The other channels carry their own verification: Homebrew checks archives
-against SHA-256 values pinned in the formula, `dart install keybay_cli` resolves
-through pub.dev's content-hash verification, and the release pipeline verifies
-the macOS binary's exact Developer ID requirement and online notarization
-ticket.
+against SHA-256 values pinned in the cask, `dart install keybay_cli` resolves
+through pub.dev's content-hash verification, and macOS validates the binary's
+Developer ID signature and notarization through Gatekeeper on first run.
 
 On Linux, Keybay requires the `secret-tool` client and an unlocked desktop
 Secret Service provider. Homebrew installs its `libsecret` dependency; distro
