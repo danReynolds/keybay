@@ -1,0 +1,15 @@
+schema = 2
+
+# Two independently released units, so each states its own tag pattern.
+# The CLI depends on the core package, and rk publishes in that order.
+
+[release.keybay]
+path = "packages/keybay"
+tag = "v{version}"
+publish = ["git-tag", "pub.dev"]
+
+[release.keybay_cli]
+path = "packages/keybay_cli"
+tag = "keybay_cli-v{version}"
+publish = ["git-tag", "pub.dev", "github-release", "homebrew"]
+binary_platforms = ["macos-arm64", "linux-x64", "linux-arm64"]

@@ -4,6 +4,9 @@ build/
 # Release-asset staging (a release workflow may download artifacts here inside
 # checkout; the assurance manifest requires a clean tree including untracked).
 dist/
+# rk's working directory: staged releases and crash diagnoses. rk requires a
+# clean tree including untracked files, so its own output must not dirty one.
+.rk/
 doc/api/
 # pubspec.lock IS committed (RFC 0005 §4a: dependency-closure firewall).
 !pubspec.lock
