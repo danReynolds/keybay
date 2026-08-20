@@ -1,75 +1,120 @@
 name: audit-release
 
-# keybay is published from a maintainer workstation by rk. This workflow runs
-# afterwards and holds no credentials of any kind: it re-reads what the public
-# registry actually serves and checks it against evidence that was committed
-# before the tag was signed.
-#
-# It is deliberately an auditor, not a publisher. A workstation release can be
-# tampered with by anything running on that workstation; an independent witness
-# that recomputes the digests cannot be silenced by the same compromise, and it
-# has no secret to steal.
+# Releases are published locally by rk. This credential-free workflow is an
+# independent witness: it verifies the signed source tag and the bytes pub.dev
+# actually serves. Device qualification is deliberately separate from release
+# provenance and is not consumed here.
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing core tag to audit
+        required: true
+        type: string
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: keybay-audit-${{ github.ref }}
+  group: keybay-audit-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   audit:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      AUDIT_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # On a tag push, github.sha selects the auditor committed by that tag. On
+      # manual re-audit it selects the corrected auditor on the default branch.
+      - name: check out the auditor
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.sha }}
+          path: auditor
           persist-credentials: false
 
-      # The tag is the root of the release chain, so the first question is
-      # whether it was signed by a key this account actually publishes. The
-      # allowed-signers list is built from GitHub's API rather than from the
-      # repository, because a repository an attacker can push to is one they
-      # could also add a key to.
-      - name: the tag carries a signature from a published account key
+      - name: check out the tagged source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ env.AUDIT_TAG }}
+          fetch-depth: 0
+          path: source
+          persist-credentials: false
+
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
+        with:
+          sdk: 3.12.2
+
+      - name: verify the signed tag, source, version, and exact-commit CI
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          signers="$RUNNER_TEMP/allowed_signers"
-          gh api "users/${GITHUB_REPOSITORY_OWNER}/ssh_signing_keys" \
-            --jq '.[].key' |
-            while read -r key; do printf 'release %s\n' "$key"; done > "$signers"
-          test -s "$signers"
-          git config gpg.ssh.allowedSignersFile "$signers"
-          git verify-tag "$GITHUB_REF_NAME"
+          tag="$AUDIT_TAG"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "::error::core release tag must be vMAJOR.MINOR.PATCH"
+            exit 1
+          }
+          test "$(git -C source cat-file -t "refs/tags/$tag")" = tag
 
-      # pub.dev is asked what it serves, and the answer is reduced to the same
-      # canonical member-content identity the device suite bound its receipt to.
-      # Repacked tar metadata does not change that identity; any member path,
-      # mode, or byte does.
-      - name: pub.dev serves an archive this tag has evidence for
+          signers="$RUNNER_TEMP/keybay-allowed-signers"
+          cat > "$signers" <<'EOF'
+          me@danreynolds.ca ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDtnuwBbMwdKZu2YlUnDdhW7t0bp7JlCjUZR8/JOQae6
+          EOF
+          chmod 0600 "$signers"
+          git -C source config gpg.ssh.allowedSignersFile "$signers"
+          git -C source verify-tag "$tag"
+
+          commit="$(git -C source rev-parse "$tag^{commit}")"
+          test "$(git -C source rev-parse HEAD)" = "$commit"
+          git -C source merge-base --is-ancestor "$commit" origin/main
+
+          version="${tag#v}"
+          package_version="$(awk '$1 == "version:" { print $2; exit }' \
+            source/packages/keybay/pubspec.yaml)"
+          test "$package_version" = "$version"
+          grep -Eq "^##[[:space:]]+${version}[[:space:]]*$" \
+            source/packages/keybay/CHANGELOG.md
+
+          successful_runs="$(gh api --method GET \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f head_sha="$commit" -f branch=main -f status=completed \
+            --jq '[.workflow_runs[] | select(.event == "push" and .conclusion == "success")] | length')"
+          test "$successful_runs" -ge 1 || {
+            echo "::error::no successful main CI run exists for $commit"
+            exit 1
+          }
+
+      - name: build the tagged package candidate
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          hosted="$RUNNER_TEMP/keybay-$version.tar.gz"
-          curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
-            --output "$hosted" \
-            "https://pub.dev/api/archives/keybay-$version.tar.gz"
-          digest="$(python3 tool/compare_pub_archives.py --digest "$hosted")"
-          echo "canonical content: $digest"
-          receipts="doc/device-security-receipts/$digest"
-          if [ ! -d "$receipts" ]; then
-            echo "::error::pub.dev serves keybay $version with canonical" \
-              "content $digest, and this tag commits no qualification" \
-              "evidence for those bytes."
-            echo "Either the published archive is not what was qualified," \
-              "or the release was tagged without promoting its receipt."
-            exit 1
-          fi
-          echo "qualification evidence committed at this tag:"
-          ls -1 "$receipts"
+          dart pub get --enforce-lockfile --directory source
+          version="${AUDIT_TAG#v}"
+          dart pub -C source/packages/keybay publish \
+            --to-archive="$RUNNER_TEMP/keybay-$version.expected.tar.gz"
+
+      - name: verify the archive served by pub.dev
+        run: |
+          set -euo pipefail
+          version="${AUDIT_TAG#v}"
+          hosted="$RUNNER_TEMP/keybay-$version.hosted.tar.gz"
+          url="https://pub.dev/api/archives/keybay-$version.tar.gz"
+          for attempt in $(seq 1 30); do
+            if curl --proto '=https' --tlsv1.2 --fail --location \
+              --silent --show-error --output "$hosted" "$url"; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "::error::pub.dev did not serve keybay $version within five minutes"
+              exit 1
+            fi
+            sleep 10
+          done
+          python3 auditor/tool/compare_pub_archives.py \
+            "$RUNNER_TEMP/keybay-$version.expected.tar.gz" "$hosted"

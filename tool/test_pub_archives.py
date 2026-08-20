@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import io
 import hashlib
-import os
 import pathlib
 import subprocess
 import sys
@@ -52,39 +51,6 @@ def _reject(path: pathlib.Path, case: str) -> None:
     except ArchiveError:
         return
     raise AssertionError(f"unsafe {case} archive was accepted")
-
-
-def _write_executable(path: pathlib.Path, content: str) -> None:
-    path.write_text(content)
-    path.chmod(0o755)
-
-
-def _run_publish_case(
-    repo: pathlib.Path,
-    tmp: pathlib.Path,
-    expected: pathlib.Path,
-    hosted: pathlib.Path,
-    status: int,
-) -> tuple[subprocess.CompletedProcess[str], str]:
-    log = tmp / "dart.log"
-    log.write_text("")
-    environment = {
-        **os.environ,
-        "PATH": f"{tmp / 'bin'}:{os.environ['PATH']}",
-        "TEST_EXPECTED_ARCHIVE": str(expected),
-        "TEST_HOSTED_ARCHIVE": str(hosted),
-        "TEST_HTTP_STATUS": str(status),
-        "TEST_LOG": str(log),
-    }
-    result = subprocess.run(
-        ["./tool/publish_pubdev.sh", str(tmp / "package")],
-        cwd=repo,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    return result, log.read_text()
 
 
 def main() -> int:
@@ -149,58 +115,7 @@ def main() -> int:
                 archive.addfile(member)
         _reject(too_many, "member-count")
 
-        package = tmp / "package"
-        package.mkdir()
-        (package / "pubspec.yaml").write_text("name: example\nversion: 1.2.3\n")
-        fake_bin = tmp / "bin"
-        fake_bin.mkdir()
-        _write_executable(
-            fake_bin / "dart",
-            """#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\\n' "$*" >> "$TEST_LOG"
-for argument in "$@"; do
-  case "$argument" in
-    --to-archive=*) cp "$TEST_EXPECTED_ARCHIVE" "${argument#*=}"; exit 0 ;;
-    --from-archive=*) printf 'uploaded\\n' >> "$TEST_LOG"; exit 0 ;;
-  esac
-done
-exit 2
-""",
-        )
-        _write_executable(
-            fake_bin / "curl",
-            """#!/usr/bin/env bash
-set -euo pipefail
-output=
-while [[ $# -gt 0 ]]; do
-  if [[ "$1" = --output ]]; then output="$2"; shift 2; else shift; fi
-done
-if [[ "$TEST_HTTP_STATUS" = 200 ]]; then
-  cp "$TEST_HOSTED_ARCHIVE" "$output"
-else
-  : > "$output"
-fi
-printf '%s' "$TEST_HTTP_STATUS"
-""",
-        )
-
-        result, log = _run_publish_case(
-            repo, tmp, expected, same_contents, 200
-        )
-        if result.returncode != 0 or "uploaded" in log:
-            raise AssertionError(f"exact hosted archive was not reconciled: {result.stderr}")
-        result, _ = _run_publish_case(repo, tmp, expected, changed_contents, 200)
-        if result.returncode == 0:
-            raise AssertionError("mismatched hosted archive was reconciled")
-        result, log = _run_publish_case(repo, tmp, expected, same_contents, 404)
-        if result.returncode != 0 or "uploaded" not in log:
-            raise AssertionError(f"missing pub version was not uploaded: {result.stderr}")
-        result, log = _run_publish_case(repo, tmp, expected, same_contents, 500)
-        if result.returncode == 0 or "uploaded" in log:
-            raise AssertionError("unexpected pub.dev response triggered publication")
-
-    print("pub archive reconciliation passed")
+    print("pub archive comparison passed")
     return 0
 
 

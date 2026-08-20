@@ -1,34 +1,22 @@
-// Release orchestration for the Keybay workspace.
+// Version coordination for the Keybay workspace.
 //
 // Keybay ships two packages that version in lockstep — the `keybay` core
-// library and the `keybay_cli` executable — and publishes them through
-// tag-triggered GitHub Actions. Four references must agree on the release
-// version:
+// library and the `keybay_cli` executable. Four references must agree on the
+// release version:
 //
 //   packages/keybay/pubspec.yaml              version:     (core)
 //   packages/keybay_cli/pubspec.yaml          version:     (cli)
 //   packages/keybay_cli/pubspec.yaml          keybay:      (cli's exact core pin)
 //   packages/keybay_cli/lib/src/command.dart  cliVersion            (`--version`)
 //
-// This tool keeps those four in sync and turns "release" into one intentional
-// command per target:
+// This tool only keeps those four references in sync:
 //
 //   dart run tool/release.dart status                 show every reference
 //   dart run tool/release.dart check                  assert they all agree (CI-friendly)
 //   dart run tool/release.dart set 0.2.0              write one version to all four
 //   dart run tool/release.dart bump patch|minor|major increment the agreed version
-//   dart run tool/release.dart publish core|cli       sign one tag on HEAD and push it
 //
-// Options: --dry-run (change and tag nothing), --yes (skip the publish prompt).
-//
-// `publish` is the only outward-facing verb. It creates a *signed* git tag on
-// reference agrees, tracked files are clean, the matching CHANGELOG carries
-// the version, and the tag does not already exist. Before creating the core
-// tag it also rebuilds the candidate assurance manifest from the exact package,
-// latest successful CI run, and required qualification receipt. Core must be
-// tagged from the current `origin/main` tip. CLI must be tagged later from that
-// exact core-tag commit, after the core workflow succeeds and the version is
-// live on pub.dev.
+// Publishing, signing, and public reconciliation belong to rk (release.toml).
 library;
 
 import 'dart:io';
