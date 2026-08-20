@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-"""Peer-advisory watch: an oracle, not a feed.
+"""Peer-advisory watch: an oracle, not a dependency feed.
 
 Queries OSV for advisories against the named peer secret-storage libraries and
-compares the IDs to the reviewed seen-list beside this script. A new ID is
-free red-team output against Keybay's own failure surface: triage it against
-the invariants, record the applicability decision, then add the ID to the
-seen-list in the same change.
+compares the IDs to the reviewed pre-automation baseline beside this script.
+A new ID is free red-team output against Keybay's own failure surface. GitHub
+issues, including closed dispositions, are the durable record after that
+baseline; routine triage never requires editing a repository ledger.
 
-Exit 0: nothing new. Exit 1: new advisory IDs (printed). Exit 69: OSV was
-unreachable — a watch that cannot watch must not report quiet success.
+Default output exits 0 when quiet and 1 for new IDs. `--json` returns 0 for any
+successful query so the workflow can create or deduplicate issues. Exit 69
+means OSV was unreachable — a watch that cannot watch never reports quiet.
 """
+import argparse
 import json
 import pathlib
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -23,7 +26,8 @@ PEERS = [
     ("Go", "github.com/zalando/go-keyring"),
     ("crates.io", "keyring"),
 ]
-SEEN_PATH = pathlib.Path(__file__).with_name("peer_advisories_seen.json")
+BASELINE_PATH = pathlib.Path(__file__).with_name("peer_advisories_baseline.json")
+_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 
 
 def advisories(ecosystem: str, name: str) -> set[str]:
@@ -45,36 +49,64 @@ def advisories(ecosystem: str, name: str) -> set[str]:
                 # A captive portal or outage page must read as
                 # "watch could not watch" (69), never as "new advisories" (1).
                 raise urllib.error.URLError(f"non-JSON OSV response: {error}")
-        ids.update(vuln["id"] for vuln in payload.get("vulns") or [])
+        for vulnerability in payload.get("vulns") or []:
+            advisory_id = vulnerability.get("id")
+            if not isinstance(advisory_id, str) or not _ID.fullmatch(advisory_id):
+                raise urllib.error.URLError(
+                    f"OSV returned an unsafe advisory ID: {advisory_id!r}"
+                )
+            ids.add(advisory_id)
         page_token = payload.get("next_page_token")
         if not page_token:
             return ids
 
 
-def main() -> int:
-    seen = set(json.loads(SEEN_PATH.read_text())["seen"])
-    new: dict[str, list[str]] = {}
+def new_advisories(baseline: set[str]) -> dict[str, list[str]]:
+    new: dict[str, set[str]] = {}
     for ecosystem, name in PEERS:
-        try:
-            found = advisories(ecosystem, name)
-        except (urllib.error.URLError, TimeoutError) as error:
-            print(f"peer-advisories: OSV unreachable for {ecosystem}/{name}: "
-                  f"{error}", file=sys.stderr)
-            return 69
-        fresh = sorted(found - seen)
-        if fresh:
-            new[f"{ecosystem}/{name}"] = fresh
+        for advisory_id in advisories(ecosystem, name) - baseline:
+            new.setdefault(advisory_id, set()).add(f"{ecosystem}/{name}")
+    return {
+        advisory_id: sorted(packages)
+        for advisory_id, packages in sorted(new.items())
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="emit issue-ready JSON and return 0 when OSV was reachable",
+    )
+    args = parser.parse_args(argv)
+    baseline = set(json.loads(BASELINE_PATH.read_text())["baseline"])
+    try:
+        new = new_advisories(baseline)
+    except (urllib.error.URLError, TimeoutError) as error:
+        print(f"peer-advisories: OSV unreachable or invalid: {error}", file=sys.stderr)
+        return 69
+
+    if args.json:
+        json.dump(
+            [
+                {"id": advisory_id, "packages": packages}
+                for advisory_id, packages in new.items()
+            ],
+            sys.stdout,
+            indent=2,
+        )
+        sys.stdout.write("\n")
+        return 0
     if not new:
         print("peer-advisories: no new advisories across "
               f"{len(PEERS)} watched packages")
         return 0
     print("peer-advisories: NEW advisory IDs — triage against the invariants, "
-          "record the decision, then add the IDs to "
-          f"{SEEN_PATH.name}:")
-    for package, ids in sorted(new.items()):
-        for advisory_id in ids:
-            print(f"  {package}: {advisory_id} "
-                  f"(https://osv.dev/vulnerability/{advisory_id})")
+          "record the decision in the generated GitHub issue:")
+    for advisory_id, packages in new.items():
+        print(f"  {advisory_id}: {', '.join(packages)} "
+              f"(https://osv.dev/vulnerability/{advisory_id})")
     return 1
 
 
