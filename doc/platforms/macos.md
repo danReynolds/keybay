@@ -72,7 +72,7 @@ signed, provisioned bundle CI can't produce; it is validated end-to-end by the
 `example_flutter/` host app (Keychain Sharing + a development team → the
 resolver picks native items and completes a round trip). That leg is local —
 the repeatable recipe is [tool/dp_keychain_verification.md](../../tool/dp_keychain_verification.md).
-Its security properties, lifecycle extensions, and retained evidence contract
+Its security properties, lifecycle extensions, and report contract
 are tracked as the [macOS device-suite scenarios](../device-security-suite.md#macos).
 
 ## Command-line and unentitled

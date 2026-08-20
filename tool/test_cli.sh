@@ -32,8 +32,8 @@ python3 tool/test_homebrew_formula.py
 if [[ "$(uname -s)" == "Darwin" ]]; then
   # A local ad-hoc hardened-runtime signature is structurally inspectable but
   # not launchable like the Developer-ID release signature. Keep the executable
-  # archive smoke on the original binary; the release workflow executes the
-  # packaged Developer-ID binary after signing and notarization.
+  # archive smoke on the original binary and use the copy only for identity
+  # verifier coverage.
   cp "$tmp/keybay" "$tmp/keybay-identity"
   codesign --force --sign - --identifier io.github.danreynolds.keybay.cli --options runtime \
     "$tmp/keybay-identity"

@@ -1,8 +1,7 @@
 .dart_tool/
 .packages
 build/
-# Release-asset staging (a release workflow may download artifacts here inside
-# checkout; the assurance manifest requires a clean tree including untracked).
+# Local release-asset staging.
 dist/
 # rk's working directory: staged releases and crash diagnoses. rk requires a
 # clean tree including untracked files, so its own output must not dirty one.
