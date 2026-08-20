@@ -177,7 +177,7 @@ jobs:
 
   # Genuine mobile platform APIs on disposable virtual devices. These are
   # Continuous integration checks, not physical-device qualification and do
-  # not issue security receipts.
+  # not issue physical qualification reports.
   integration-android:
     if: github.event_name != 'schedule'
     name: integration-android (API ${{ matrix.api-level }})

@@ -19,13 +19,13 @@ Usage:
 
 Examples:
   ./tool/device_security.sh doctor android
-  ./tool/device_security.sh run android --device SERIAL --core-archive PATH
+  ./tool/device_security.sh run android --device SERIAL
   ./tool/device_security.sh run android --device SERIAL --tamper \
-    --allow-package-reset --core-archive PATH
+    --allow-package-reset
   ./tool/device_security.sh doctor ios
-  ./tool/device_security.sh run ios --device UDID --core-archive PATH
-  ./tool/device_security.sh run macos --core-archive PATH
-  ./tool/device_security.sh run macos --tamper --core-archive PATH
+  ./tool/device_security.sh run ios --device UDID
+  ./tool/device_security.sh run macos
+  ./tool/device_security.sh run macos --tamper
 
 Baseline qualification changes only the dedicated Keybay security-harness app
 and test namespaces. `--tamper` adds self-restoring artifact corruption and a

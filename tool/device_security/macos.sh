@@ -14,7 +14,6 @@ macos_usage() {
   cat <<'USAGE'
 macOS options:
   --tamper            Add self-restoring encrypted-container corruption.
-  --core-archive PATH Exact candidate package archive to qualify.
 
 The signed Data Protection Keychain and entitlement-transition procedures are
 separately gated because they require a real development identity and
@@ -103,11 +102,10 @@ _macos_signing_mode() {
 device_security_main() {
   local action="$1"
   shift
-  local tamper="0" core_archive=""
+  local tamper="0"
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --tamper) tamper="1"; shift ;;
-      --core-archive) [[ $# -ge 2 ]] || ds_die "--core-archive needs a value"; core_archive="$2"; shift 2 ;;
       -h|--help) macos_usage; return 0 ;;
       *) ds_die "unknown macOS option: $1" ;;
     esac
@@ -133,7 +131,7 @@ device_security_main() {
     security_mode="tamper"
   fi
   ds_new_run_dir macos "$selection"
-  ds_prepare_core_subject "$core_archive"
+  ds_prepare_source
   local challenge_log="$DEVICE_SECURITY_RUN_DIR/security-challenge.log"
   local results="$DEVICE_SECURITY_RUN_DIR/$selection.results.json"
   local challenge_rc=0 rc=0
@@ -147,37 +145,43 @@ device_security_main() {
   challenge_rc=$?
   set -e
   [[ "$challenge_rc" -eq 0 ]] || rc=1
+  local command_status="pass"
+  [[ "$challenge_rc" -eq 0 ]] || command_status="fail"
 
   local signing_mode="unverified" cleanup_rc=0
   signing_mode="$(_macos_signing_mode)" || {
     signing_mode="unverified"
     rc=1
   }
-  local installer="$DEVICE_SECURITY_HARNESS/build/macos/Build/Products/Debug/example_flutter.app"
-  local install_status="pass"
-  [[ -d "$installer" && ! -L "$installer" ]] || install_status="fail"
-  if [[ "$install_status" == "pass" ]]; then
-    [[ "$(defaults read "$installer/Contents/Info.plist" CFBundleIdentifier)" == \
-      "$MACOS_BUNDLE_ID" ]] || install_status="fail"
+  local app="$DEVICE_SECURITY_HARNESS/build/macos/Build/Products/Debug/example_flutter.app"
+  local app_status="pass"
+  [[ -d "$app" && ! -L "$app" ]] || app_status="fail"
+  if [[ "$app_status" == "pass" ]]; then
+    [[ "$(defaults read "$app/Contents/Info.plist" CFBundleIdentifier)" == \
+      "$MACOS_BUNDLE_ID" ]] || app_status="fail"
   fi
-  [[ "$install_status" == "pass" ]] || rc=1
+  if [[ "$app_status" != "pass" ]]; then
+    rc=1
+    command_status="fail"
+  fi
   _macos_cleanup || cleanup_rc=1
   [[ "$cleanup_rc" -eq 0 ]] || rc=1
   local cleanup_status="pass"
   [[ "$cleanup_rc" -eq 0 ]] || cleanup_status="fail"
 
-  local receipt_args=(
+  local report_args=(
     --field "model=$(sysctl -n hw.model 2>/dev/null || true)"
     --field "osVersion=$(sw_vers -productVersion)"
     --field "architecture=$(uname -m)"
     --field "storageScheme=encryptedFile"
     --field "signingIdentity=$signing_mode"
     --field "protectionLevel=loginBound"
+    --limitation "Ad-hoc native-host run; no Developer ID continuity, entitlement transition, reboot, or relock was exercised."
   )
-  ds_write_receipt "$DEVICE_SECURITY_RUN_DIR/receipt.json" macos "$selection" \
-    native-host "$results" app-tree-sha256 "$installer" "$install_status" \
-    "$cleanup_status" "${receipt_args[@]}"
+  ds_write_report "$DEVICE_SECURITY_RUN_DIR/report.json" macos "$selection" \
+    native-host "$results" "$command_status" "$cleanup_status" \
+    "${report_args[@]}"
   trap - EXIT INT TERM
-  echo "Device-security receipt: $DEVICE_SECURITY_RUN_DIR/receipt.json"
+  echo "Device-security report: $DEVICE_SECURITY_RUN_DIR/report.json"
   return "$rc"
 }

@@ -50,8 +50,8 @@ void main() {
     );
     expect(
       securitySubjectIdentity,
-      matches(RegExp(r'^core-pub-content-sha256:[0-9a-f]{64}$')),
-      reason: 'qualification must identify the exact core package contents',
+      matches(RegExp(r'^git-commit:[0-9a-f]{40}$')),
+      reason: 'qualification must identify the clean source commit',
     );
   });
 

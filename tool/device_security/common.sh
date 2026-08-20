@@ -40,59 +40,35 @@ ds_new_run_dir() {
   export DEVICE_SECURITY_NONCE
 }
 
-ds_prepare_core_subject() {
-  local archive="$1" source_dir source_name copied digest workspace
-  [[ -n "$archive" ]] || ds_die "run requires --core-archive PATH"
-  [[ -f "$archive" && ! -L "$archive" ]] ||
-    ds_die "core subject must be a regular, non-symlink archive"
+ds_prepare_source() {
+  local commit
   [[ -z "$(git -C "$DEVICE_SECURITY_REPO" status --porcelain --untracked-files=all)" ]] ||
-    ds_die "release qualification requires a clean suite checkout"
-  source_dir="$(cd "$(dirname "$archive")" && pwd -P)"
-  source_name="$(basename "$archive")"
-  archive="$source_dir/$source_name"
-  copied="$DEVICE_SECURITY_RUN_DIR/core-subject.tar.gz"
-  cp -- "$archive" "$copied"
-  digest="$(python3 "$DEVICE_SECURITY_REPO/tool/compare_pub_archives.py" \
-    --digest "$copied")" || ds_die "core subject archive is invalid"
-  [[ "$digest" =~ ^[0-9a-f]{64}$ ]] ||
-    ds_die "core subject digest was malformed"
-
-  workspace="$DEVICE_SECURITY_RUN_DIR/workspace"
-  mkdir -p "$workspace/packages/keybay"
-  git -C "$DEVICE_SECURITY_REPO" archive HEAD example_flutter |
-    tar -x -C "$workspace"
-  tar -xzf "$copied" -C "$workspace/packages/keybay"
-  DEVICE_SECURITY_HARNESS="$workspace/example_flutter"
-  DEVICE_SECURITY_SUBJECT_ARCHIVE="$copied"
-  DEVICE_SECURITY_SUBJECT_IDENTITY="core-pub-content-sha256:$digest"
-  export DEVICE_SECURITY_HARNESS DEVICE_SECURITY_SUBJECT_ARCHIVE
-  export DEVICE_SECURITY_SUBJECT_IDENTITY
+    ds_die "device reports require a clean source checkout"
+  commit="$(git -C "$DEVICE_SECURITY_REPO" rev-parse HEAD)"
+  [[ "$commit" =~ ^[0-9a-f]{40}$ ]] ||
+    ds_die "source commit was malformed"
+  DEVICE_SECURITY_SOURCE_IDENTITY="git-commit:$commit"
+  export DEVICE_SECURITY_SOURCE_IDENTITY
   (
     cd "$DEVICE_SECURITY_HARNESS"
     flutter pub get --enforce-lockfile
   )
 }
 
-ds_write_receipt() {
+ds_write_report() {
   local output="$1" platform="$2" selection="$3" execution_class="$4"
-  local results="$5" installer_kind="$6" installer_path="$7"
-  local install_status="$8" cleanup_status="$9"
-  shift 9
+  local results="$5" command_status="$6" cleanup_status="$7"
+  shift 7
   ds_require dart
-  dart run "$DEVICE_SECURITY_REPO/tool/device_security/receipt.dart" \
+  dart run "$DEVICE_SECURITY_REPO/tool/device_security/report.dart" \
     --output "$output" \
     --platform "$platform" \
     --selection "$selection" \
     --execution-class "$execution_class" \
     --nonce "$DEVICE_SECURITY_NONCE" \
-    --subject-archive "$DEVICE_SECURITY_SUBJECT_ARCHIVE" \
     --results "$results" \
+    --command-status "$command_status" \
     --cleanup-status "$cleanup_status" \
-    --installer-kind "$installer_kind" \
-    --installer-path "$installer_path" \
-    --package-id dev.keybay.securityharness \
-    --install-command adb-install-pull-verified \
-    --install-status "$install_status" \
     "$@"
 }
 
@@ -126,7 +102,7 @@ ds_flutter_security_test() {
       -d "$device" \
       --file-reporter "json:$raw" \
       --dart-define=SECURITY_RUN_NONCE="$DEVICE_SECURITY_NONCE" \
-      --dart-define=SECURITY_SUBJECT_IDENTITY="$DEVICE_SECURITY_SUBJECT_IDENTITY" \
+      --dart-define=SECURITY_SUBJECT_IDENTITY="$DEVICE_SECURITY_SOURCE_IDENTITY" \
       "$@"
   ) 2>&1 | tee "$log"
   local command_rc="${PIPESTATUS[0]}" tee_rc="${PIPESTATUS[1]}"
@@ -136,7 +112,7 @@ ds_flutter_security_test() {
     --output "$results" \
     --selection "$selection" \
     --nonce "$DEVICE_SECURITY_NONCE" \
-    --subject "$DEVICE_SECURITY_SUBJECT_IDENTITY"
+    --subject "$DEVICE_SECURITY_SOURCE_IDENTITY"
   result_rc=$?
   rm -f -- "$raw"
   if [[ "$had_errexit" == "1" ]]; then set -e; else set +e; fi
