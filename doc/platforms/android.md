@@ -93,7 +93,7 @@ application's real iOS bundle ID, Apple team ID, and content version, so Keybay
 cannot supply a correct generic stanza. If your application participates in
 that transfer mode, configure it explicitly and exclude every Keybay `appId`;
 an omitted mode must not be treated as proof of exclusion. Physical or
-service-backed transfer is not currently release-qualified; it is part of the
+service-backed transfer is not currently qualified; it is part of the
 bounded pre-1.0 lifecycle work in the
 [device security suite](../device-security-suite.md#pre-10-exploit-chain-baseline).
 See the current [Android backup and transfer rules](https://developer.android.com/identity/data/autobackup).
@@ -102,6 +102,6 @@ See the current [Android backup and transfer rules](https://developer.android.co
 ciphertext; only the small wrapped-key blob is beside it) are validated on an
 API 33 emulator, including the StrongBox-fallback branch. As with iOS, an
 emulator's secure hardware is software-emulated, so the hardware property itself
-is established only by a retained physical run of
+is established only by a retained physical report for
 [`KB-AND-010`](../device-security-suite.md#android). The repeatable device suite,
-not the emulator receipt, is also where OEM and lifecycle variance is recorded.
+not an emulator run, is also where OEM and lifecycle variance is recorded.

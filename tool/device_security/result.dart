@@ -23,8 +23,8 @@ Future<void> main(List<String> args) async {
     if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(nonce)) {
       throw ResultException('nonce must be 64 lowercase hexadecimal digits');
     }
-    if (!RegExp(r'^core-pub-content-sha256:[0-9a-f]{64}$').hasMatch(subject)) {
-      throw ResultException('invalid core subject identity');
+    if (!RegExp(r'^git-commit:[0-9a-f]{40}$').hasMatch(subject)) {
+      throw ResultException('invalid source identity');
     }
     final expected = scenariosForSelection(selection)
         .where((scenario) => !scenario.id.endsWith('-001'))
@@ -39,16 +39,17 @@ Future<void> main(List<String> args) async {
     await output.writeAsString(
       '${const JsonEncoder.withIndent('  ').convert({
             'schema': 'keybay.device-security-results',
-            'schema_version': 1,
+            'schema_version': 2,
             'nonce': nonce,
             'subject': subject,
             'selection': selection,
+            'command_status': parsed.commandSucceeded ? 'pass' : 'fail',
             'scenarios': [
               for (final id in expected.toList()..sort())
                 {
                   'id': id,
-                  'status': parsed[id] ?? 'blocked',
-                  'reason': parsed.containsKey(id)
+                  'status': parsed.scenarios[id] ?? 'blocked',
+                  'reason': parsed.scenarios.containsKey(id)
                       ? 'derived from Flutter JSON test reporter'
                       : 'required scenario result was absent',
                 },
@@ -90,7 +91,7 @@ Map<String, String> _options(List<String> args) {
 String _required(Map<String, String> options, String key) =>
     options[key] ?? (throw ResultException('missing required $key'));
 
-Future<Map<String, String>> _parseReporter(
+Future<({Map<String, String> scenarios, bool commandSucceeded})> _parseReporter(
   File input,
   Set<String> expected,
   String nonce,
@@ -103,6 +104,7 @@ Future<Map<String, String>> _parseReporter(
   final tests = <Object, String>{};
   final outcomes = <String, List<String>>{};
   var metadataPasses = 0;
+  bool? commandSucceeded;
   await for (final line in input
       .openRead()
       .transform(utf8.decoder)
@@ -115,6 +117,14 @@ Future<Map<String, String>> _parseReporter(
       throw ResultException('Flutter JSON report contains malformed JSON');
     }
     if (decoded is! Map<String, dynamic>) continue;
+    if (decoded['type'] == 'done') {
+      if (commandSucceeded != null || decoded['success'] is! bool) {
+        throw ResultException(
+            'report contained a malformed duplicate done event');
+      }
+      commandSucceeded = decoded['success'] as bool;
+      continue;
+    }
     if (decoded['type'] == 'testStart') {
       final test = decoded['test'];
       if (test is Map<String, dynamic> &&
@@ -160,5 +170,9 @@ Future<Map<String, String>> _parseReporter(
     }
     derived[scenario] = values.single;
   }
-  return derived;
+  return (
+    scenarios: derived,
+    // A killed or truncated command has no done event. It is never a pass.
+    commandSucceeded: commandSucceeded ?? false,
+  );
 }

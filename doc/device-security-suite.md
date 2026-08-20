@@ -1,7 +1,7 @@
 # Keybay native and device security suite
 
 This document owns Keybay's qualification procedures, security oracles, safety
-rules, evidence handling, and release applicability policy. The product
+rules, evidence handling, and trigger policy. The product
 guarantees are normative in [design.md](design.md#security-guarantees); this
 suite references their `KB-INV-*` identifiers rather than restating them.
 
@@ -16,7 +16,7 @@ meaningful Keybay guarantee or a plausible recurring platform behavior.
 - `virtual-device`: an Android emulator or iOS simulator using genuine APIs.
 - `physical-device`: an explicitly selected physical target.
 
-A lower class never substitutes for a scenario's minimum. One Pixel receipt
+A lower class never substitutes for a scenario's minimum. One Pixel report
 qualifies that device/build/provider configuration, not every Android OEM.
 Functional support and a stronger qualified configuration are separate claims.
 
@@ -35,7 +35,7 @@ deletion of only the dedicated harness KEK for the missing-key challenge;
 package cleanup removes the remaining test state. Reset of any other package,
 reboot, relock, provider locking, backup/restore, and transfer are separate
 procedures requiring an exact target and explicit authorization. Cleanup is an
-oracle: a release-eligible pass cannot survive failed cleanup.
+oracle: a passing report cannot survive failed cleanup.
 
 ## Execution policy
 
@@ -45,14 +45,10 @@ Two kinds of execution are enough:
    disposable login-Keychain/GNOME-Keyring integration, and maintained
    simulator/emulator lanes in CI.
 2. **Qualification scenarios** run where OS policy, hardware, signing, or
-   lifecycle behavior is part of the claim. Non-disruptive applicable baselines
-   run against each candidate intended for publication; disruptive procedures
-   run only after an affected implementation/platform change, relevant
-   advisory/incident, or changed oracle.
-
-The release gate consumes applicable CI and qualification evidence. It is not a
-third execution mode. The core package and CLI are separate release subjects;
-a CLI release does not require mobile qualification.
+   lifecycle behavior is part of the claim. Run the affected scenarios after a
+   relevant implementation/platform change, advisory, incident, changed
+   oracle, or before making a new claim. A version or release alone is not a
+   trigger.
 
 ## Current runner
 
@@ -60,16 +56,16 @@ From the repository root:
 
 ```sh
 ./tool/device_security.sh doctor android
-./tool/device_security.sh run android --device SERIAL --core-archive PATH
+./tool/device_security.sh run android --device SERIAL
 ./tool/device_security.sh run android --device SERIAL --tamper \
-  --allow-package-reset --core-archive PATH
+  --allow-package-reset
 
 ./tool/device_security.sh doctor ios
-./tool/device_security.sh run ios --device UDID --core-archive PATH
+./tool/device_security.sh run ios --device UDID
 
 ./tool/device_security.sh doctor macos
-./tool/device_security.sh run macos --core-archive PATH
-./tool/device_security.sh run macos --tamper --core-archive PATH
+./tool/device_security.sh run macos
+./tool/device_security.sh run macos --tamper
 
 ./tool/device_security.sh doctor linux
 ```
@@ -77,8 +73,9 @@ From the repository root:
 Android package reset requires `--allow-package-reset` and is scoped to the
 selected Android user. Linux has no device adapter yet; its real disposable
 GNOME Keyring integration remains a Continuous check. Working artifacts go to
-private directories under `build/device-security/`; promotion is a separate
-reviewed action.
+private directories under `build/device-security/`. Review the sanitized
+`report.json`, then attach it to the issue that triggered the run; raw logs stay
+private and ephemeral.
 
 ## Executable inventory
 
@@ -195,36 +192,22 @@ Only `pass` is affirmative evidence. A security-oracle contradiction is
 `fail`; missing capability is `blocked`; infrastructure failure or unattributed
 aggregate-command failure is `inconclusive`.
 
-The schema-v2 writer derives release-eligible scenario status from nonce-bound
-structured Flutter reporter output. It validates the executable selection,
-platform fields, evidence hashes, private paths, no-overwrite publication,
-clean checkout, exact package subject, exact installer input, package identity,
-cleanup, and fail-dominant aggregate status. It records:
+The report writer derives scenario outcomes from nonce-bound structured Flutter
+output and the aggregate command result. It requires a clean source commit and
+records that commit, the named configuration, date, per-scenario results,
+cleanup, and explicit limitations. A failed or truncated aggregate command can
+never sit beside a passing report.
 
-- clean suite commit and exact subject identity;
-- exact APK or canonical signed app/IPA installer input, controlled install
-  result, and verified package/bundle identity for installed-app tests;
-- target/configuration facts without raw identifiers;
-- per-scenario derived status/reason and retained allowlisted evidence hashes;
-- cleanup result for any mutation; and
-- timestamp.
-
-Missing/skipped required scenarios, nonce mismatch, caller-supplied status,
-dirty source, subject mismatch, failed cleanup, or unresolved evidence cannot
-become a release pass. Sensitive raw logs are ephemeral; every digest used by a
-gate resolves to a retained sanitized object. Receipts never contain canaries,
-secrets, account data, signing credentials, raw serials, or UDIDs.
+The report does not claim an exact release archive or installer identity. It
+records the checked source because qualification and artifact provenance are
+different questions. Reports never contain canaries, secrets, account data,
+signing credentials, raw serials, or UDIDs. Review `report.json` before
+attaching it to the triggering issue; do not retain raw logs or create a second
+repository ledger.
 
 ## Qualification triggers and claim boundary
 
-Run the affected non-disruptive baseline for each minor/major publication
-candidate whose release claims that configuration as qualified. A release may
-omit a target — a patch release in particular may ship without re-running a
-device baseline — but then its manifest must declare that configuration
-unqualified rather than carry forward a pass.
-
-Destructive or operator-driven scenarios are never a routine release
-requirement. Run them only when affected by:
+Run the affected scenarios only when triggered by:
 
 - container, wrapping, parser, authentication, or fail-closed changes;
 - transaction, concurrency, interruption, or native-boundary changes;
@@ -234,20 +217,15 @@ requirement. Run them only when affected by:
 - a changed scenario oracle.
 
 Each scenario states its required evidence class. Missing capability is
-`blocked` or unqualified, never a lower-class pass.
+`blocked` or unqualified, never a lower-class pass. A release is not itself a
+trigger. During release or issue review, missing applicable evidence narrows
+the affected claim; it does not become a product-wide failure or a lower-class
+pass.
 
-Finding disposition at a release gate: Critical and High findings block
-release. A Medium finding is fixed, or temporarily accepted with scope,
-rationale, expiry, and any required claim reduction. An unresolved finding of
-any severity cannot coexist with a release claim it directly contradicts;
-unknown or inconclusive evidence blocks only the affected claim or
-configuration. Low findings follow normal issue policy unless explicitly
-release-relevant.
-
-Review official Apple/Android/Dart/Secret Service guidance and applicable peer
-advisories on the recurring sweep cadence and before security-sensitive
-releases. Record only applicable, uncertain, claim-affecting, or non-obvious
-dismissal decisions in their advisory/issue/PR; do not build a feed ledger.
+Official guidance and peer advisories are triaged when automation, an issue, or
+security-sensitive work surfaces them. Record applicable, uncertain,
+claim-affecting, or non-obvious decisions in that issue or PR; do not create a
+feed ledger or manual calendar.
 
 ### Pre-1.0 exploit-chain baseline
 

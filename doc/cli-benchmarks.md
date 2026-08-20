@@ -40,5 +40,5 @@ Both reference counts pass the 50 ms p50 / 100 ms p95 overhead budget.
 | 10 | 0.545 ms | 16.245 ms | 16.727 ms | **15.700 ms** | **16.182 ms** |
 
 Both reference counts are well below the budget in CI. This is a real-store
-cross-platform diagnostic, not a substitute for the implementation plan's
-designated Linux release-hardware receipt; that release gate remains pending.
+cross-platform diagnostic, not a claim about every Linux desktop or hardware
+configuration.
