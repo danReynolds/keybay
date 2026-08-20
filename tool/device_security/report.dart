@@ -20,7 +20,7 @@ const _requiredFields = <String, Set<String>>{
     'selinux',
     'fbe',
   },
-  'ios': {'os_version'},
+  'ios': {'model', 'os_version'},
   'macos': {
     'model',
     'os_version',

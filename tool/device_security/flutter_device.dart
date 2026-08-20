@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 /// Selects one exact connected physical iOS target from
-/// `flutter devices --machine` input and prints only its SDK description.
-/// Device names and IDs are deliberately never echoed.
+/// `flutter devices --machine` input and prints its model and SDK description.
+/// The raw device ID is deliberately never echoed.
 Future<void> main(List<String> args) async {
   if (args.length != 1 ||
       args.single.isEmpty ||
@@ -35,13 +35,21 @@ Future<void> main(List<String> args) async {
           'selected target is not supported physical iOS hardware');
     }
     final sdk = device['sdk'];
+    final model = device['name'];
     if (sdk is! String ||
         sdk.trim().isEmpty ||
         sdk.length > 256 ||
         RegExp(r'[\u0000-\u001f\u007f]').hasMatch(sdk)) {
       throw const FormatException('selected target has no safe SDK inventory');
     }
-    stdout.writeln(sdk.trim());
+    if (model is! String ||
+        model.trim().isEmpty ||
+        model.length > 256 ||
+        RegExp(r'[\u0000-\u001f\u007f]').hasMatch(model)) {
+      throw const FormatException(
+          'selected target has no safe model inventory');
+    }
+    stdout.writeln('${model.trim()}\t${sdk.trim()}');
   } on Object catch (error) {
     stderr.writeln('flutter-device: $error');
     exitCode = 65;

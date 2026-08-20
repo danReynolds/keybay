@@ -32,11 +32,12 @@ device_security_main() {
   fi
   [[ -n "$device" ]] || ds_die "iOS run requires --device UDID"
   ds_require dart
-  local device_inventory
+  local device_inventory device_model device_os_version
   device_inventory="$(flutter devices --machine |
     dart run "$DEVICE_SECURITY_REPO/tool/device_security/flutter_device.dart" \
       "$device")" ||
     ds_die "the selected target is not one exact connected physical iOS device"
+  IFS=$'\t' read -r device_model device_os_version <<<"$device_inventory"
 
   local selection="ios-baseline"
   ds_new_run_dir ios "$selection"
@@ -55,7 +56,8 @@ device_security_main() {
   [[ "$challenge_rc" -eq 0 ]] || command_status="fail"
   ds_write_report "$DEVICE_SECURITY_RUN_DIR/report.json" ios "$selection" \
     physical-device "$results" "$command_status" not-required \
-    --field "osVersion=$device_inventory" \
+    --field "model=$device_model" \
+    --field "osVersion=$device_os_version" \
     --limitation "Development-signed physical run; no reboot, restore, access-group transition, or installed-app archive identity was exercised."
   echo "Device-security report: $DEVICE_SECURITY_RUN_DIR/report.json"
   return "$challenge_rc"

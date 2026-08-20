@@ -274,6 +274,30 @@ void main() {
     }
   });
 
+  test('iOS selector records model and OS without the raw device ID', () async {
+    final process = await Process.start(
+      Platform.resolvedExecutable,
+      ['$repo/tool/device_security/flutter_device.dart', 'private-device-id'],
+      workingDirectory: repo,
+    );
+    process.stdin.write(jsonEncode([
+      {
+        'id': 'private-device-id',
+        'name': 'iPhone 17 Pro',
+        'targetPlatform': 'ios',
+        'emulator': false,
+        'isSupported': true,
+        'sdk': 'iOS 26.1',
+      },
+    ]));
+    await process.stdin.close();
+    final stdoutText = await utf8.decoder.bind(process.stdout).join();
+    final stderrText = await utf8.decoder.bind(process.stderr).join();
+    expect(await process.exitCode, 0, reason: stderrText);
+    expect(stdoutText.trim(), 'iPhone 17 Pro\tiOS 26.1');
+    expect(stdoutText, isNot(contains('private-device-id')));
+  });
+
   test('entrypoint and platform adapters retain destructive safety guards',
       () async {
     final traversal = await Process.run(
