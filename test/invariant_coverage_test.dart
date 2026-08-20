@@ -12,7 +12,7 @@ void main() {
   test('every declared KB-INV invariant has an executable falsifier', () {
     final design = File('doc/design.md').readAsStringSync();
     // \d+ (not \d{3}) so a future KB-INV-1000 is never truncated to a
-    // phantom KB-INV-100; matches the pattern the receipt test uses.
+    // phantom KB-INV-100; matches the device-report test pattern.
     final idPattern = RegExp(r'KB-INV-\d+');
     final declared =
         idPattern.allMatches(design).map((match) => match.group(0)!).toSet();

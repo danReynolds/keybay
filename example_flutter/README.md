@@ -36,12 +36,14 @@ Requires a macOS dev box with Xcode + an iPhone simulator, the Android SDK + an
 AVD, Flutter, and Docker.
 
 The separate [device security suite](../doc/device-security-suite.md) runs
-physical-device and adversarial scenarios while retaining a sanitized receipt:
+physical-device and adversarial scenarios and produces a sanitized report for
+the triggering issue:
 
 ```sh
 ./tool/device_security.sh doctor android
 ./tool/device_security.sh run android --device <serial>
-./tool/device_security.sh run android --device <serial> --tamper
+./tool/device_security.sh run android --device <serial> --tamper \
+  --allow-package-reset
 ./tool/device_security.sh doctor ios
 ./tool/device_security.sh run ios --device <physical-udid>
 ./tool/device_security.sh run macos

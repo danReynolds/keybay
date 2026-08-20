@@ -56,7 +56,7 @@ jobs:
       - run: dart pub get --enforce-lockfile
       - run: dart format --output=none --set-exit-if-changed .
       - run: dart analyze --fatal-infos
-      # Repository-only assurance tooling tests. Keep these outside the core
+      # Repository-only security tooling tests. Keep these outside the core
       # package so its published archive never contains tests that depend on
       # repository documents or shell adapters.
       - run: dart test

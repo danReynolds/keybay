@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One mobile integration leg for CI. The physical qualification runner is
 # deliberately separate: this script proves genuine platform API paths on
-# disposable virtual targets and emits no device-security receipt.
+# disposable virtual targets and emits no physical qualification report.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

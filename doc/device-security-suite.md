@@ -260,7 +260,7 @@ only the affected destructive scenarios under the triggers above:
 
 No suite result is a certification. Public statements name the exact source
 commit, configuration, evidence class, scenarios, limitations, and date. A
-report proves only what its retained evidence and oracle establish.
+report proves only what its recorded results and oracle establish.
 
 ## Relationship to releases
 
