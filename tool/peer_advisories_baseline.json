@@ -1,0 +1,11 @@
+{
+  "comment": "Reviewed advisory IDs predating issue-based triage. Keep this historical baseline fixed; GitHub issues record later applicability decisions.",
+  "baseline": [
+    "GHSA-8867-vpm3-g98g",
+    "GHSA-p3h7-3c45-qj4v",
+    "GHSA-p86x-652p-6385",
+    "PYSEC-2012-8",
+    "PYSEC-2019-181",
+    "PYSEC-2019-182"
+  ]
+}
