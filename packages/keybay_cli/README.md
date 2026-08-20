@@ -74,36 +74,14 @@ runner documented in the [examples guide](example/README.md).
 
 ### Verify a release download
 
-Release integrity is machine-checkable end to end. Every GitHub release ships
-`SHA256SUMS`; each executable archive has GitHub build provenance; and the
-immutable release has a separate attestation covering its tag, commit, and
-assets. macOS binaries are Developer ID-signed, hardened-runtime, and
-notarized. Verify a downloaded archive before extracting it — a link someone
-hands you is not a provenance chain. Use GitHub CLI 2.93.0 or newer; older
-versions are affected by
-[GHSA-8xvp-7hj6-mcj9](https://github.com/cli/cli/security/advisories/GHSA-8xvp-7hj6-mcj9):
+Releases are produced locally by rk from maintainer-signed tags. Verify the tag
+before trusting a download; do not infer GitHub-hosted build provenance or a
+separate Keybay attestation unless that specific release actually provides it.
+The legacy `0.1.0` GitHub/Homebrew release predates the current release model
+and must not be used as its verification example.
 
 ```sh
 VERSION=X.Y.Z
-OS=linux
-ARCH=x64
-GH_VERSION="$(gh --version | awk 'NR == 1 { print $3 }')"
-if [[ "$(printf '%s\n' 2.93.0 "$GH_VERSION" | sort -V | head -1)" != 2.93.0 ]]; then
-  echo "GitHub CLI 2.93.0 or newer is required" >&2
-  exit 1
-fi
-
-# 1. The release must be immutable and the local file must be one of its assets.
-gh release verify "keybay_cli-v$VERSION" --repo danReynolds/keybay
-gh release verify-asset "keybay_cli-v$VERSION" \
-  "keybay-$VERSION-$OS-$ARCH.tar.gz" --repo danReynolds/keybay
-
-# 2. The archive must match the release's published checksums.
-#    (macOS: `shasum -a 256 --check --ignore-missing SHA256SUMS`)
-sha256sum --check --ignore-missing SHA256SUMS
-
-# 3. The release tag must carry the maintainer's signature, and SHA256SUMS
-#    must be the file that tag published.
 git verify-tag "keybay_cli-v$VERSION"
 ```
 
@@ -113,10 +91,9 @@ allowed-signers file; it is published at
 signing key is held in a Secure Enclave: it cannot be copied off the release
 machine, and cannot sign without the maintainer's fingerprint.
 
-The other channels carry their own verification: Homebrew checks archives
-against SHA-256 values pinned in the cask, `dart install keybay_cli` resolves
-through pub.dev's content-hash verification, and macOS validates the binary's
-Developer ID signature and notarization through Gatekeeper on first run.
+The exact archive, signature, checksum, notarization, and Homebrew verification
+commands will be documented from the first hardened rk release's actual public
+artifacts rather than promised in advance.
 
 On Linux, Keybay requires the `secret-tool` client and an unlocked desktop
 Secret Service provider. Homebrew installs its `libsecret` dependency; distro

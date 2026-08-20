@@ -37,10 +37,24 @@ properties decompose into: [doc/design.md](doc/design.md).
 ## How it stays that way
 
 Every change runs against the real providers: login Keychain, GNOME Keyring,
-Android emulators, the iOS simulator. Release candidates run the device suite
-on physical hardware for qualified configurations, and the evidence is
-committed before the release is tagged — so the tag's signature covers both
-the code and the record of what was checked on it.
+Android emulators, and the iOS simulator. Hermetic tests, dependency scans,
+fresh-seed fuzzing, and repository-configuration checks run in CI. Results live
+where they are produced — Actions and code scanning — rather than being copied
+into a second assurance ledger.
+
+The operating model is event-driven. A new advisory, security-shaped issue,
+relevant implementation or platform change, or release review is triaged
+against the numbered guarantees in [doc/design.md](doc/design.md). Actionable
+or uncertain signals are tracked as GitHub issues. A quiet scanner creates no
+maintainer paperwork; a scanner that cannot complete is not treated as a clean
+result.
+
+Physical and signed-host scenarios run when a claim depends on affected OS,
+hardware, entitlement, lifecycle, or provider behavior. Their reports identify
+the clean source commit, named configuration, date, results, and limitations.
+They are scoped observations, not release certificates, and a release alone
+does not require them. Missing evidence narrows the affected qualification
+claim rather than becoming a pass.
 
 Releases are signed with a key held in this machine's Secure Enclave, which
 cannot be copied off it and cannot be used without the maintainer's
@@ -51,19 +65,20 @@ git verify-tag v<version>          # signed by the key published at
                                    # github.com/danReynolds.keys
 ```
 
-The qualification evidence for a release lives in
-`doc/device-security-receipts/`, in a directory named by the canonical
-content digest of the exact archive pub.dev serves — so a receipt cannot be
-transferred to a build it was not run against. An independent CI job
-recomputes that digest after every release and fails if the two disagree.
+Publication is performed locally by rk. A credential-free GitHub auditor
+checks the signed core tag, the exact successful source commit, and whether the
+package pub.dev serves has the same canonical contents as that tagged source.
+CLI binary provenance remains a separate release concern because consumers run
+those exact bytes.
 
-A weekly canary build runs against current OS images. Dependency advisories
-are scanned on every commit; runtime dependencies: one (`cryptography`,
-exact-pinned), with CI failing if the tree changes. Platform guidance changes
-land as changelog entries with updated tests.
+Dependency advisories are scanned on every change and by scheduled monitoring;
+the runtime dependency set contains one exact-pinned third-party package
+(`cryptography`) and CI fails if its reviewed closure changes. Platform-guidance
+changes become issues and then code, test, or documentation changes when they
+are applicable.
 
 Critical and High findings block a release. A release never claims what its
-evidence doesn't show; gaps are declared in its manifest.
+evidence does not show.
 
 No independent security review has been performed yet. Keybay has a single
 maintainer. If development ever stops, the packages will be marked as

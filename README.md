@@ -59,9 +59,9 @@ Keybay's security model is two commitments:
 1. **Secure on every platform** — secrets live in each platform's own
    credential storage, wired directly and verified from unit tests to real
    devices.
-2. **Secure over time** — every change runs against real providers, every
-   release ships a signed statement of what was verified, and platform
-   changes are triaged against the model on a schedule.
+2. **Secure over time** — every change runs against real providers, core
+   package publication is independently checked against signed source, and
+   security signals are triaged against the model when they occur.
 
 If the required platform store is unavailable, locked, invalidated, corrupt,
 tampered with, or unsupported, Keybay fails closed — never plaintext.

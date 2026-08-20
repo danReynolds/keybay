@@ -280,21 +280,20 @@ only the affected destructive scenarios under the triggers above:
   interruption races without key replacement, silent reset, or
   unauthenticated state.
 
-No suite result is a certification. Public statements name the exact release,
-subject, configuration, evidence class, scenarios, limitations, and date. A
-receipt proves only what its retained evidence and oracle establish.
+No suite result is a certification. Public statements name the exact source
+commit, configuration, evidence class, scenarios, limitations, and date. A
+report proves only what its retained evidence and oracle establish.
 
-## Release binding
+## Relationship to releases
 
-For the core package, the pre-tag check and tag workflow rebuild the candidate
-archive, compute its canonical member-content identity, require the applicable
-reviewed receipt, and assemble one manifest. After pub.dev publication, CI
-recomputes that same identity from the hosted archive and verifies a GitHub
-custom-predicate attestation containing the manifest. Repacked tar metadata does
-not change the subject; any member path, type, mode, or byte does.
+Qualification and release provenance answer different questions. A device run
+records what the suite observed for one clean source commit and named
+configuration. Release review decides whether later security-relevant changes
+make that observation inapplicable; a version change or release by itself does
+not require another device run.
 
-For the CLI, the release workflow records every exact release-asset digest,
-attaches `release-assurance.json` to the immutable GitHub Release, and attests
-the manifest against the native archives. The manifest deliberately lists
-unqualified configurations and the absence of independent review rather than
-converting incomplete evidence into a pass.
+Device evidence is not consumed by the publishing pipeline. Missing applicable
+evidence narrows the affected public qualification claim; it does not become a
+pass and does not block an unrelated package or platform release. rk owns
+publication and release-artifact provenance, while the credential-free release
+auditor independently compares public package contents with signed source.
