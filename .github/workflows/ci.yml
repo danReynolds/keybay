@@ -70,7 +70,7 @@ jobs:
       - if: runner.os == 'Linux'
         run: python3 tool/test_pub_archives.py
       - if: runner.os == 'Linux'
-        run: python3 -m unittest discover -s watchers/tests -p 'test_*.py'
+        run: dart test watchers/tests
       - if: runner.os == 'Linux'
         run: ./tool/lint_workflows.sh
       # Exercise the exact package archive and warning contract before a tag.

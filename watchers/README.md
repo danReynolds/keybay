@@ -58,6 +58,11 @@ Manual issue-writing runs are accepted only from `main`, so an unreviewed
 branch cannot replace a watcher script and inherit its token. Dependency and
 critical-pin checks also run on every pull request and push to `main`.
 
+The repository-owned discovery code is Dart. For a local read-only run, use
+`dart run watchers/watch.dart <platforms|peers|critical> --json`. Dependency
+locks remain the responsibility of the official OSV Scanner action rather
+than a home-grown scanner.
+
 GitHub may disable scheduled workflows after prolonged inactivity in a public
 repository. Dependabot remains the dependency backstop, and the same checks
 run again before the next change. If continuous monitoring during long

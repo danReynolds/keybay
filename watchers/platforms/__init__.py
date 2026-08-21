@@ -1,1 +1,0 @@
-"""Operating-system advisory watcher."""

@@ -200,15 +200,17 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
+      - run: dart pub get --enforce-lockfile
       - name: discover public advisory signals
         run: |
           echo '[]' > platform-findings.json
           echo '[]' > peer-findings.json
           if [ "$WATCHER_SELECTION" = all ] || [ "$WATCHER_SELECTION" = platforms ]; then
-            python3 -m watchers.platforms.watch --json > platform-findings.json
+            dart run watchers/watch.dart platforms --json > platform-findings.json
           fi
           if [ "$WATCHER_SELECTION" = all ] || [ "$WATCHER_SELECTION" = peers ]; then
-            python3 -m watchers.peers.watch --json > peer-findings.json
+            dart run watchers/watch.dart peers --json > peer-findings.json
           fi
           jq -s 'add' platform-findings.json peer-findings.json > advisory-findings.json
           jq -e '
@@ -321,8 +323,10 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
+      - run: dart pub get --enforce-lockfile
       - name: check reviewed security-critical pins
-        run: python3 -m watchers.critical.watch --json > critical-findings.json
+        run: dart run watchers/watch.dart critical --json > critical-findings.json
       - name: validate critical-dependency payload
         run: |
           jq -e '
