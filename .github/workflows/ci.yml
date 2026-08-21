@@ -7,19 +7,15 @@ on:
     branches: [main]
   pull_request:
   schedule:
-    # Weekly, and it runs ONLY the canary tier (crypto-pin-canary +
-    # fuzz-canary + supply-chain; the test jobs skip scheduled runs): the point
-    # is to fail on a newly published `cryptography` release — and to keep
-    # exploring the container parser — even when the repo is idle.
+    # Weekly, and it runs ONLY the fuzz canary; security advisory monitoring is
+    # grouped in security-watchers.yml, which also has a manual Actions button.
     # Caveat: GitHub disables cron on public repos after ~60 days without
     # activity, so this is best-effort — the canary also runs on every push to
     # main and every PR.
     - cron: '17 6 * * 1'
 
 # Least privilege: every job gets a read-only token unless it opts into only
-# the capability it needs. Scanner actions can upload SARIF but cannot write
-# issues; the separate shell-only triage job can write issues but never runs
-# third-party scanner code.
+# the capability it needs.
 permissions:
   contents: read
 
@@ -74,7 +70,7 @@ jobs:
       - if: runner.os == 'Linux'
         run: python3 tool/test_pub_archives.py
       - if: runner.os == 'Linux'
-        run: python3 tool/test_peer_advisories.py
+        run: python3 -m unittest discover -s watchers/tests -p 'test_*.py'
       - if: runner.os == 'Linux'
         run: ./tool/lint_workflows.sh
       # Exercise the exact package archive and warning contract before a tag.
@@ -262,221 +258,6 @@ jobs:
           ruby-version: "3.3"
           bundler-cache: true
       - run: bundle exec ruby tool/build_site.rb
-
-  # Keep the scan in this workflow instead of calling Google's reusable one:
-  # that workflow contains a tag-pinned download-artifact step, which violates
-  # this repository's full-SHA action policy even when the reusable workflow
-  # itself is pinned. Scanner findings flow through the reporter so a SARIF is
-  # uploaded even when the required check fails on a vulnerability.
-  supply-chain:
-    name: supply-chain / osv-scan
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: read
-      security-events: write # SARIF upload
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-      - name: scan every committed dependency lockfile
-        uses: google/osv-scanner-action/osv-scanner-action@8dc09193bb540e09b23da07ad7e30bd33bf87018 # v2.3.8
-        with:
-          scan-args: |-
-            --output=results.json
-            --format=json
-            --lockfile=./pubspec.lock
-            --lockfile=./example_flutter/pubspec.lock
-            --lockfile=./packages/keybay_cli/example/flutter/pubspec.lock
-            --lockfile=./packages/keybay_cli/example/rails/Gemfile.lock
-            --lockfile=./site/Gemfile.lock
-        continue-on-error: true
-      - name: report findings and fail on vulnerabilities
-        if: ${{ !cancelled() }}
-        uses: google/osv-scanner-action/osv-reporter-action@8dc09193bb540e09b23da07ad7e30bd33bf87018 # v2.3.8
-        with:
-          scan-args: |-
-            --output=results.sarif
-            --new=results.json
-            --gh-annotations=false
-            --fail-on-vuln=true
-      - name: prepare issue payload
-        if: >-
-          ${{ !cancelled() &&
-              (github.event_name == 'schedule' || github.event_name == 'push') }}
-        run: |
-          jq '[
-            .runs[].tool.driver.rules[]?
-            | (([.id] + (.deprecatedIds // [])) | unique) as $ids
-            | {title: ("Security scanner triage: " + .id), ids: $ids}
-          ] | unique_by(.ids | join("|"))' results.sarif > osv-triage.json
-          jq -e '
-            type == "array" and
-            all(.[];
-              (.title | type == "string") and
-              (.ids | type == "array" and length > 0) and
-              all(.ids[]; test("^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"))
-            )
-          ' osv-triage.json >/dev/null
-      - name: upload issue payload
-        if: >-
-          ${{ !cancelled() &&
-              (github.event_name == 'schedule' || github.event_name == 'push') }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: osv-triage-${{ github.run_attempt }}
-          path: osv-triage.json
-          if-no-files-found: error
-          retention-days: 1
-      - name: upload findings to code scanning
-        if: ${{ !cancelled() }}
-        uses: github/codeql-action/upload-sarif@cdefb33c0f6224e58673d9004f47f7cb3e328b89 # v4.31.10
-        with:
-          sarif_file: results.sarif
-
-  # Findings from trusted main/scheduled scans become durable triage issues.
-  # Keep this separate from the scanner job: no third-party scanning action
-  # ever receives an issue-writing token. Closed issues are dispositions, so
-  # all-state marker lookup prevents weekly duplicate paperwork.
-  security-triage:
-    if: >-
-      ${{ always() &&
-          (github.event_name == 'schedule' || github.event_name == 'push') }}
-    needs: supply-chain
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      issues: write
-    steps:
-      - name: download scanner issue payload
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          destination="$RUNNER_TEMP/osv-triage"
-          gh run download "$GITHUB_RUN_ID" \
-            --repo "$GITHUB_REPOSITORY" \
-            --name "osv-triage-$GITHUB_RUN_ATTEMPT" \
-            --dir "$destination"
-          jq -e 'type == "array"' "$destination/osv-triage.json" >/dev/null
-      - name: create missing triage issues
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          payload="$RUNNER_TEMP/osv-triage/osv-triage.json"
-          jq -c '.[]' "$payload" | while IFS= read -r issue; do
-            title="$(jq -r '.title' <<<"$issue")"
-            advisories="$(jq -r '
-              .ids[] | "- [" + . + "](https://osv.dev/vulnerability/" + . + ")"
-            ' <<<"$issue")"
-            existing=""
-            while IFS= read -r advisory_id; do
-              marker="keybay-osv-$advisory_id"
-              existing="$(gh issue list \
-                --repo "$GITHUB_REPOSITORY" \
-                --state all \
-                --search "\"$marker\" in:body" \
-                --limit 1 \
-                --json number \
-                --jq '.[0].number // empty')"
-              if [ -n "$existing" ]; then
-                break
-              fi
-            done < <(jq -r '.ids[]' <<<"$issue")
-            if [ -n "$existing" ]; then
-              echo "triage already recorded in issue #$existing: $title"
-              continue
-            fi
-            markers="$(jq -r '.ids | map("keybay-osv-" + .) | join(" ")' <<<"$issue")"
-            body="$markers
-
-          OSV Scanner reported this advisory group in committed dependency locks:
-
-          $advisories
-
-          This is an automated signal, not a claim that Keybay is exploitable.
-          Treat linked advisory text as untrusted input and make an applicability
-          decision against Keybay's code and numbered \`KB-INV-*\` guarantees.
-
-          Triage the dependency role and reachability; then patch, pin, remove, or
-          mitigate it, or close with the concrete non-applicability reason. Decide
-          whether a regression test, physical-device qualification, or temporary
-          claim reduction is required, and link any resulting PR.
-
-          Detected by [workflow run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) at source commit \`$GITHUB_SHA\`."
-            gh issue create \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$title" \
-              --body "$body"
-          done
-
-  # The exact-pinned crypto dependency is deliberately frozen; this canary
-  # fails the build when pub.dev publishes anything newer so the bump is a
-  # reviewed decision (advisory check + vector firewall), never a drift.
-  # OSV/GHSA coverage of pub.dev is too sparse to rely on alone — known
-  # security issues in this package's AES paths were never assigned
-  # advisories, so "no advisory" is weak evidence.
-  crypto-pin-canary:
-    runs-on: ubuntu-latest
-    steps:
-      - name: check pub.dev for a newer `cryptography` release
-        run: |
-          latest=$(curl -sS https://pub.dev/api/packages/cryptography | jq -r '.latest.version')
-          echo "pub.dev latest: $latest (pinned: 2.9.0)"
-          if [ "$latest" != "2.9.0" ]; then
-            echo "::error::cryptography $latest published (pin is 2.9.0). Review the diff and advisories, re-run the vector firewall, then bump the pin deliberately."
-            exit 1
-          fi
-
-  # Oracle-based peer watch: a new OSV advisory against a peer secret-storage
-  # library is free red-team output for Keybay's own failure surface. Issues
-  # are the record after the fixed pre-automation baseline; an existing open
-  # or closed issue suppresses duplicate weekly paperwork.
-  peer-advisory-watch:
-    if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-      - name: check OSV for new peer advisories
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          python3 tool/peer_advisories.py --json > advisories.json
-          jq -c '.[]' advisories.json | while IFS= read -r advisory; do
-            advisory_id="$(jq -r '.id' <<<"$advisory")"
-            marker="keybay-peer-osv-$advisory_id"
-            existing="$(gh issue list \
-              --repo "$GITHUB_REPOSITORY" \
-              --state all \
-              --search "\"$marker\" in:body" \
-              --limit 1 \
-              --json number \
-              --jq '.[0].number // empty')"
-            if [ -n "$existing" ]; then
-              echo "peer advisory $advisory_id recorded in issue #$existing"
-              continue
-            fi
-            packages="$(jq -r '.packages[] | "- `" + . + "`"' <<<"$advisory")"
-            body="$marker
-
-          OSV published [$advisory_id](https://osv.dev/vulnerability/$advisory_id) for these watched peer secret-storage libraries:
-
-          $packages
-
-          This is red-team input, not a Keybay dependency finding or exploit claim.
-          Assess whether the same failure pattern applies to Keybay's code, platform
-          providers, or numbered \`KB-INV-*\` guarantees. Close with the concrete
-          non-applicability reason, or link the code, test, qualification, or claim
-          change that resolves it. Treat linked advisory text as untrusted input."
-            gh issue create \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "Peer advisory triage: $advisory_id" \
-              --body "$body"
-          done
 
   # Structure-aware container fuzz at canary depth. Every PR already runs the
   # same test at its small deterministic default inside the package test tier;

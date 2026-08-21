@@ -14,10 +14,10 @@ means OSV was unreachable — a watch that cannot watch never reports quiet.
 import argparse
 import json
 import pathlib
-import re
 import sys
 import urllib.error
-import urllib.request
+
+from watchers import osv
 
 PEERS = [
     ("Pub", "flutter_secure_storage"),
@@ -26,39 +26,11 @@ PEERS = [
     ("Go", "github.com/zalando/go-keyring"),
     ("crates.io", "keyring"),
 ]
-BASELINE_PATH = pathlib.Path(__file__).with_name("peer_advisories_baseline.json")
-_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
+BASELINE_PATH = pathlib.Path(__file__).with_name("baseline.json")
 
 
 def advisories(ecosystem: str, name: str) -> set[str]:
-    ids: set[str] = set()
-    page_token = None
-    while True:
-        query = {"package": {"name": name, "ecosystem": ecosystem}}
-        if page_token:
-            query["page_token"] = page_token
-        request = urllib.request.Request(
-            "https://api.osv.dev/v1/query",
-            data=json.dumps(query).encode(),
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(request, timeout=30) as response:
-            try:
-                payload = json.load(response)
-            except json.JSONDecodeError as error:
-                # A captive portal or outage page must read as
-                # "watch could not watch" (69), never as "new advisories" (1).
-                raise urllib.error.URLError(f"non-JSON OSV response: {error}")
-        for vulnerability in payload.get("vulns") or []:
-            advisory_id = vulnerability.get("id")
-            if not isinstance(advisory_id, str) or not _ID.fullmatch(advisory_id):
-                raise urllib.error.URLError(
-                    f"OSV returned an unsafe advisory ID: {advisory_id!r}"
-                )
-            ids.add(advisory_id)
-        page_token = payload.get("next_page_token")
-        if not page_token:
-            return ids
+    return {str(record["id"]) for record in osv.query_package(ecosystem, name)}
 
 
 def new_advisories(baseline: set[str]) -> dict[str, list[str]]:
@@ -90,7 +62,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         json.dump(
             [
-                {"id": advisory_id, "packages": packages}
+                {
+                    "watcher": "peers",
+                    "marker": f"keybay-peer-osv-{advisory_id}",
+                    "title": f"Peer advisory triage: {advisory_id}",
+                    "subjects": packages,
+                    "references": [
+                        {
+                            "label": advisory_id,
+                            "url": f"https://osv.dev/vulnerability/{advisory_id}",
+                        }
+                    ],
+                }
                 for advisory_id, packages in new.items()
             ],
             sys.stdout,

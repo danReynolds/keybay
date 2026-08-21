@@ -75,7 +75,8 @@ Dependency advisories are scanned on every change and by scheduled monitoring;
 the runtime dependency set contains one exact-pinned third-party package
 (`cryptography`) and CI fails if its reviewed closure changes. Platform-guidance
 changes become issues and then code, test, or documentation changes when they
-are applicable.
+are applicable. The small watcher set and its issue methodology are defined in
+[watchers/README.md](watchers/README.md).
 
 Critical and High findings block a release. A release never claims what its
 evidence does not show.

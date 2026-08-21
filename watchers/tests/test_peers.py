@@ -2,17 +2,17 @@
 import unittest
 from unittest import mock
 
-import peer_advisories
+from watchers.peers import watch
 
 
 class PeerAdvisoriesTest(unittest.TestCase):
     def test_baseline_ids_are_suppressed(self):
         with mock.patch.object(
-            peer_advisories,
+            watch,
             "advisories",
             return_value={"OLD-1"},
         ):
-            self.assertEqual(peer_advisories.new_advisories({"OLD-1"}), {})
+            self.assertEqual(watch.new_advisories({"OLD-1"}), {})
 
     def test_new_id_groups_every_affected_peer(self):
         def found(ecosystem: str, name: str) -> set[str]:
@@ -20,8 +20,8 @@ class PeerAdvisoriesTest(unittest.TestCase):
                 return {"CVE-2026-1234"}
             return set()
 
-        with mock.patch.object(peer_advisories, "advisories", side_effect=found):
-            new = peer_advisories.new_advisories(set())
+        with mock.patch.object(watch, "advisories", side_effect=found):
+            new = watch.new_advisories(set())
 
         self.assertEqual(
             new,

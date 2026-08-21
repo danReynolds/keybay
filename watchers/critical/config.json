@@ -1,0 +1,10 @@
+{
+  "packages": [
+    {
+      "ecosystem": "Pub",
+      "name": "cryptography",
+      "reviewed_version": "2.9.0",
+      "url": "https://pub.dev/packages/cryptography"
+    }
+  ]
+}
