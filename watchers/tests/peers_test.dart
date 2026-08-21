@@ -3,6 +3,15 @@ import 'package:test/test.dart';
 import '../peers/watcher.dart';
 
 void main() {
+  test('peer set covers Flutter, React Native, and native ecosystems', () {
+    expect(
+      peers,
+      contains(
+        (ecosystem: 'npm', name: 'react-native-keychain'),
+      ),
+    );
+  });
+
   test('peer baseline IDs are suppressed', () async {
     final found = await newPeerAdvisories(
       <String>{'OLD-1'},

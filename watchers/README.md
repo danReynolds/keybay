@@ -9,7 +9,7 @@ applicability decision against Keybay's code, platform behavior, and numbered
 
 | Watcher | Definition | Why it exists |
 |---|---|---|
-| Dependencies | Every committed lockfile in `dependencies/lockfiles.txt`, scanned by OSV | Finds known vulnerabilities in code Keybay actually resolves |
+| Dependencies | Every reviewed dependency inventory in `dependencies/lockfiles.txt`, scanned by OSV | Finds known vulnerabilities in code Keybay actually resolves, including the Android harness runtime |
 | Platforms | Apple iOS/macOS releases, Android security bulletins, and Ubuntu/Debian advisories for the Linux credential-store trust chain | Finds OS-provider changes that package lockfiles cannot see |
 | Peers | A fixed set of comparable secret-storage libraries across Pub, PyPI, npm, Go, and Rust | Reuses peer failures as red-team input without treating peers as dependencies |
 | Critical dependencies | Exact reviewed pins listed in `critical/config.json` | Makes a new security-critical release visible where advisory coverage is too sparse to trust alone |
@@ -60,8 +60,8 @@ critical-pin checks also run on every pull request and push to `main`.
 
 The repository-owned discovery code is Dart. For a local read-only run, use
 `dart run watchers/watch.dart <platforms|peers|critical> --json`. Dependency
-locks remain the responsibility of the official OSV Scanner action rather
-than a home-grown scanner.
+inventories remain the responsibility of the official OSV Scanner action
+rather than a home-grown scanner.
 
 GitHub may disable scheduled workflows after prolonged inactivity in a public
 repository. Dependabot remains the dependency backstop, and the same checks

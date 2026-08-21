@@ -11,6 +11,7 @@ typedef AdvisoryLookup = Future<Set<String>> Function(
 const peers = <({String ecosystem, String name})>[
   (ecosystem: 'Pub', name: 'flutter_secure_storage'),
   (ecosystem: 'PyPI', name: 'keyring'),
+  (ecosystem: 'npm', name: 'react-native-keychain'),
   (ecosystem: 'npm', name: 'keytar'),
   (ecosystem: 'Go', name: 'github.com/zalando/go-keyring'),
   (ecosystem: 'crates.io', name: 'keyring'),

@@ -1,5 +1,6 @@
 pubspec.lock
 example_flutter/pubspec.lock
+example_flutter/android/app/gradle.lockfile
 packages/keybay_cli/example/flutter/pubspec.lock
 packages/keybay_cli/example/rails/Gemfile.lock
 site/Gemfile.lock

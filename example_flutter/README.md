@@ -64,9 +64,16 @@ The Gradle 9.1.0 wrapper is committed, its `-bin` distribution is SHA-256
 pinned in `android/gradle/wrapper/gradle-wrapper.properties`, and CI validates
 the wrapper JAR. `android/gradle/verification-metadata.xml` also makes Gradle
 reject plugin or dependency artifacts whose bytes differ from the reviewed
-checksums. When intentionally upgrading Android build dependencies, regenerate
-that metadata with `./gradlew --write-verification-metadata sha256 help` from
-`example_flutter/android` and review the checksum diff before committing it.
+checksums. `android/app/gradle.lockfile` separately pins the debug runtime graph
+installed by the device harness for reproducibility and vulnerability scanning.
+Flutter's ABI-specific engine artifacts are intentionally excluded from that
+lock because the exact Flutter SDK pin controls them and their resolved set
+varies between local ARM devices and CI's x86 emulator.
+When intentionally upgrading Android dependencies, refresh both from
+`example_flutter/android` with
+`./gradlew --write-verification-metadata sha256 --write-locks :app:assembleDebug`.
+Review the diff before committing, and retain the reviewed Linux AAPT checksum:
+a one-host regeneration must not remove the other CI host's platform artifact.
 
 ## Android backup exclusion
 
