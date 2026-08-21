@@ -23,6 +23,8 @@ guarantee.
 
 1. Query only named official or aggregate sources. A timeout, malformed
    response, or changed page shape fails the run; it never means "quiet."
+   Platform windows use advisory publication/release dates; later metadata
+   edits to historical Linux records do not turn them into new advisories.
 2. Emit identifiers, package/product names, and official links only. Advisory
    prose is untrusted input and is not copied into an issue.
 3. Create one issue per dependency, peer, or Linux advisory; one per Android
@@ -38,10 +40,14 @@ Physical-device work is triggered only when an advisory can materially affect
 runtime provider behavior or a security claim. It is not scheduled by these
 watchers.
 
-The peer baseline and platform `started_at` boundary record what predates this
-automation. Do not advance them during routine triage: changing either one can
-silently suppress public information. Updating a critical reviewed version is
-likewise part of the package-review change, not watcher maintenance.
+The peer baseline and platform `started_at` boundary record what predates
+ongoing automation. The platform `backfill_started_at` boundary defines one
+bounded bootstrap window: `[backfill_started_at, started_at)`. Its read-only
+output is reviewed in at most one roll-up issue each for Apple, Android, and
+Linux; it never changes the forward-looking boundary. Do not advance either
+boundary during routine triage: doing so can silently suppress public
+information. Updating a critical reviewed version is likewise part of the
+package-review change, not watcher maintenance.
 
 ## Running the watchers
 
@@ -59,9 +65,10 @@ branch cannot replace a watcher script and inherit its token. Dependency and
 critical-pin checks also run on every pull request and push to `main`.
 
 The repository-owned discovery code is Dart. For a local read-only run, use
-`dart run watchers/watch.dart <platforms|peers|critical> --json`. Dependency
-inventories remain the responsibility of the official OSV Scanner action
-rather than a home-grown scanner.
+`dart run watchers/watch.dart <platforms|peers|critical> --json`. Add
+`--backfill` to `platforms` to inspect the bootstrap window without writing
+issues. Dependency inventories remain the responsibility of the official OSV
+Scanner action rather than a home-grown scanner.
 
 GitHub may disable scheduled workflows after prolonged inactivity in a public
 repository. Dependabot remains the dependency backstop, and the same checks

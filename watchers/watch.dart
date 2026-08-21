@@ -15,10 +15,13 @@ Future<int> run(List<String> arguments) async {
       arguments.where((argument) => argument.startsWith('-')).toList();
   final selections =
       arguments.where((argument) => !argument.startsWith('-')).toList();
-  if (flags.any((flag) => flag != '--json') || selections.length != 1) {
+  const allowedFlags = <String>{'--backfill', '--json'};
+  if (flags.any((flag) => !allowedFlags.contains(flag)) ||
+      flags.toSet().length != flags.length ||
+      selections.length != 1) {
     stderr.writeln(
       'usage: dart run watchers/watch.dart '
-      '<platforms|peers|critical> [--json]',
+      '<platforms|peers|critical> [--json] [--backfill]',
     );
     return 64;
   }
@@ -27,12 +30,21 @@ Future<int> run(List<String> arguments) async {
     stderr.writeln('unknown watcher: $selection');
     return 64;
   }
+  final backfill = flags.contains('--backfill');
+  if (backfill && selection != 'platforms') {
+    stderr.writeln('--backfill is supported only by the platforms watcher');
+    return 64;
+  }
   final emitJson = flags.contains('--json');
   try {
     final found = switch (selection) {
-      'platforms' => await platformFindings(
-          await _readObject('platforms/config.json'),
-        ),
+      'platforms' => backfill
+          ? await platformBackfillFindings(
+              await _readObject('platforms/config.json'),
+            )
+          : await platformFindings(
+              await _readObject('platforms/config.json'),
+            ),
       'peers' => await peerFindings(
           peerBaseline(await _readObject('peers/baseline.json')),
         ),

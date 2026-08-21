@@ -48,6 +48,7 @@ List<WatcherFinding> appleFindings(
   String source, {
   required DateTime startedAt,
   required List<String> products,
+  DateTime? before,
 }) {
   final document = html.parse(source);
   final grouped = SplayTreeMap<String, Set<({String name, String url})>>();
@@ -65,7 +66,8 @@ List<WatcherFinding> appleFindings(
     }
     sawSupportedProductRow = true;
     final releaseDate = _parseAppleDate(dateText);
-    if (releaseDate.isBefore(_date(startedAt))) {
+    if (releaseDate.isBefore(_date(startedAt)) ||
+        (before != null && !releaseDate.isBefore(_date(before)))) {
       continue;
     }
     String? official;
@@ -104,6 +106,7 @@ List<WatcherFinding> androidFindings(
   String source, {
   required Uri indexUri,
   required DateTime startedAt,
+  DateTime? before,
 }) {
   final document = html.parse(source);
   final dates = SplayTreeSet<String>();
@@ -123,7 +126,8 @@ List<WatcherFinding> androidFindings(
     }
     sawBulletinLink = true;
     final date = _parseIsoDate(match.group(1)!);
-    if (!date.isBefore(_date(startedAt))) {
+    if (!date.isBefore(_date(startedAt)) &&
+        (before == null || date.isBefore(_date(before)))) {
       dates.add(_dateOnly(date));
     }
   }
@@ -151,6 +155,7 @@ Future<List<WatcherFinding>> linuxFindings({
   required DateTime startedAt,
   required List<String> ecosystems,
   required List<String> packages,
+  DateTime? before,
   OsvQuery? query,
 }) async {
   final lookup = query ?? queryPackage;
@@ -158,7 +163,9 @@ Future<List<WatcherFinding>> linuxFindings({
   for (final ecosystem in ecosystems) {
     for (final package in packages) {
       for (final record in await lookup(ecosystem, package)) {
-        if (_recordTime(record).isBefore(startedAt)) {
+        final publishedAt = _publishedAt(record);
+        if (publishedAt.isBefore(startedAt) ||
+            (before != null && !publishedAt.isBefore(before))) {
           continue;
         }
         final canonical = _canonicalLinuxId(record);
@@ -188,11 +195,42 @@ Future<List<WatcherFinding>> platformFindings(
   TextFetcher? fetch,
   OsvQuery? query,
 }) async {
-  final startedAtValue = config['started_at'];
-  if (startedAtValue is! String) {
-    throw const FormatException('platform started_at must be a timestamp');
+  return _platformFindingsBetween(
+    config,
+    startedAt: _configTimestamp(config, 'started_at'),
+    fetch: fetch,
+    query: query,
+  );
+}
+
+Future<List<WatcherFinding>> platformBackfillFindings(
+  Map<String, Object?> config, {
+  TextFetcher? fetch,
+  OsvQuery? query,
+}) async {
+  final startedAt = _configTimestamp(config, 'backfill_started_at');
+  final before = _configTimestamp(config, 'started_at');
+  if (!startedAt.isBefore(before)) {
+    throw const FormatException(
+      'platform backfill_started_at must precede started_at',
+    );
   }
-  final startedAt = parseTimestamp(startedAtValue);
+  return _platformFindingsBetween(
+    config,
+    startedAt: startedAt,
+    before: before,
+    fetch: fetch,
+    query: query,
+  );
+}
+
+Future<List<WatcherFinding>> _platformFindingsBetween(
+  Map<String, Object?> config, {
+  required DateTime startedAt,
+  DateTime? before,
+  TextFetcher? fetch,
+  OsvQuery? query,
+}) async {
   final apple = _object(config['apple'], 'Apple source definition');
   final android = _object(config['android'], 'Android source definition');
   final linux = _object(config['linux'], 'Linux source definition');
@@ -215,21 +253,32 @@ Future<List<WatcherFinding>> platformFindings(
       await load(appleUri),
       startedAt: startedAt,
       products: products,
+      before: before,
     ),
     ...androidFindings(
       await load(androidUri),
       indexUri: androidUri,
       startedAt: startedAt,
+      before: before,
     ),
     ...await linuxFindings(
       startedAt: startedAt,
       ecosystems: ecosystems,
       packages: packages,
+      before: before,
       query: query,
     ),
   ];
   result.sort((left, right) => left.marker.compareTo(right.marker));
   return result;
+}
+
+DateTime _configTimestamp(Map<String, Object?> config, String field) {
+  final value = config[field];
+  if (value is! String) {
+    throw FormatException('platform $field must be a timestamp');
+  }
+  return parseTimestamp(value);
 }
 
 WatcherFinding _appleFinding(
@@ -259,19 +308,12 @@ WatcherFinding _appleFinding(
   );
 }
 
-DateTime _recordTime(JsonObject record) {
-  final parsed = <DateTime>[];
-  for (final field in <String>['published', 'modified']) {
-    final value = record[field];
-    if (value is String) {
-      parsed.add(parseTimestamp(value));
-    }
+DateTime _publishedAt(JsonObject record) {
+  final value = record['published'];
+  if (value is! String) {
+    throw FormatException("OSV record ${record['id']} had no published time");
   }
-  if (parsed.isEmpty) {
-    throw FormatException("OSV record ${record['id']} had no timestamp");
-  }
-  parsed.sort();
-  return parsed.last;
+  return parseTimestamp(value);
 }
 
 String _canonicalLinuxId(JsonObject record) {

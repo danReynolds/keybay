@@ -77,6 +77,7 @@ void main() {
     };
     final debian = <String, Object?>{
       'id': 'DEBIAN-CVE-2026-12345',
+      'published': '2026-09-01T00:00:00Z',
       'modified': '2026-09-02T00:00:00Z',
       'aliases': <Object?>['CVE-2026-12345'],
     };
@@ -99,5 +100,92 @@ void main() {
       'Debian/gnome-keyring',
       'Ubuntu/gnome-keyring',
     ]);
+  });
+
+  test('Linux does not treat edits to old records as new advisories', () async {
+    final found = await linuxFindings(
+      startedAt: start,
+      ecosystems: const <String>['Debian'],
+      packages: const <String>['dbus'],
+      query: (ecosystem, package) async => <Map<String, Object?>>[
+        <String, Object?>{
+          'id': 'DEBIAN-CVE-2014-3477',
+          'published': '2014-07-01T00:00:00Z',
+          'modified': '2026-09-01T00:00:00Z',
+          'aliases': <Object?>['CVE-2014-3477'],
+        },
+      ],
+    );
+
+    expect(found, isEmpty);
+  });
+
+  test('platform backfill is bounded before ongoing monitoring', () async {
+    final found = await platformBackfillFindings(
+      <String, Object?>{
+        'backfill_started_at': '2025-08-21T00:00:00Z',
+        'started_at': '2026-08-21T00:00:00Z',
+        'apple': <String, Object?>{
+          'index': 'https://support.apple.com/en-us/100100',
+          'products': <String>['iOS'],
+        },
+        'android': <String, Object?>{
+          'index': 'https://source.android.com/docs/security/bulletin',
+        },
+        'linux': <String, Object?>{
+          'ecosystems': <String>['Ubuntu'],
+          'packages': <String>['libsecret'],
+        },
+      },
+      fetch: (uri) async {
+        if (uri.host == 'support.apple.com') {
+          return '''
+            <table>
+              <tr><td><a href="https://support.apple.com/en-us/123455">iOS 25.9</a></td><td>iPhone</td><td>20 Aug 2025</td></tr>
+              <tr><td><a href="https://support.apple.com/en-us/123456">iOS 26.0</a></td><td>iPhone</td><td>21 Aug 2025</td></tr>
+              <tr><td><a href="https://support.apple.com/en-us/123457">iOS 27.0</a></td><td>iPhone</td><td>21 Aug 2026</td></tr>
+            </table>
+          ''';
+        }
+        return '''
+          <a href="/docs/security/bulletin/2025-08-20">Before</a>
+          <a href="/docs/security/bulletin/2025-08-21">Included</a>
+          <a href="/docs/security/bulletin/2026-08-21">Ongoing</a>
+        ''';
+      },
+      query: (ecosystem, package) async => <Map<String, Object?>>[
+        <String, Object?>{
+          'id': 'UBUNTU-CVE-2025-12345',
+          'published': '2025-08-21T00:00:00Z',
+          'aliases': <Object?>['CVE-2025-12345'],
+        },
+        <String, Object?>{
+          'id': 'UBUNTU-CVE-2026-12345',
+          'published': '2026-08-21T00:00:00Z',
+          'aliases': <Object?>['CVE-2026-12345'],
+        },
+      ],
+    );
+
+    expect(found, hasLength(3));
+    final markers = found.map((item) => item.marker).toList();
+    expect(
+      markers.where(
+        (marker) => marker.startsWith('keybay-platform-apple-2025-08-21-'),
+      ),
+      hasLength(1),
+    );
+    expect(markers, contains('keybay-platform-android-2025-08-21'));
+    expect(markers, contains('keybay-platform-linux-CVE-2025-12345'));
+  });
+
+  test('platform backfill requires a non-empty earlier window', () {
+    expect(
+      () => platformBackfillFindings(<String, Object?>{
+        'backfill_started_at': '2026-08-21T00:00:00Z',
+        'started_at': '2026-08-21T00:00:00Z',
+      }),
+      throwsFormatException,
+    );
   });
 }
