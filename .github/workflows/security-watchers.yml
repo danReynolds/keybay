@@ -101,7 +101,7 @@ jobs:
           ' osv-triage.json >/dev/null
       - name: upload issue payload
         if: ${{ !cancelled() && github.event_name != 'pull_request' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: osv-triage-${{ github.run_attempt }}
           path: osv-triage.json
@@ -233,7 +233,7 @@ jobs:
             )
           ' advisory-findings.json >/dev/null
       - name: upload public advisory payload
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: advisory-findings-${{ github.run_attempt }}
           path: advisory-findings.json
@@ -342,7 +342,7 @@ jobs:
           ' critical-findings.json >/dev/null
       - name: upload critical-dependency payload
         if: ${{ github.event_name != 'pull_request' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: critical-findings-${{ github.run_attempt }}
           path: critical-findings.json
