@@ -4,6 +4,17 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+dependencies {
+    constraints {
+        implementation("com.google.guava:guava:33.7.1-android") {
+            because("Flutter integration_test otherwise resolves vulnerable Guava 28.1")
+        }
+        implementation("junit:junit:4.13.2") {
+            because("Flutter integration_test otherwise resolves vulnerable JUnit 4.12")
+        }
+    }
+}
+
 android {
     namespace = "dev.keybay.securityharness"
     compileSdk = flutter.compileSdkVersion
@@ -45,4 +56,17 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencyLocking {
+    // Flutter engine artifacts vary by build host and device ABI. They are
+    // pinned by the exact Flutter SDK in CI, so keep this lock focused on the
+    // portable third-party runtime graph that the vulnerability watcher scans.
+    ignoredDependencies.add("io.flutter:*")
+}
+
+configurations.configureEach {
+    if (name == "debugRuntimeClasspath") {
+        resolutionStrategy.activateDependencyLocking()
+    }
 }

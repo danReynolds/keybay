@@ -51,13 +51,10 @@ List<WatcherFinding> appleFindings(
 }) {
   final document = html.parse(source);
   final grouped = SplayTreeMap<String, Set<({String name, String url})>>();
-  var sawTableRow = false;
+  var sawSupportedProductRow = false;
   for (final row in document.querySelectorAll('tr')) {
     final cells =
         row.children.where((element) => element.localName == 'td').toList();
-    if (cells.isNotEmpty) {
-      sawTableRow = true;
-    }
     if (cells.length != 3) {
       continue;
     }
@@ -66,6 +63,7 @@ List<WatcherFinding> appleFindings(
     if (!products.any(name.contains)) {
       continue;
     }
+    sawSupportedProductRow = true;
     final releaseDate = _parseAppleDate(dateText);
     if (releaseDate.isBefore(_date(startedAt))) {
       continue;
@@ -91,8 +89,10 @@ List<WatcherFinding> appleFindings(
             _dateOnly(releaseDate), () => <({String name, String url})>{})
         .add((name: name, url: official));
   }
-  if (!sawTableRow) {
-    throw const FormatException('Apple security table had no rows');
+  if (!sawSupportedProductRow) {
+    throw const FormatException(
+      'Apple security table had no supported product rows',
+    );
   }
 
   return <WatcherFinding>[

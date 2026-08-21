@@ -25,6 +25,21 @@ void main() {
     expect(found.single.subjects, <String>['iOS 27.0', 'macOS 27.0']);
   });
 
+  test('Apple rejects a table with no supported product rows', () {
+    const source = '''
+      <table><tr><td><a href="https://support.apple.com/en-us/123456">watchOS 27.0</a></td><td>Watch</td><td>01 Sep 2026</td></tr></table>
+    ''';
+
+    expect(
+      () => appleFindings(
+        source,
+        startedAt: start,
+        products: const <String>['iOS', 'iPadOS', 'macOS'],
+      ),
+      throwsFormatException,
+    );
+  });
+
   test('Android finds only new bulletins', () {
     const source = '''
       <a href="/docs/security/bulletin/2026-08-01">August</a>
