@@ -1,5 +1,7 @@
 .dart_tool/
 .packages
+__pycache__/
+*.pyc
 build/
 # Local release-asset staging.
 dist/

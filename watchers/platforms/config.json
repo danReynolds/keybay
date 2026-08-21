@@ -1,0 +1,25 @@
+{
+  "started_at": "2026-08-21T00:00:00Z",
+  "apple": {
+    "index": "https://support.apple.com/en-us/100100",
+    "products": [
+      "iOS",
+      "iPadOS",
+      "macOS",
+      "Background Security Improvements"
+    ]
+  },
+  "android": {
+    "index": "https://source.android.com/docs/security/bulletin"
+  },
+  "linux": {
+    "ecosystems": ["Ubuntu", "Debian"],
+    "packages": [
+      "gnome-keyring",
+      "libsecret",
+      "kwallet-kf5",
+      "kf6-kwallet",
+      "dbus"
+    ]
+  }
+}
