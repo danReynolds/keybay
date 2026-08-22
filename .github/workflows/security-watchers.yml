@@ -90,16 +90,17 @@ jobs:
       contents: read
     env:
       WATCHER_SELECTION: ${{ inputs.watcher || 'all' }}
-      INPUT_DIRECTORY: watcher-inputs
     steps:
       - name: initialize explicit incomplete results
         run: |
-          mkdir -p "$INPUT_DIRECTORY"
+          input_directory="$RUNNER_TEMP/watcher-inputs"
+          echo "INPUT_DIRECTORY=$input_directory" >> "$GITHUB_ENV"
+          mkdir -p "$input_directory"
           for watcher in dependencies platforms peers; do
             jq -n \
               --arg watcher "$watcher" \
               '{watcher: $watcher, status: "not_run", findings: [], error: "Watcher step did not complete."}' \
-              > "$INPUT_DIRECTORY/$watcher.json"
+              > "$input_directory/$watcher.json"
           done
       - name: check out the reviewed default branch
         id: checkout
@@ -293,7 +294,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: watcher-report-inputs-${{ github.run_attempt }}
-          path: watcher-inputs
+          path: ${{ runner.temp }}/watcher-inputs
           if-no-files-found: error
           retention-days: 2
       - name: make incomplete discovery visible

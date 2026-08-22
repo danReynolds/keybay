@@ -17,6 +17,12 @@ void main() {
     expect(discovery, isNot(contains('issues: write')));
     expect(discovery, isNot(contains('pull-requests: write')));
     expect(discovery, contains('upload normalized discovery inputs'));
+    expect(
+      discovery,
+      contains(r'INPUT_DIRECTORY=$input_directory'),
+      reason: 'checkout must not remove the initialized input directory',
+    );
+    expect(discovery, contains(r'path: ${{ runner.temp }}/watcher-inputs'));
   });
 
   test('stager can only push the validated report branch', () {
