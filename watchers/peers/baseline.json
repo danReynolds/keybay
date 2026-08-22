@@ -1,5 +1,5 @@
 {
-  "comment": "Reviewed advisory IDs predating issue-based triage. Keep this historical baseline fixed; GitHub issues record later applicability decisions.",
+  "comment": "Reviewed advisory IDs predating report-based triage. Keep this historical baseline fixed; assessments record later applicability decisions.",
   "baseline": [
     "GHSA-8867-vpm3-g98g",
     "GHSA-p3h7-3c45-qj4v",

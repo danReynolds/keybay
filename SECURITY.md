@@ -38,16 +38,15 @@ properties decompose into: [doc/design.md](doc/design.md).
 
 Every change runs against the real providers: login Keychain, GNOME Keyring,
 Android emulators, and the iOS simulator. Hermetic tests, dependency scans,
-fresh-seed fuzzing, and repository-configuration checks run in CI. Results live
-where they are produced — Actions and code scanning — rather than being copied
-into a second assurance ledger.
+fresh-seed fuzzing, and repository-configuration checks run in CI.
 
 The operating model is event-driven. A new advisory, security-shaped issue,
 relevant implementation or platform change, or release review is triaged
 against the numbered guarantees in [doc/design.md](doc/design.md). Actionable
-or uncertain signals are tracked as GitHub issues. A quiet scanner creates no
-maintainer paperwork; a scanner that cannot complete is not treated as a clean
-result.
+or uncertain signals are tracked as GitHub issues. Weekly and on-demand public
+source watchers keep one compact [raw report and separate Codex
+assessment](watchers/reports/SUMMARY.md) per run. A quiet scanner creates no
+issue; a scanner that cannot complete is recorded as failed, never clean.
 
 Physical and signed-host scenarios run when a claim depends on affected OS,
 hardware, entitlement, lifecycle, or provider behavior. Their reports identify
@@ -56,9 +55,8 @@ They are scoped observations, not release certificates, and a release alone
 does not require them. Missing evidence narrows the affected qualification
 claim rather than becoming a pass.
 
-Releases are signed with a key held in this machine's Secure Enclave, which
-cannot be copied off it and cannot be used without the maintainer's
-fingerprint. To check a release yourself:
+Releases are signed with a maintainer-controlled SSH key. To check a release
+yourself:
 
 ```sh
 git verify-tag v<version>          # signed by the key published at
@@ -73,10 +71,11 @@ those exact bytes.
 
 Dependency advisories are scanned on every change and by scheduled monitoring;
 the runtime dependency set contains one exact-pinned third-party package
-(`cryptography`) and CI fails if its reviewed closure changes. Platform-guidance
-changes become issues and then code, test, or documentation changes when they
-are applicable. The small watcher set and its issue methodology are defined in
-[watchers/README.md](watchers/README.md).
+(`cryptography`) whose new releases receive explicit review. Applicable public
+signals become issues and then code, test, device qualification, or claim
+changes. Plausible undisclosed Keybay vulnerabilities move to private draft
+security advisories. The small watcher set and report methodology are defined
+in [watchers/README.md](watchers/README.md).
 
 Critical and High findings block a release. A release never claims what its
 evidence does not show.
