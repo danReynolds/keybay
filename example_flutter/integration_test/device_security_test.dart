@@ -12,6 +12,8 @@ import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:keybay/keybay.dart';
+import 'package:keybay/src/app_paths.dart';
+import 'package:keybay/src/ffi/jni.dart';
 
 /// Required for Android runs because the expected result belongs to the test
 /// environment, not to Keybay's detection code. Use `hardware` for a physical
@@ -566,20 +568,28 @@ Future<void> _resetAndroidStore(String appId) async {
   if (paths.directory.existsSync()) {
     paths.directory.deleteSync(recursive: true);
   }
+  final legacyDirectory = Directory('${_androidDataDir()}/files/$appId');
+  if (legacyDirectory.existsSync()) {
+    legacyDirectory.deleteSync(recursive: true);
+  }
   await _deleteAndroidAlias(appId);
 }
 
 ({Directory directory, File container, File blob}) _androidStorePaths(
   String appId,
 ) {
-  final dataDir = Directory.systemTemp.parent.path;
-  final directory = Directory('$dataDir/files/$appId');
+  final dataDir = _androidDataDir();
+  final directory = Directory('$dataDir/no_backup/$appId');
   return (
     directory: directory,
     container: File('${directory.path}/secrets.enc'),
     blob: File('${directory.path}/store-key.wrapped'),
   );
 }
+
+String _androidDataDir() => androidDataDirFromTmpdir(
+      Jni.instance().systemProperty('java.io.tmpdir'),
+    );
 
 bool _containsBytes(List<int> haystack, List<int> needle) {
   if (needle.isEmpty) return true;

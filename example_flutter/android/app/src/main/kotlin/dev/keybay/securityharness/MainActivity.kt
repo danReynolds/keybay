@@ -33,6 +33,7 @@ class MainActivity : FlutterActivity() {
         try {
             when (call.method) {
                 "keyInfo" -> result.success(readKeyInfo(testAlias(call)))
+                "noBackupFilesDir" -> result.success(noBackupFilesDir.absolutePath)
                 "deleteAlias" -> {
                     requireDebuggable()
                     result.success(deleteAlias(testAlias(call)))

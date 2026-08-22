@@ -182,6 +182,26 @@ final class MigrationRequired extends SecretStoreException {
   final StorageScheme to;
 }
 
+/// Both the legacy and current locations for one store contain state, so an
+/// automatic location migration cannot choose a winner without risking data
+/// loss. This is distinct from [MigrationRequired]: the storage scheme did not
+/// change, but two filesystem locations now make store identity ambiguous.
+final class StoreMigrationConflict extends SecretStoreException {
+  StoreMigrationConflict({
+    required this.appId,
+    required this.legacyPath,
+    required this.currentPath,
+  }) : super(
+          'store_migration_conflict',
+          'store for "$appId" has state at both "$legacyPath" and '
+              '"$currentPath"; refusing to choose or overwrite either',
+        );
+
+  final String appId;
+  final String legacyPath;
+  final String currentPath;
+}
+
 /// The signed app now selects a different Data Protection Keychain access
 /// group than the one under which this macOS store was first used. Continuing
 /// would present a new empty namespace while the old items remain elsewhere.

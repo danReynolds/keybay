@@ -87,9 +87,9 @@ git verify-tag "keybay_cli-v$VERSION"
 
 Verifying the tag needs the maintainer's public signing key in an
 allowed-signers file; it is published at
-[github.com/danReynolds.keys](https://github.com/danReynolds.keys). The
-signing key is held in a Secure Enclave: it cannot be copied off the release
-machine, and cannot sign without the maintainer's fingerprint.
+[github.com/danReynolds.keys](https://github.com/danReynolds.keys). Verification
+establishes that the tag was signed by that maintainer-controlled key; no claim
+about the private key's storage is required to perform the check.
 
 The exact archive, signature, checksum, notarization, and Homebrew verification
 commands will be documented from the first hardened rk release's actual public

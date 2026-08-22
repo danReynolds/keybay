@@ -6,6 +6,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
   schedule:
     # Weekly, and it runs ONLY the fuzz canary; security advisory monitoring is
     # grouped in security-watchers.yml, which also has a manual Actions button.
@@ -23,6 +24,36 @@ permissions:
 # a hijacked tag is a code-execution path into CI). The trailing comment
 # records the tag the SHA corresponded to when pinned.
 jobs:
+  # This cheap, always-present check decides which real-provider jobs are
+  # material to the change. Version changes and core implementation changes run
+  # every supported provider; provider-specific implementation/harness changes
+  # run only their affected lanes. A manual run exercises all providers.
+  provider-impact:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    outputs:
+      macos: ${{ steps.impact.outputs.macos }}
+      linux: ${{ steps.impact.outputs.linux }}
+      android: ${{ steps.impact.outputs.android }}
+      ios: ${{ steps.impact.outputs.ios }}
+      reason: ${{ steps.impact.outputs.reason }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
+      - id: impact
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            dart tool/ci_provider_impact.dart --all >> "$GITHUB_OUTPUT"
+          else
+            dart tool/ci_provider_impact.dart \
+              --base "$BASE_SHA" --head "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
   gradle-wrapper-validation:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
@@ -99,7 +130,8 @@ jobs:
       - run: KEYBAY_SKIP_DART_INSTALL=1 ./tool/test_cli.sh
 
   integration-macos:
-    if: github.event_name != 'schedule'
+    needs: provider-impact
+    if: needs.provider-impact.outputs.macos == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -115,7 +147,8 @@ jobs:
       - run: KEYBAY_QUICKSTART=1 ./tool/test_cli_quickstart.sh
 
   integration-linux:
-    if: github.event_name != 'schedule'
+    needs: provider-impact
+    if: needs.provider-impact.outputs.linux == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -179,7 +212,8 @@ jobs:
   # Continuous integration checks, not physical-device qualification and do
   # not issue physical qualification reports.
   integration-android:
-    if: github.event_name != 'schedule'
+    needs: provider-impact
+    if: needs.provider-impact.outputs.android == 'true'
     name: integration-android (API ${{ matrix.api-level }})
     runs-on: ubuntu-latest
     # The emulator can stall the same way the simulator does. Boot is slower
@@ -214,7 +248,8 @@ jobs:
           script: ./tool/test_mobile_ci.sh android
 
   integration-ios:
-    if: github.event_name != 'schedule'
+    needs: provider-impact
+    if: needs.provider-impact.outputs.ios == 'true'
     # Keep the simulator gate on the stable Xcode 16 line. Xcode 26 hosted
     # runners have exhibited intermittent xcodebuild deadlocks, which can turn
     # an otherwise deterministic security gate into an unbounded hang.

@@ -52,7 +52,7 @@ final class SecretStorage {
   ///   `${XDG_DATA_HOME:-~/.local/share}/<appId>/`, its key in the Secret
   ///   Service (GNOME Keyring / KWallet).
   /// - **Android (12 / API 31+)**: the same encrypted file in the app-private
-  ///   files dir, its key wrapped by an AES-256-GCM key created in
+  ///   no-backup dir, its key wrapped by an AES-256-GCM key created in
   ///   **Android Keystore**. StrongBox is requested and the actual provider
   ///   level is inspected; pure `dart:ffi`, no plugin. Older Android throws
   ///   [KeystoreUnreachable].
@@ -183,12 +183,14 @@ SecretBackend _resolveBackend(String appId) {
     return _encryptedFileScheme(appId, SecretToolApi());
   }
   if (Platform.isAndroid) {
-    // Encrypted file in the app-private files dir; its key wrapped by an
+    // Encrypted file in the app-private no-backup dir; its key wrapped by an
     // Android Keystore key (API 31+ — Jni.instance() fails closed below that).
-    // The provider level is measured; no Context is needed on this path.
+    // Move the complete legacy directory before constructing either path-bound
+    // backend component. The provider level is measured; no Context is needed.
     final jni = Jni.instance();
-    final containerPath = androidContainerPathFor(appId,
-        tmpdir: jni.systemProperty('java.io.tmpdir'));
+    final tmpdir = jni.systemProperty('java.io.tmpdir');
+    migrateLegacyAndroidStore(appId, tmpdir: tmpdir);
+    final containerPath = androidContainerPathFor(appId, tmpdir: tmpdir);
     final dir = containerPath.substring(0, containerPath.lastIndexOf('/'));
     return EncryptedFileBackend(
       path: containerPath,

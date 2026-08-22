@@ -1,11 +1,13 @@
 @Tags(['unit'])
 library;
 
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:keybay/src/android_keystore_key_source.dart';
 import 'package:keybay/src/app_paths.dart';
 import 'package:keybay/src/errors.dart';
+import 'package:keybay/src/ffi/posix_file.dart';
 import 'package:test/test.dart';
 
 // The JNI/Keystore choreography itself is covered by the emulator tier
@@ -80,7 +82,13 @@ void main() {
       expect(
           androidContainerPathFor('com.example.app',
               tmpdir: '/data/user/0/com.example.app/cache'),
+          '/data/user/0/com.example.app/no_backup/com.example.app/secrets.enc');
+      expect(
+          androidLegacyContainerPathFor('com.example.app',
+              tmpdir: '/data/user/0/com.example.app/cache'),
           '/data/user/0/com.example.app/files/com.example.app/secrets.enc');
+      expect(androidNoBackupDirFromTmpdir('/data/user/0/com.example.app/cache'),
+          '/data/user/0/com.example.app/no_backup');
     });
 
     test('anything surprising fails closed instead of guessing', () {
@@ -95,6 +103,71 @@ void main() {
         expect(() => androidDataDirFromTmpdir(bad),
             throwsA(isA<KeystoreUnreachable>()),
             reason: '"$bad"');
+      }
+    });
+
+    test('atomically migrates the complete legacy directory', () {
+      final root = Directory.systemTemp.createTempSync('keybay-android-path-');
+      const fs = SecureFileSystem();
+      try {
+        final tmpdir = '${root.path}/data/cache';
+        Directory(tmpdir).createSync(recursive: true);
+        final legacyContainer =
+            androidLegacyContainerPathFor('com.example.app', tmpdir: tmpdir);
+        final legacyDir = File(legacyContainer).parent.path;
+        fs.ensurePrivateDirSync(legacyDir);
+        fs.writeAtomicSync(legacyContainer, bytes([1, 2, 3]));
+        fs.writeAtomicSync('$legacyDir/store-key.wrapped', bytes([4, 5, 6]));
+        fs.writeAtomicSync('$legacyContainer.lock', Uint8List(0));
+
+        migrateLegacyAndroidStore('com.example.app', tmpdir: tmpdir);
+
+        final currentContainer =
+            androidContainerPathFor('com.example.app', tmpdir: tmpdir);
+        final currentDir = File(currentContainer).parent.path;
+        expect(Directory(legacyDir).existsSync(), isFalse);
+        expect(File(currentContainer).readAsBytesSync(), [1, 2, 3]);
+        expect(
+            File('$currentDir/store-key.wrapped').readAsBytesSync(), [4, 5, 6]);
+        expect(File('$currentContainer.lock').existsSync(), isTrue);
+        expect(fs.verifyPrivateDirSync(currentDir), isTrue);
+
+        // Resolution is idempotent after the move.
+        migrateLegacyAndroidStore('com.example.app', tmpdir: tmpdir);
+      } finally {
+        root.deleteSync(recursive: true);
+      }
+    });
+
+    test('two populated locations fail closed without changing either', () {
+      final root = Directory.systemTemp.createTempSync('keybay-android-path-');
+      const fs = SecureFileSystem();
+      try {
+        final tmpdir = '${root.path}/data/cache';
+        Directory(tmpdir).createSync(recursive: true);
+        final legacyContainer =
+            androidLegacyContainerPathFor('com.example.app', tmpdir: tmpdir);
+        final currentContainer =
+            androidContainerPathFor('com.example.app', tmpdir: tmpdir);
+        fs.ensurePrivateDirSync(File(legacyContainer).parent.path);
+        fs.ensurePrivateDirSync(File(currentContainer).parent.path);
+        fs.writeAtomicSync(legacyContainer, bytes([1]));
+        fs.writeAtomicSync(currentContainer, bytes([2]));
+
+        expect(
+          () => migrateLegacyAndroidStore('com.example.app', tmpdir: tmpdir),
+          throwsA(
+            isA<StoreMigrationConflict>()
+                .having((e) => e.legacyPath, 'legacyPath',
+                    File(legacyContainer).parent.path)
+                .having((e) => e.currentPath, 'currentPath',
+                    File(currentContainer).parent.path),
+          ),
+        );
+        expect(File(legacyContainer).readAsBytesSync(), [1]);
+        expect(File(currentContainer).readAsBytesSync(), [2]);
+      } finally {
+        root.deleteSync(recursive: true);
       }
     });
   });

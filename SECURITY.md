@@ -36,9 +36,14 @@ properties decompose into: [doc/design.md](doc/design.md).
 
 ## How it stays that way
 
-Every change runs against the real providers: login Keychain, GNOME Keyring,
-Android emulators, and the iOS simulator. Hermetic tests, dependency scans,
-fresh-seed fuzzing, and repository-configuration checks run in CI.
+Every change runs the hermetic tests, analysis, dependency scans, and
+repository checks. A package version change or shared core change runs every
+supported provider lane. Provider-specific implementation or harness changes
+run the affected login Keychain, GNOME Keyring, Android-emulator, and
+iOS-simulator lanes. Documentation-only and unrelated tooling changes do not
+spend those runners. All provider lanes can also be started on demand from the
+CI workflow's **Run workflow** button. Fresh-seed fuzzing runs on its scheduled
+canary.
 
 The operating model is event-driven. A new advisory, security-shaped issue,
 relevant implementation or platform change, or release review is triaged
@@ -95,6 +100,7 @@ decision recorded, with rationale, in [doc/design.md](doc/design.md).
 
 Use GitHub [private vulnerability reporting](https://github.com/danReynolds/keybay/security/advisories/new)
 or email **me@danreynolds.ca**. Do not open a public issue for an undisclosed
-security bug. Expect acknowledgement within three business days and an
-initial severity assessment within ten. Security fixes target the latest
-minor release and `main`.
+security bug. Reports go directly to the maintainer; response times are
+best-effort because Keybay currently has one maintainer. Critical and High
+findings block the next release. Security fixes target the latest minor release
+and `main`.

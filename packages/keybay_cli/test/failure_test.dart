@@ -19,6 +19,12 @@ void main() {
           from: StorageScheme.encryptedFile,
           to: StorageScheme.nativeItems,
         ): 69,
+        StoreMigrationConflict(
+          appId: 'keybay-cli',
+          legacyPath: '/tmp/legacy',
+          currentPath: '/tmp/current',
+        ): 69,
+        KeychainAccessGroupChanged('keybay-cli'): 69,
         StoreTooLarge(200, 100): 69,
         SecureFileError('open', '/tmp/container', 13): 69,
         StoreBusy('/tmp/store.lock', const Duration(seconds: 10)): 75,

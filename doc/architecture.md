@@ -122,7 +122,7 @@ reference; the shape summary:
 | Linux — desktop | encrypted file | Secret Service (`secret-tool`) | **shipped** |
 | Windows | encrypted file | DPAPI / wincred | future |
 | iOS | **native items** (Data Protection Keychain) | — (data is the item) | **shipped**; fixed device-bound policy; hardware backing not attested; round-trip exercised on the iOS simulator (`example_flutter/`) |
-| Android (API 31+) | encrypted file | Android Keystore KEK via **pure-FFI JNI** — StrongBox requested, actual level inspected | **shipped**; validated on an API 33 emulator incl. the StrongBox-fallback branch; physical hardware mediation not established by emulator testing |
+| Android (API 31+) | encrypted file in the app no-backup directory | Android Keystore KEK via **pure-FFI JNI** — StrongBox requested, actual level inspected | **shipped**; migration and provider behavior maintained on API 31 and 36 emulators; physical hardware mediation not established by emulator testing |
 | **headless deployment** | no dedicated shape | no dedicated provider | **out of scope**. The desktop resolver may still reach a configured desktop credential service, but there is no supported availability contract. Historical prototype work remains in git history. |
 
 ## What is deliberately NOT here

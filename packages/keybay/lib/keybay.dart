@@ -39,6 +39,7 @@ export 'src/errors.dart'
         SecureFileError,
         StoreBusy,
         StoreKeyMissing,
+        StoreMigrationConflict,
         StoreTooLarge,
         UnsupportedCapability,
         WrongStoreKey;
