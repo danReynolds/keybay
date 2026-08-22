@@ -1,77 +1,43 @@
 # Security watchers
 
-Watchers turn new public security information into a small GitHub issue queue.
-They do not claim that Keybay is vulnerable. Every finding starts an
-applicability decision against Keybay's code, platform behavior, and numbered
-`KB-INV-*` guarantees.
+Keybay's watchers turn public security signals into a small, reviewable history. A finding means **review this**, not **Keybay is vulnerable**.
 
-## What is watched
+## Watcher definitions
 
-| Watcher | Definition | Why it exists |
-|---|---|---|
-| Dependencies | Every reviewed dependency inventory in `dependencies/lockfiles.txt`, scanned by OSV | Finds known vulnerabilities in code Keybay actually resolves, including the Android harness runtime |
-| Platforms | Apple iOS/macOS releases, Android security bulletins, and Ubuntu/Debian advisories for the Linux credential-store trust chain | Finds OS-provider changes that package lockfiles cannot see |
-| Peers | A fixed set of comparable secret-storage libraries across Pub, PyPI, npm, Go, and Rust | Reuses peer failures as red-team input without treating peers as dependencies |
-| Critical dependencies | Exact reviewed pins listed in `critical/config.json` | Makes a new security-critical release visible where advisory coverage is too sparse to trust alone |
+| Watcher | Sources | Purpose |
+| --- | --- | --- |
+| Dependencies | OSV scans of every committed lockfile; new releases of specifically reviewed dependencies in `dependencies/reviewed.json` | Detects known resolved vulnerabilities and makes important upstream changes visible |
+| Platforms | Apple security releases; Android security bulletins; narrow OSV coverage for the Linux Secret Service, KWallet, and D-Bus trust chain | Detects provider changes that package scanners cannot see |
+| Peers | OSV plus recent GitHub issues, pull requests, and releases for the defined Flutter, native, React Native, Go, Rust, and Python peers | Reuses peer experience as red-team input without treating peers as dependencies |
 
-Linux monitoring is intentionally narrow: `gnome-keyring`, `libsecret`,
-KWallet, and D-Bus. Generic distro and kernel CVEs remain the operating
-system's patching responsibility unless evidence connects them to a Keybay
-guarantee.
+Linux monitoring is deliberately narrow. Generic distro and kernel CVEs remain the operating system's patching responsibility unless evidence connects them to a Keybay guarantee. Peer activity is limited to titles and links from the last 14 days; issue bodies and comments are not ingested.
 
-## Method
+## Report flow
 
-1. Query only named official or aggregate sources. A timeout, malformed
-   response, or changed page shape fails the run; it never means "quiet."
-   Platform windows use advisory publication/release dates; later metadata
-   edits to historical Linux records do not turn them into new advisories.
-2. Emit identifiers, package/product names, and official links only. Advisory
-   prose is untrusted input and is not copied into an issue.
-3. Create one issue per dependency, peer, or Linux advisory; one per Android
-   bulletin; and one roll-up per Apple release date.
-4. Put a stable marker in the issue body. Open and closed issues both suppress
-   duplicates, so dispositions are durable without a mutable repository
-   ledger.
-5. Close with a concrete non-applicability reason, or link the fix, regression
-   test, device qualification, or temporary claim reduction. Move any newly
-   discovered Keybay-specific vulnerability to a private security advisory.
+GitHub runs all three watchers every Monday and can run any group on demand. Discovery is read-only. A failed or malformed source is recorded as failed, never as quiet.
 
-Physical-device work is triggered only when an advisory can materially affect
-runtime provider behavior or a security claim. It is not scheduled by these
-watchers.
+Each run pushes one generated `security-report/*` branch containing:
 
-The peer baseline and platform `started_at` boundary record what predates
-ongoing automation. The platform `backfill_started_at` boundary defines one
-bounded bootstrap window: `[backfill_started_at, started_at)`. Its read-only
-output is reviewed in at most one roll-up issue each for Apple, Android, and
-Linux; it never changes the forward-looking boundary. Do not advance either
-boundary during routine triage: doing so can silently suppress public
-information. Updating a critical reviewed version is likewise part of the
-package-review change, not watcher maintenance.
+- `reports/<date>-<run>-<attempt>/raw.md`: immutable, validated discovery output.
+- `reports/<date>-<run>-<attempt>/assessment.md`: the separate Codex applicability review.
+- `reports/SUMMARY.md`: the derived run history, assessment summary, and links to resulting actions.
 
-## Running the watchers
+The scheduled Codex task follows [INSTRUCTIONS.md](INSTRUCTIONS.md), verifies the generated branch, opens one PR, completes its assessment, and updates the summary. Applicable public work becomes a normal GitHub issue. A plausible undisclosed Keybay vulnerability becomes a private draft security advisory; the public report contains only a generic label and the advisory's opaque private URL. Normal CI and review gate the final squash merge to `main`.
 
-GitHub runs all watchers weekly. To run them yourself:
+Physical-device testing is triggered only when a finding or code change can affect an OS, hardware, entitlement, lifecycle, or provider-dependent claim. It is not a weekly chore.
 
-1. Open the repository's **Actions** tab.
-2. Select **Security watchers**.
-3. Choose **Run workflow**, leave the branch as `main`, and select `all` or one
-   watcher.
-4. Open the run for its result. New public signals become deduplicated issues;
-   a quiet run creates nothing.
+## Run it
 
-Manual issue-writing runs are accepted only from `main`, so an unreviewed
-branch cannot replace a watcher script and inherit its token. Dependency and
-critical-pin checks also run on every pull request and push to `main`.
+In GitHub, open **Actions → Security watchers → Run workflow**, keep the branch on `main`, and choose `all` or one watcher. The workflow stages a pending assessment branch even when the result is quiet or a source failed, so the Codex task can preserve every run.
 
-The repository-owned discovery code is Dart. For a local read-only run, use
-`dart run watchers/watch.dart <platforms|peers|critical> --json`. Add
-`--backfill` to `platforms` to inspect the bootstrap window without writing
-issues. Dependency inventories remain the responsibility of the official OSV
-Scanner action rather than a home-grown scanner.
+For a local read-only check:
 
-GitHub may disable scheduled workflows after prolonged inactivity in a public
-repository. Dependabot remains the dependency backstop, and the same checks
-run again before the next change. If continuous monitoring during long
-dormancy becomes necessary, move only the weekly trigger to an external
-scheduler; keep these definitions and issue rules unchanged.
+```sh
+dart run watchers/watch.dart dependencies --json
+dart run watchers/watch.dart platforms --json
+dart run watchers/watch.dart peers --json
+```
+
+`platforms --backfill` inspects the fixed bootstrap window without changing its forward boundary. Do not casually advance the platform boundary or peer baseline: those are reviewed history, not routine state.
+
+GitHub may disable schedules after prolonged public-repository inactivity. The same workflow remains available through the Actions button; Dependabot and the required OSV pull-request check remain independent backstops.

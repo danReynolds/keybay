@@ -3,6 +3,8 @@ name: Security watchers
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - watchers/reports/**
   pull_request:
   schedule:
     - cron: '23 7 * * 1'
@@ -18,31 +20,20 @@ on:
           - dependencies
           - platforms
           - peers
-          - critical
 
-# Discovery jobs cannot write issues. A separate checkout-free job receives
-# that capability only after it downloads and validates a small JSON payload.
+# Ordinary CI is read-only except for SARIF publication. Scheduled and manual
+# discovery is also read-only; a separate job validates its artifact before it
+# gets the narrow permission needed to push a report-only staging branch.
 permissions:
   contents: read
 
 jobs:
-  manual-ref-check:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - name: require the reviewed default branch
-        run: test "$GITHUB_REF" = refs/heads/main
-
   dependencies:
     name: supply-chain / osv-scan
-    if: >-
-      ${{ github.event_name != 'workflow_dispatch' ||
-          (github.ref == 'refs/heads/main' &&
-           (inputs.watcher == 'all' || inputs.watcher == 'dependencies')) }}
+    if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: read
       security-events: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -83,330 +74,302 @@ jobs:
             --new=results.json
             --gh-annotations=false
             --fail-on-vuln=true
-      - name: prepare issue payload
-        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
-        run: |
-          jq '[
-            .runs[].tool.driver.rules[]?
-            | (([.id] + (.deprecatedIds // [])) | unique) as $ids
-            | {title: ("Security scanner triage: " + .id), ids: $ids}
-          ] | unique_by(.ids | join("|"))' results.sarif > osv-triage.json
-          jq -e '
-            type == "array" and
-            all(.[];
-              (.title | type == "string") and
-              (.ids | type == "array" and length > 0) and
-              all(.ids[]; test("^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"))
-            )
-          ' osv-triage.json >/dev/null
-      - name: upload issue payload
-        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: osv-triage-${{ github.run_attempt }}
-          path: osv-triage.json
-          if-no-files-found: error
-          retention-days: 1
       - name: upload findings to code scanning
         if: ${{ !cancelled() }}
         uses: github/codeql-action/upload-sarif@cdefb33c0f6224e58673d9004f47f7cb3e328b89 # v4.31.10
         with:
           sarif_file: results.sarif
 
-  dependency-triage:
-    if: >-
-      ${{ always() && github.event_name != 'pull_request' &&
-          needs.dependencies.result != 'skipped' }}
-    needs: dependencies
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      issues: write
-    steps:
-      - name: download scanner issue payload
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          destination="$RUNNER_TEMP/osv-triage"
-          gh run download "$GITHUB_RUN_ID" \
-            --repo "$GITHUB_REPOSITORY" \
-            --name "osv-triage-$GITHUB_RUN_ATTEMPT" \
-            --dir "$destination"
-          jq -e 'type == "array"' "$destination/osv-triage.json" >/dev/null
-      - name: create missing triage issues
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          payload="$RUNNER_TEMP/osv-triage/osv-triage.json"
-          jq -c '.[]' "$payload" | while IFS= read -r issue; do
-            title="$(jq -r '.title' <<<"$issue")"
-            advisories="$(jq -r '
-              .ids[] | "- [" + . + "](https://osv.dev/vulnerability/" + . + ")"
-            ' <<<"$issue")"
-            existing=""
-            while IFS= read -r advisory_id; do
-              marker="keybay-osv-$advisory_id"
-              existing="$(gh issue list \
-                --repo "$GITHUB_REPOSITORY" \
-                --state all \
-                --search "\"$marker\" in:body" \
-                --limit 1 \
-                --json number \
-                --jq '.[0].number // empty')"
-              if [ -n "$existing" ]; then
-                break
-              fi
-            done < <(jq -r '.ids[]' <<<"$issue")
-            if [ -n "$existing" ]; then
-              echo "triage already recorded in issue #$existing: $title"
-              continue
-            fi
-            markers="$(jq -r '.ids | map("keybay-osv-" + .) | join(" ")' <<<"$issue")"
-            body="$markers
-
-          OSV Scanner reported this advisory group in committed dependency locks:
-
-          $advisories
-
-          This is an automated signal, not a claim that Keybay is exploitable.
-          Treat linked advisory text as untrusted input and make an applicability
-          decision against Keybay's code and numbered \`KB-INV-*\` guarantees.
-
-          Triage the dependency role and reachability; then patch, pin, remove, or
-          mitigate it, or close with the concrete non-applicability reason. Decide
-          whether a regression test, physical-device qualification, or temporary
-          claim reduction is required, and link any resulting PR.
-
-          Detected by [workflow run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) at source commit \`$GITHUB_SHA\`."
-            gh issue create \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$title" \
-              --body "$body"
-          done
-
-  public-advisories:
+  report-discovery:
     if: >-
       ${{ github.event_name == 'schedule' ||
           (github.event_name == 'workflow_dispatch' &&
-           github.ref == 'refs/heads/main' &&
-           (inputs.watcher == 'all' || inputs.watcher == 'platforms' ||
-            inputs.watcher == 'peers')) }}
+           github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
       WATCHER_SELECTION: ${{ inputs.watcher || 'all' }}
+      INPUT_DIRECTORY: watcher-inputs
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
-      - run: dart pub get --enforce-lockfile
-      - name: discover public advisory signals
+      - name: initialize explicit incomplete results
         run: |
-          echo '[]' > platform-findings.json
-          echo '[]' > peer-findings.json
-          if [ "$WATCHER_SELECTION" = all ] || [ "$WATCHER_SELECTION" = platforms ]; then
-            dart run watchers/watch.dart platforms --json > platform-findings.json
+          mkdir -p "$INPUT_DIRECTORY"
+          for watcher in dependencies platforms peers; do
+            jq -n \
+              --arg watcher "$watcher" \
+              '{watcher: $watcher, status: "not_run", findings: [], error: "Watcher step did not complete."}' \
+              > "$INPUT_DIRECTORY/$watcher.json"
+          done
+      - name: check out the reviewed default branch
+        id: checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: install Dart
+        id: dart
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
+      - name: resolve the committed workspace
+        id: pub_get
+        run: dart pub get --enforce-lockfile
+
+      - name: load the dependency lockfile set
+        id: report_lockfiles
+        if: >-
+          ${{ always() && steps.pub_get.outcome == 'success' &&
+              (env.WATCHER_SELECTION == 'all' ||
+               env.WATCHER_SELECTION == 'dependencies') }}
+        run: |
+          test -s watchers/dependencies/lockfiles.txt
+          {
+            echo 'scan-args<<EOF'
+            while IFS= read -r lockfile; do
+              case "$lockfile" in
+                /*|*..*|*[!A-Za-z0-9_./-]*)
+                  echo "unsafe lockfile definition: $lockfile" >&2
+                  exit 1
+                  ;;
+              esac
+              test -f "$lockfile"
+              echo "--lockfile=./$lockfile"
+            done < watchers/dependencies/lockfiles.txt
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+      - name: discover resolved dependency vulnerabilities
+        id: report_osv_scan
+        if: ${{ always() && steps.report_lockfiles.outcome == 'success' }}
+        uses: google/osv-scanner-action/osv-scanner-action@8dc09193bb540e09b23da07ad7e30bd33bf87018 # v2.3.8
+        with:
+          scan-args: |-
+            --output=report-osv-results.json
+            --format=json
+            ${{ steps.report_lockfiles.outputs.scan-args }}
+        continue-on-error: true
+      - name: convert dependency vulnerabilities to SARIF
+        id: report_osv_sarif
+        if: >-
+          ${{ always() && steps.report_osv_scan.outcome != 'skipped' }}
+        uses: google/osv-scanner-action/osv-reporter-action@8dc09193bb540e09b23da07ad7e30bd33bf87018 # v2.3.8
+        with:
+          scan-args: |-
+            --output=report-osv-results.sarif
+            --new=report-osv-results.json
+            --gh-annotations=false
+        continue-on-error: true
+      - name: discover reviewed dependency releases
+        id: report_dependency_releases
+        if: >-
+          ${{ always() && steps.pub_get.outcome == 'success' &&
+              (env.WATCHER_SELECTION == 'all' ||
+               env.WATCHER_SELECTION == 'dependencies') }}
+        run: >-
+          dart run watchers/watch.dart dependencies --json
+          > "$RUNNER_TEMP/dependency-releases.json"
+        continue-on-error: true
+      - name: normalize dependency results
+        if: ${{ always() }}
+        env:
+          LOCKFILES_OUTCOME: ${{ steps.report_lockfiles.outcome }}
+          RELEASES_OUTCOME: ${{ steps.report_dependency_releases.outcome }}
+        run: |
+          output="$INPUT_DIRECTORY/dependencies.json"
+          if [ "$WATCHER_SELECTION" != all ] && [ "$WATCHER_SELECTION" != dependencies ]; then
+            jq -n '{watcher: "dependencies", status: "not_run", findings: [], error: "Not selected for this on-demand run."}' > "$output"
+            exit 0
           fi
-          if [ "$WATCHER_SELECTION" = all ] || [ "$WATCHER_SELECTION" = peers ]; then
-            dart run watchers/watch.dart peers --json > peer-findings.json
+
+          errors=()
+          osv='[]'
+          releases='[]'
+          if [ "$LOCKFILES_OUTCOME" != success ] || \
+             [ ! -s report-osv-results.sarif ] || \
+             ! jq -e '.runs | type == "array"' report-osv-results.sarif >/dev/null 2>&1; then
+            errors+=("Resolved lockfile OSV scan did not produce valid SARIF.")
+          else
+            osv="$(jq -c '[
+              .runs[].tool.driver.rules[]?
+              | .id as $id
+              | select($id | test("^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"))
+              | {
+                  watcher: "dependencies",
+                  marker: ("keybay-dependency-osv-" + $id),
+                  title: ("Resolved dependency advisory: " + $id),
+                  subjects: ["Committed resolved dependency graph"],
+                  references: [{label: $id, url: ("https://osv.dev/vulnerability/" + $id)}]
+                }
+            ] | unique_by(.marker)' report-osv-results.sarif)"
           fi
-          jq -s 'add' platform-findings.json peer-findings.json > advisory-findings.json
-          jq -e '
-            type == "array" and
-            all(.[];
-              (.watcher == "platforms" or .watcher == "peers") and
-              (.marker | test("^keybay-(platform|peer-osv)-[A-Za-z0-9_.:-]{1,180}$")) and
-              (.title | type == "string" and length > 0 and length <= 180 and
-                (contains("\n") | not) and (contains("@") | not)) and
-              (.subjects | type == "array" and length > 0 and length <= 30 and
-                all(.[]; type == "string" and length > 0 and length <= 200 and
-                  (contains("\n") | not) and (contains("@") | not) and
-                  (contains("`") | not))) and
-              (.references | type == "array" and length > 0 and length <= 30 and
-                all(.[];
-                  (.label | type == "string" and length > 0 and length <= 200 and
-                    (contains("\n") | not) and (contains("@") | not)) and
-                  (.url | test("^https://(osv\\.dev/vulnerability/[A-Za-z0-9_.:-]+|support\\.apple\\.com/en-us/[0-9]+|source\\.android\\.com/docs/security/bulletin/[0-9]{4}-[0-9]{2}-[0-9]{2})$"))
-                ))
-            )
-          ' advisory-findings.json >/dev/null
-      - name: upload public advisory payload
+          if [ "$RELEASES_OUTCOME" != success ] || \
+             [ ! -s "$RUNNER_TEMP/dependency-releases.json" ] || \
+             ! jq -e 'type == "array"' "$RUNNER_TEMP/dependency-releases.json" >/dev/null 2>&1; then
+            errors+=("Reviewed dependency release check did not complete.")
+          else
+            releases="$(jq -c '.' "$RUNNER_TEMP/dependency-releases.json")"
+          fi
+          findings="$(jq -cn --argjson left "$osv" --argjson right "$releases" '$left + $right')"
+          if (( ${#errors[@]} )); then
+            error="$(IFS=' '; echo "${errors[*]}")"
+            jq -n \
+              --argjson findings "$findings" \
+              --arg error "$error" \
+              '{watcher: "dependencies", status: "failed", findings: $findings, error: $error}' \
+              > "$output"
+          elif [ "$(jq 'length' <<<"$findings")" -gt 0 ]; then
+            jq -n \
+              --argjson findings "$findings" \
+              '{watcher: "dependencies", status: "findings", findings: $findings, error: null}' \
+              > "$output"
+          else
+            jq -n '{watcher: "dependencies", status: "quiet", findings: [], error: null}' > "$output"
+          fi
+
+      - name: discover platform advisories
+        id: report_platforms
+        if: >-
+          ${{ always() && steps.pub_get.outcome == 'success' &&
+              (env.WATCHER_SELECTION == 'all' ||
+               env.WATCHER_SELECTION == 'platforms') }}
+        run: >-
+          dart run watchers/watch.dart platforms --json
+          > "$RUNNER_TEMP/platform-findings.json"
+        continue-on-error: true
+      - name: normalize platform results
+        if: ${{ always() }}
+        env:
+          OUTCOME: ${{ steps.report_platforms.outcome }}
+        run: |
+          output="$INPUT_DIRECTORY/platforms.json"
+          if [ "$WATCHER_SELECTION" != all ] && [ "$WATCHER_SELECTION" != platforms ]; then
+            jq -n '{watcher: "platforms", status: "not_run", findings: [], error: "Not selected for this on-demand run."}' > "$output"
+          elif [ "$OUTCOME" != success ] || \
+               [ ! -s "$RUNNER_TEMP/platform-findings.json" ] || \
+               ! jq -e 'type == "array"' "$RUNNER_TEMP/platform-findings.json" >/dev/null 2>&1; then
+            jq -n '{watcher: "platforms", status: "failed", findings: [], error: "Platform advisory discovery did not complete."}' > "$output"
+          elif [ "$(jq 'length' "$RUNNER_TEMP/platform-findings.json")" -gt 0 ]; then
+            jq -n \
+              --argjson findings "$(jq -c '.' "$RUNNER_TEMP/platform-findings.json")" \
+              '{watcher: "platforms", status: "findings", findings: $findings, error: null}' \
+              > "$output"
+          else
+            jq -n '{watcher: "platforms", status: "quiet", findings: [], error: null}' > "$output"
+          fi
+
+      - name: discover peer activity
+        id: report_peers
+        if: >-
+          ${{ always() && steps.pub_get.outcome == 'success' &&
+              (env.WATCHER_SELECTION == 'all' ||
+               env.WATCHER_SELECTION == 'peers') }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          dart run watchers/watch.dart peers --json
+          > "$RUNNER_TEMP/peer-findings.json"
+        continue-on-error: true
+      - name: normalize peer results
+        if: ${{ always() }}
+        env:
+          OUTCOME: ${{ steps.report_peers.outcome }}
+        run: |
+          output="$INPUT_DIRECTORY/peers.json"
+          if [ "$WATCHER_SELECTION" != all ] && [ "$WATCHER_SELECTION" != peers ]; then
+            jq -n '{watcher: "peers", status: "not_run", findings: [], error: "Not selected for this on-demand run."}' > "$output"
+          elif [ "$OUTCOME" != success ] || \
+               [ ! -s "$RUNNER_TEMP/peer-findings.json" ] || \
+               ! jq -e 'type == "array"' "$RUNNER_TEMP/peer-findings.json" >/dev/null 2>&1; then
+            jq -n '{watcher: "peers", status: "failed", findings: [], error: "Peer advisory and repository activity discovery did not complete."}' > "$output"
+          elif [ "$(jq 'length' "$RUNNER_TEMP/peer-findings.json")" -gt 0 ]; then
+            jq -n \
+              --argjson findings "$(jq -c '.' "$RUNNER_TEMP/peer-findings.json")" \
+              '{watcher: "peers", status: "findings", findings: $findings, error: null}' \
+              > "$output"
+          else
+            jq -n '{watcher: "peers", status: "quiet", findings: [], error: null}' > "$output"
+          fi
+
+      - name: upload normalized discovery inputs
+        if: ${{ always() }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: advisory-findings-${{ github.run_attempt }}
-          path: advisory-findings.json
+          name: watcher-report-inputs-${{ github.run_attempt }}
+          path: watcher-inputs
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 2
+      - name: make incomplete discovery visible
+        if: ${{ always() }}
+        run: |
+          if jq -s -e 'any(.[]; .status == "failed")' "$INPUT_DIRECTORY"/*.json >/dev/null; then
+            echo 'One or more selected watcher sources failed; the report records the failure.' >&2
+            exit 1
+          fi
 
-  public-advisory-triage:
-    if: ${{ always() && needs.public-advisories.result == 'success' }}
-    needs: public-advisories
+  report-stage:
+    if: >-
+      ${{ always() &&
+          (github.event_name == 'schedule' ||
+           (github.event_name == 'workflow_dispatch' &&
+            github.ref == 'refs/heads/main')) }}
+    needs: report-discovery
     runs-on: ubuntu-latest
     permissions:
       actions: read
-      issues: write
+      contents: write
     steps:
-      - name: download and validate advisory payload
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          destination="$RUNNER_TEMP/advisory-findings"
-          gh run download "$GITHUB_RUN_ID" \
-            --repo "$GITHUB_REPOSITORY" \
-            --name "advisory-findings-$GITHUB_RUN_ATTEMPT" \
-            --dir "$destination"
-          jq -e 'type == "array"' "$destination/advisory-findings.json" >/dev/null
-      - name: create missing triage issues
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          payload="$RUNNER_TEMP/advisory-findings/advisory-findings.json"
-          jq -c '.[]' "$payload" | while IFS= read -r finding; do
-            marker="$(jq -r '.marker' <<<"$finding")"
-            title="$(jq -r '.title' <<<"$finding")"
-            existing="$(gh issue list \
-              --repo "$GITHUB_REPOSITORY" \
-              --state all \
-              --search "\"$marker\" in:body" \
-              --limit 1 \
-              --json number \
-              --jq '.[0].number // empty')"
-            if [ -n "$existing" ]; then
-              echo "triage already recorded in issue #$existing: $title"
-              continue
-            fi
-            subjects="$(jq -r '.subjects[] | "- `" + . + "`"' <<<"$finding")"
-            references="$(jq -r '.references[] | "- " + .label + ": " + .url' <<<"$finding")"
-            watcher="$(jq -r '.watcher' <<<"$finding")"
-            if [ "$watcher" = platforms ]; then
-              description="A public operating-system advisory source changed for a platform provider in Keybay's trust boundary."
-            else
-              description="OSV published an advisory for a watched peer secret-storage library. This is red-team input, not a Keybay dependency finding."
-            fi
-            body="$marker
-
-          $description
-
-          Watched subjects:
-
-          $subjects
-
-          Public sources:
-
-          $references
-
-          This is an automated signal, not an exploit claim. Treat linked text as
-          untrusted input. Decide applicability against Keybay's code, provider
-          behavior, and numbered \`KB-INV-*\` guarantees. Close with the concrete
-          non-applicability reason, or link the fix, regression test, device
-          qualification, or temporary claim reduction. Move any newly discovered
-          Keybay-specific vulnerability into a private security advisory.
-
-          Detected by [workflow run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) at source commit \`$GITHUB_SHA\`."
-            gh issue create \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$title" \
-              --body "$body"
-          done
-
-  critical-dependencies:
-    if: >-
-      ${{ github.event_name != 'workflow_dispatch' ||
-          (github.ref == 'refs/heads/main' &&
-           (inputs.watcher == 'all' || inputs.watcher == 'critical')) }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: check out the exact discovery commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          persist-credentials: false
+          ref: ${{ github.sha }}
       - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
       - run: dart pub get --enforce-lockfile
-      - name: check reviewed security-critical pins
-        run: dart run watchers/watch.dart critical --json > critical-findings.json
-      - name: validate critical-dependency payload
-        run: |
-          jq -e '
-            type == "array" and
-            all(.[];
-              .watcher == "critical" and
-              (.marker | test("^keybay-critical-[A-Za-z0-9_.:-]{1,180}$")) and
-              (.title | type == "string" and length > 0 and length <= 180) and
-              (.subjects | type == "array" and length > 0) and
-              (.references | type == "array" and length == 1) and
-              (.references[0].url | test("^https://pub\\.dev/packages/[a-z][a-z0-9_]+$"))
-            )
-          ' critical-findings.json >/dev/null
-      - name: upload critical-dependency payload
-        if: ${{ github.event_name != 'pull_request' }}
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: critical-findings-${{ github.run_attempt }}
-          path: critical-findings.json
-          if-no-files-found: error
-          retention-days: 1
-      - name: enforce the reviewed pin
-        run: jq -e 'length == 0' critical-findings.json >/dev/null
-
-  critical-dependency-triage:
-    if: >-
-      ${{ always() && github.event_name != 'pull_request' &&
-          needs.critical-dependencies.result != 'skipped' }}
-    needs: critical-dependencies
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      issues: write
-    steps:
-      - name: download critical-dependency payload
+      - name: download discovery inputs
+        id: download
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          destination="$RUNNER_TEMP/critical-findings"
-          gh run download "$GITHUB_RUN_ID" \
+          destination="$RUNNER_TEMP/watcher-inputs"
+          mkdir -p "$destination"
+          if ! gh run download "$GITHUB_RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
-            --name "critical-findings-$GITHUB_RUN_ATTEMPT" \
-            --dir "$destination"
-          jq -e 'type == "array"' "$destination/critical-findings.json" >/dev/null
-      - name: create missing review issues
-        env:
-          GH_TOKEN: ${{ github.token }}
+            --name "watcher-report-inputs-$GITHUB_RUN_ATTEMPT" \
+            --dir "$destination"; then
+            for watcher in dependencies platforms peers; do
+              jq -n \
+                --arg watcher "$watcher" \
+                '{watcher: $watcher, status: "failed", findings: [], error: "Discovery artifact was unavailable."}' \
+                > "$destination/$watcher.json"
+            done
+          fi
+      - name: validate and render the report pair
+        id: render
         run: |
-          payload="$RUNNER_TEMP/critical-findings/critical-findings.json"
-          jq -c '.[]' "$payload" | while IFS= read -r finding; do
-            marker="$(jq -r '.marker' <<<"$finding")"
-            title="$(jq -r '.title' <<<"$finding")"
-            existing="$(gh issue list \
-              --repo "$GITHUB_REPOSITORY" \
-              --state all \
-              --search "\"$marker\" in:body" \
-              --limit 1 \
-              --json number \
-              --jq '.[0].number // empty')"
-            if [ -n "$existing" ]; then
-              echo "review already recorded in issue #$existing: $title"
-              continue
-            fi
-            subject="$(jq -r '.subjects[0]' <<<"$finding")"
-            source="$(jq -r '.references[0].url' <<<"$finding")"
-            body="$marker
-
-          A newer release exists for an exact-reviewed security-critical pin:
-
-          - \`$subject\`
-          - $source
-
-          This is a review trigger, not evidence that the current version is
-          vulnerable. Review the upstream diff and advisories, run the dependency
-          closure and cryptographic-vector checks, then update the reviewed pin or
-          close with the reason for retaining it.
-
-          Detected by [workflow run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) at source commit \`$GITHUB_SHA\`."
-            gh issue create \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$title" \
-              --body "$body"
-          done
+          started_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          report_date="${started_at%%T*}"
+          report_directory="watchers/reports/$report_date-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          dart run watchers/report.dart create \
+            --run-id "$GITHUB_RUN_ID" \
+            --attempt "$GITHUB_RUN_ATTEMPT" \
+            --event "$GITHUB_EVENT_NAME" \
+            --commit "$GITHUB_SHA" \
+            --started-at "$started_at" \
+            --dependencies "$RUNNER_TEMP/watcher-inputs/dependencies.json" \
+            --platforms "$RUNNER_TEMP/watcher-inputs/platforms.json" \
+            --peers "$RUNNER_TEMP/watcher-inputs/peers.json" \
+            --output "$report_directory"
+          dart run watchers/report.dart summary \
+            --reports watchers/reports \
+            --output watchers/reports/SUMMARY.md
+          echo "report-directory=$report_directory" >> "$GITHUB_OUTPUT"
+          echo "report-date=$report_date" >> "$GITHUB_OUTPUT"
+      - name: push one pending assessment branch
+        env:
+          REPORT_DIRECTORY: ${{ steps.render.outputs.report-directory }}
+          REPORT_DATE: ${{ steps.render.outputs.report-date }}
+        run: |
+          branch="security-report/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -b "$branch"
+          git add "$REPORT_DIRECTORY" watchers/reports/SUMMARY.md
+          git commit -m "security: record watcher report $REPORT_DATE"
+          git push origin "$branch"

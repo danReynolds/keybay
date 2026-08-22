@@ -5,10 +5,17 @@ const _timeout = Duration(seconds: 30);
 const _maximumResponseBytes = 8 * 1024 * 1024;
 const _userAgent = 'keybay-security-watchers/1';
 
-Future<String> fetchText(Uri uri) => _request(uri);
+Future<String> fetchText(
+  Uri uri, {
+  Map<String, String> headers = const <String, String>{},
+}) =>
+    _request(uri, headers: headers);
 
-Future<Object?> fetchJson(Uri uri) async {
-  final text = await _request(uri);
+Future<Object?> fetchJson(
+  Uri uri, {
+  Map<String, String> headers = const <String, String>{},
+}) async {
+  final text = await _request(uri, headers: headers);
   try {
     return jsonDecode(text);
   } on FormatException catch (error) {
@@ -25,13 +32,20 @@ Future<Object?> postJson(Uri uri, Object body) async {
   }
 }
 
-Future<String> _request(Uri uri, {String? body}) async {
+Future<String> _request(
+  Uri uri, {
+  String? body,
+  Map<String, String> headers = const <String, String>{},
+}) async {
   final client = HttpClient()..connectionTimeout = _timeout;
   try {
     final request =
         await (body == null ? client.getUrl(uri) : client.postUrl(uri))
             .timeout(_timeout);
     request.headers.set(HttpHeaders.userAgentHeader, _userAgent);
+    for (final entry in headers.entries) {
+      request.headers.set(entry.key, entry.value);
+    }
     if (body != null) {
       request.headers.contentType = ContentType.json;
       request.write(body);

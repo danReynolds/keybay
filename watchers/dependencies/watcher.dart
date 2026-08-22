@@ -19,7 +19,7 @@ Future<String> pubLatest(String name) async {
   return version;
 }
 
-Future<List<WatcherFinding>> criticalFindings(
+Future<List<WatcherFinding>> dependencyReleaseFindings(
   Map<String, Object?> config, {
   LatestVersionLookup? latestVersion,
 }) async {
@@ -27,7 +27,7 @@ Future<List<WatcherFinding>> criticalFindings(
   final rawPackages = config['packages'];
   if (rawPackages is! List || rawPackages.isEmpty) {
     throw const FormatException(
-      'critical watcher needs a non-empty packages list',
+      'dependency watcher needs a non-empty reviewed packages list',
     );
   }
   final result = <WatcherFinding>[];
@@ -38,7 +38,7 @@ Future<List<WatcherFinding>> criticalFindings(
     final reviewed = package['reviewed_version'];
     final url = package['url'];
     if (ecosystem != 'Pub' || name is! String || !_package.hasMatch(name)) {
-      throw FormatException('unsupported critical package: $package');
+      throw FormatException('unsupported reviewed dependency: $package');
     }
     if (reviewed is! String || !_version.hasMatch(reviewed)) {
       throw FormatException('invalid reviewed version for $name');
@@ -56,9 +56,9 @@ Future<List<WatcherFinding>> criticalFindings(
     final markerVersion = latest.replaceAll(RegExp(r'[^0-9A-Za-z_.-]'), '-');
     result.add(
       WatcherFinding(
-        watcher: 'critical',
-        marker: 'keybay-critical-pub-$name-$markerVersion',
-        title: 'Critical dependency review: $name $latest',
+        watcher: 'dependencies',
+        marker: 'keybay-dependency-release-pub-$name-$markerVersion',
+        title: 'Reviewed dependency release: $name $latest',
         subjects: <String>[
           'Pub/$name: reviewed $reviewed; published $latest',
         ],

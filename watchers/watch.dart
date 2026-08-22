@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'critical/watcher.dart';
+import 'dependencies/watcher.dart';
 import 'finding.dart';
 import 'peers/watcher.dart';
 import 'platforms/watcher.dart';
@@ -21,12 +21,13 @@ Future<int> run(List<String> arguments) async {
       selections.length != 1) {
     stderr.writeln(
       'usage: dart run watchers/watch.dart '
-      '<platforms|peers|critical> [--json] [--backfill]',
+      '<dependencies|platforms|peers> [--json] [--backfill]',
     );
     return 64;
   }
   final selection = selections.single;
-  if (!const <String>{'platforms', 'peers', 'critical'}.contains(selection)) {
+  if (!const <String>{'dependencies', 'platforms', 'peers'}
+      .contains(selection)) {
     stderr.writeln('unknown watcher: $selection');
     return 64;
   }
@@ -48,8 +49,8 @@ Future<int> run(List<String> arguments) async {
       'peers' => await peerFindings(
           peerBaseline(await _readObject('peers/baseline.json')),
         ),
-      'critical' => await criticalFindings(
-          await _readObject('critical/config.json'),
+      'dependencies' => await dependencyReleaseFindings(
+          await _readObject('dependencies/reviewed.json'),
         ),
       _ => throw StateError('unreachable watcher selection'),
     };
@@ -97,11 +98,12 @@ int _printHuman(String selection, List<WatcherFinding> found) {
         );
       case 'peers':
         stdout.writeln(
-          'peer-advisories: no new advisories across ${peers.length} watched packages',
+          'peer-signals: no advisories or recent repository activity across '
+          '${peers.length} watched packages',
         );
-      case 'critical':
+      case 'dependencies':
         stdout.writeln(
-          'critical-dependencies: every reviewed pin is still current',
+          'dependencies: every specifically reviewed pin is still current',
         );
     }
     return 0;
@@ -113,20 +115,19 @@ int _printHuman(String selection, List<WatcherFinding> found) {
       }
     case 'peers':
       stdout.writeln(
-        'peer-advisories: NEW advisory IDs — triage against the invariants, '
-        'record the decision in the generated GitHub issue:',
+        'peer-signals: REVIEW INPUTS — assess against the Keybay invariants:',
       );
       for (final finding in found) {
         final reference = finding.references.single;
         stdout.writeln(
-          '  ${reference.label}: ${finding.subjects.join(', ')} '
+          '  ${finding.title}: ${finding.subjects.join(', ')} '
           '(${reference.url})',
         );
       }
-    case 'critical':
+    case 'dependencies':
       for (final finding in found) {
         stdout.writeln(
-          'critical-dependencies: REVIEW REQUIRED: ${finding.title}',
+          'dependencies: REVIEW REQUIRED: ${finding.title}',
         );
       }
   }
@@ -135,7 +136,7 @@ int _printHuman(String selection, List<WatcherFinding> found) {
 
 String _prefix(String selection) => switch (selection) {
       'platforms' => 'platform-advisories',
-      'peers' => 'peer-advisories',
-      'critical' => 'critical-dependencies',
+      'peers' => 'peer-signals',
+      'dependencies' => 'dependencies',
       _ => selection,
     };
