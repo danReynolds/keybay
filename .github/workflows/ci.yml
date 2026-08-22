@@ -1,18 +1,14 @@
 name: ci
 
 on:
-  # `push` is scoped to main so a branch with an open PR isn't built twice
-  # (once for the push, once for the PR).
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
   schedule:
     # Weekly, and it runs ONLY the fuzz canary; security advisory monitoring is
     # grouped in security-watchers.yml, which also has a manual Actions button.
     # Caveat: GitHub disables cron on public repos after ~60 days without
-    # activity, so this is best-effort — the canary also runs on every push to
-    # main and every PR.
+    # activity, so this is best-effort. Deterministic fuzz regressions still
+    # run in the standard pull-request suite.
     - cron: '17 6 * * 1'
 
 # Least privilege: every job gets a read-only token unless it opts into only
