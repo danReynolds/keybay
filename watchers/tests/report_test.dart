@@ -36,6 +36,10 @@ void main() {
     final raw = await File('${output.path}/raw.md').readAsString();
     expect(raw, contains('Peer issue: Storage fallback'));
     expect(raw, contains('Status: **findings**'));
+    expect(
+      raw,
+      contains('https://github.com/danReynolds/keybay/actions/runs/123'),
+    );
     final assessment =
         await File('${output.path}/assessment.md').readAsString();
     expect(assessment, contains('"status":"pending"'));

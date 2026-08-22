@@ -218,6 +218,7 @@ Future<void> createReport({
     'attempt': attempt,
     'event': event,
     'commit': commit,
+    'run_url': 'https://github.com/danReynolds/keybay/actions/runs/$runId',
     'started_at': startedAt.toUtc().toIso8601String(),
     'statuses': <String, String>{
       for (final watcher in watcherNames) watcher: parsed[watcher]!.status,
@@ -355,7 +356,9 @@ String _rawMarkdown(
       'This is immutable discovery output. A finding means “review this,” not “Keybay is vulnerable.”',
     )
     ..writeln()
-    ..writeln('- Report: `${metadata['report_id']}`')
+    ..writeln(
+      '- Report: [`${metadata['report_id']}`](${metadata['run_url']}) (attempt `${metadata['attempt']}`)',
+    )
     ..writeln('- Started: `${metadata['started_at']}`')
     ..writeln('- Source commit: `${metadata['commit']}`')
     ..writeln('- GitHub event: `${metadata['event']}`');
