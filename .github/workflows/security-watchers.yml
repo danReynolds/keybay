@@ -23,7 +23,7 @@ on:
 
 # Ordinary CI is read-only except for SARIF publication. Scheduled and manual
 # discovery is also read-only; a separate job validates its artifact before it
-# gets the narrow permission needed to open a report PR.
+# gets the narrow permission needed to push a report-only staging branch.
 permissions:
   contents: read
 
@@ -304,7 +304,7 @@ jobs:
             exit 1
           fi
 
-  report-publish:
+  report-stage:
     if: >-
       ${{ always() &&
           (github.event_name == 'schedule' ||
@@ -315,7 +315,6 @@ jobs:
     permissions:
       actions: read
       contents: write
-      pull-requests: write
     steps:
       - name: check out the exact discovery commit
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -362,9 +361,8 @@ jobs:
             --output watchers/reports/SUMMARY.md
           echo "report-directory=$report_directory" >> "$GITHUB_OUTPUT"
           echo "report-date=$report_date" >> "$GITHUB_OUTPUT"
-      - name: open one pending assessment PR
+      - name: push one pending assessment branch
         env:
-          GH_TOKEN: ${{ github.token }}
           REPORT_DIRECTORY: ${{ steps.render.outputs.report-directory }}
           REPORT_DATE: ${{ steps.render.outputs.report-date }}
         run: |
@@ -375,12 +373,3 @@ jobs:
           git add "$REPORT_DIRECTORY" watchers/reports/SUMMARY.md
           git commit -m "security: record watcher report $REPORT_DATE"
           git push origin "$branch"
-          body="Raw discovery and the pending Codex assessment for watcher run $GITHUB_RUN_ID.
-
-          Findings are review inputs, not vulnerability determinations. The scheduled Codex task completes the assessment on this PR, records any public issue or private draft advisory using only a safe link, then normal CI gates the squash merge."
-          gh pr create \
-            --repo "$GITHUB_REPOSITORY" \
-            --base main \
-            --head "$branch" \
-            --title "security: assess watcher report $REPORT_DATE ($GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT)" \
-            --body "$body"

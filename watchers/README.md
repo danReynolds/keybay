@@ -16,19 +16,19 @@ Linux monitoring is deliberately narrow. Generic distro and kernel CVEs remain t
 
 GitHub runs all three watchers every Monday and can run any group on demand. Discovery is read-only. A failed or malformed source is recorded as failed, never as quiet.
 
-Each run opens one generated report PR containing:
+Each run pushes one generated `security-report/*` branch containing:
 
 - `reports/<date>-<run>-<attempt>/raw.md`: immutable, validated discovery output.
 - `reports/<date>-<run>-<attempt>/assessment.md`: the separate Codex applicability review.
 - `reports/SUMMARY.md`: the derived run history, assessment summary, and links to resulting actions.
 
-The scheduled Codex task follows [INSTRUCTIONS.md](INSTRUCTIONS.md), completes the assessment on that PR, and updates the summary. Applicable public work becomes a normal GitHub issue. A plausible undisclosed Keybay vulnerability becomes a private draft security advisory; the public report contains only a generic label and the advisory's opaque private URL. Normal CI and review gate the final squash merge to `main`.
+The scheduled Codex task follows [INSTRUCTIONS.md](INSTRUCTIONS.md), verifies the generated branch, opens one PR, completes its assessment, and updates the summary. Applicable public work becomes a normal GitHub issue. A plausible undisclosed Keybay vulnerability becomes a private draft security advisory; the public report contains only a generic label and the advisory's opaque private URL. Normal CI and review gate the final squash merge to `main`.
 
 Physical-device testing is triggered only when a finding or code change can affect an OS, hardware, entitlement, lifecycle, or provider-dependent claim. It is not a weekly chore.
 
 ## Run it
 
-In GitHub, open **Actions → Security watchers → Run workflow**, keep the branch on `main`, and choose `all` or one watcher. The workflow opens a pending assessment PR even when the result is quiet or a source failed, so every run remains visible.
+In GitHub, open **Actions → Security watchers → Run workflow**, keep the branch on `main`, and choose `all` or one watcher. The workflow stages a pending assessment branch even when the result is quiet or a source failed, so the Codex task can preserve every run.
 
 For a local read-only check:
 

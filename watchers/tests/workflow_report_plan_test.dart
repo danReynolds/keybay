@@ -12,21 +12,23 @@ void main() {
   });
 
   test('scheduled discovery cannot write repository state', () {
-    final discovery = _job(workflow, 'report-discovery', 'report-publish');
+    final discovery = _job(workflow, 'report-discovery', 'report-stage');
     expect(discovery, contains('permissions:\n      contents: read'));
     expect(discovery, isNot(contains('issues: write')));
     expect(discovery, isNot(contains('pull-requests: write')));
     expect(discovery, contains('upload normalized discovery inputs'));
   });
 
-  test('publisher can only create a report PR', () {
-    final publisher = _job(workflow, 'report-publish', null);
-    expect(publisher, contains('pull-requests: write'));
-    expect(publisher, contains('watchers/report.dart create'));
-    expect(publisher, contains('watchers/report.dart summary'));
-    expect(publisher, contains('gh pr create'));
-    expect(publisher, isNot(contains('gh issue create')));
-    expect(publisher, isNot(contains('/security-advisories')));
+  test('stager can only push the validated report branch', () {
+    final stager = _job(workflow, 'report-stage', null);
+    expect(stager, contains('contents: write'));
+    expect(stager, isNot(contains('pull-requests: write')));
+    expect(stager, contains('watchers/report.dart create'));
+    expect(stager, contains('watchers/report.dart summary'));
+    expect(stager, contains(r'git push origin "$branch"'));
+    expect(stager, isNot(contains('gh pr create')));
+    expect(stager, isNot(contains('gh issue create')));
+    expect(stager, isNot(contains('/security-advisories')));
   });
 
   test('required dependency check keeps its protected-branch name', () {
