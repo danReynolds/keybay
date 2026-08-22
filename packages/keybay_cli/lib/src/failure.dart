@@ -80,6 +80,15 @@ CliFailure failureForSecretStore(SecretStoreException error) {
         'Recovery procedure: $recoveryUrl',
       ],
     ),
+    StoreMigrationConflict() => CliFailure(
+      exitCode: 69,
+      lines: <String>[
+        'error: Keybay found both legacy and current store locations.',
+        'Neither was changed. Preserve both and follow the deliberate platform '
+            'migration procedure before retrying.',
+        'Recovery procedure: $recoveryUrl',
+      ],
+    ),
     KeychainAccessGroupChanged() => CliFailure(
       exitCode: 69,
       lines: <String>[

@@ -2,6 +2,10 @@
 
 ## 0.1.1
 
+- Keep Android containers and wrapped-key sidecars beneath the app's no-backup
+  directory. Existing 0.1.0 files-directory stores migrate atomically without
+  changing their Keystore alias; two populated locations fail closed instead
+  of choosing a winner.
 - Make `deleteAll()` a single backend transaction. Production backends clear
   natively or replace the encrypted container once; custom backends must opt in
   through `AtomicDeleteAllBackend` or the call fails closed.

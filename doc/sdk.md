@@ -124,14 +124,16 @@ service**, repeatably, from the suite — not mocks.
 ./tool/test_e2e.sh      # the full real-platform matrix (--entitled adds the macOS DP path)
 ```
 
-In CI, on every push to main and every pull request: the unit tier (crypto
-vectors, container mutation, real POSIX permissions, dependency-closure
-firewall), the real macOS Keychain and Linux Secret Service, and maintained
-iOS-simulator/Android-emulator integration. The entitled-macOS leg needs a
-signing identity and runs locally via `tool/test_e2e.sh --entitled`. One honest
-limit: simulator/emulator secure hardware is *emulated*, so those legs prove
-the genuine API **code path**, not that physical silicon mediated it. Stronger
-native/device evidence is scoped by the
+In CI, every push to main and every pull request runs the unit tier (crypto
+vectors, container mutation, real POSIX permissions, and the
+dependency-closure firewall). Version changes and shared-core changes run the
+full real-provider matrix; provider-specific implementation and harness changes
+run the affected macOS Keychain, Linux Secret Service, iOS-simulator, and
+Android-emulator lanes. The same provider matrix can be started manually. The
+entitled-macOS leg needs a signing identity and runs locally via
+`tool/test_e2e.sh --entitled`. One honest limit: simulator/emulator secure
+hardware is *emulated*, so those legs prove the genuine API **code path**, not
+that physical silicon mediated it. Stronger native/device evidence is scoped by the
 [security suite](device-security-suite.md).
 
 ## Requirements

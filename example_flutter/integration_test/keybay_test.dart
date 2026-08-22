@@ -15,9 +15,13 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:keybay/keybay.dart';
+import 'package:keybay/src/android_keystore_key_source.dart';
+import 'package:keybay/src/app_paths.dart';
+import 'package:keybay/src/backends/encrypted_file_backend.dart';
 
 /// What this leg expects — set per environment, not detected (detection is
 /// what the test is *checking*). `EXPECT_SCHEME` is `native` | `file` (the
@@ -39,6 +43,9 @@ const String expectAndroidLevel =
 /// the default.
 const appId =
     String.fromEnvironment('APP_ID', defaultValue: 'com.example.keybayHarness');
+
+const _androidChannel =
+    MethodChannel('dev.keybay.securityharness/keybay_device_security');
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -179,17 +186,21 @@ void main() {
     expect(await store.readString('unicode'), 'café ☕ 名前 — ключ');
   });
 
-  test('Android: ciphertext + wrapped-key blob at the derived path', () async {
+  test('Android: ciphertext + wrapped-key blob stay under no-backup', () async {
     if (!Platform.isAndroid) {
       markTestSkipped('Android-only');
       return;
     }
     await store.writeString('android-proof', 'pl4in-t3xt-pr00f');
-    // Cross-check of the resolver's Context-free derivation: the engine sets
-    // TMPDIR (Directory.systemTemp) to the app cache dir; files/ is its
-    // sibling under dataDir.
-    final dataDir = Directory.systemTemp.parent.path;
-    final dir = '$dataDir/files/$appId';
+    // Cross-check the pure-Dart resolver against the host's independent use of
+    // the public Context.getNoBackupFilesDir() API. This catches an Android
+    // layout change without adding a production plugin or hidden-API call.
+    final hostNoBackup =
+        await _androidChannel.invokeMethod<String>('noBackupFilesDir');
+    final derivedNoBackup =
+        androidNoBackupDirFromTmpdir(Directory.systemTemp.path);
+    expect(derivedNoBackup, hostNoBackup);
+    final dir = '$derivedNoBackup/$appId';
     final container = File('$dir/secrets.enc');
     final blob = File('$dir/store-key.wrapped');
     expect(container.existsSync(), isTrue,
@@ -205,5 +216,58 @@ void main() {
     expect(blobBytes.sublist(0, 4), [0x53, 0x4B, 0x57, 0x31]);
     expect(blobBytes.length, lessThan(128));
     expect(String.fromCharCodes(blobBytes), isNot(contains('pl4in')));
+    expect(
+      Directory(
+        '${androidDataDirFromTmpdir(Directory.systemTemp.path)}/files/$appId',
+      ).existsSync(),
+      isFalse,
+      reason: 'a fresh store must not create the legacy backup-eligible path',
+    );
+  });
+
+  test('Android: an existing files-dir store migrates without rekeying',
+      () async {
+    if (!Platform.isAndroid) {
+      markTestSkipped('Android-only');
+      return;
+    }
+    const migrationAppId = 'com.example.keybayHarness.ci.legacyMigration';
+    final tmpdir = Directory.systemTemp.path;
+    final legacyContainer =
+        androidLegacyContainerPathFor(migrationAppId, tmpdir: tmpdir);
+    final currentContainer =
+        androidContainerPathFor(migrationAppId, tmpdir: tmpdir);
+    final legacyDir = File(legacyContainer).parent;
+    final currentDir = File(currentContainer).parent;
+    final legacySource = AndroidKeystoreKeySource(
+      alias: '$migrationAppId.store-key',
+      blobPath: '${legacyDir.path}/store-key.wrapped',
+    );
+    final currentSource = AndroidKeystoreKeySource(
+      alias: '$migrationAppId.store-key',
+      blobPath: '${currentDir.path}/store-key.wrapped',
+    );
+    try {
+      if (legacyDir.existsSync()) legacyDir.deleteSync(recursive: true);
+      if (currentDir.existsSync()) currentDir.deleteSync(recursive: true);
+      await currentSource.delete();
+
+      final legacy = EncryptedFileBackend(
+        path: legacyContainer,
+        keySource: legacySource,
+      );
+      final expected = Uint8List.fromList([7, 11, 19, 23]);
+      await legacy.write('legacy', expected);
+
+      final migrated = SecretStorage(appId: migrationAppId);
+      expect(await migrated.read('legacy'), expected);
+      expect(legacyDir.existsSync(), isFalse);
+      expect(File(currentContainer).existsSync(), isTrue);
+      expect(File('${currentDir.path}/store-key.wrapped').existsSync(), isTrue);
+    } finally {
+      await currentSource.delete();
+      if (legacyDir.existsSync()) legacyDir.deleteSync(recursive: true);
+      if (currentDir.existsSync()) currentDir.deleteSync(recursive: true);
+    }
   });
 }

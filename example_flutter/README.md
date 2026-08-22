@@ -75,15 +75,11 @@ When intentionally upgrading Android dependencies, refresh both from
 Review the diff before committing, and retain the reviewed Linux AAPT checksum:
 a one-host regeneration must not remove the other CI host's platform artifact.
 
-## Android backup exclusion
+## Android no-backup validation
 
-`android/app/src/main/res/xml/data_extraction_rules.xml` is the living harness
-counterpart to the backup exclusion documented in the package's
-[`doc/platforms/android.md`](../doc/platforms/android.md). The
-  Android Keystore wrapping key is not part of app backup and does not migrate
-  with transferred app data, so a restored store cannot be decrypted on another
-  device (reported as `KeyInvalidated`);
-this dedicated harness disables backup and excludes its entire files domain
-from cloud backup and device transfer because it creates several test
-namespaces. Consumer applications should use the narrower per-`appId` paths in
-the platform guide.
+The harness deliberately carries no host backup rule for Keybay. Its Android
+integration test compares Keybay's derived directory with the host's public
+`Context.getNoBackupFilesDir()` result, verifies every store artifact remains
+beneath it, and exercises the atomic migration from the 0.1.0 files-directory
+layout. Backup safety therefore belongs to the package rather than every host
+manifest; details are in [`doc/platforms/android.md`](../doc/platforms/android.md).

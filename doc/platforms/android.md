@@ -4,7 +4,7 @@
 `KeystoreUnreachable` rather than degrading.
 
 Every secret lives in **one authenticated encrypted file** in the app-private
-files directory (`<dataDir>/files/<appId>/secrets.enc`), sealed with
+no-backup directory (`<dataDir>/no_backup/<appId>/secrets.enc`), sealed with
 **XChaCha20-Poly1305** under an HKDF-SHA256-derived key with a key-commitment
 header. The 32-byte file key is wrapped by an **AES-256-GCM key created in
 [Android Keystore](https://developer.android.com/privacy-and-security/keystore)**.
@@ -60,47 +60,30 @@ best-case reliability profile and to fail loudly, never silently:
   (a software Keystore implementation, or an emulator). Presence of the
   Keystore is never taken as proof of hardware.
 
-## Exclude the store from backups
+## Backup behavior and upgrade migration
 
-Because the wrapping key never migrates, backed-up or transferred store data
-can't be decrypted on another device (you'd get `KeyInvalidated`). Excluding the
-store directory avoids that confusing restore state and keeps your ciphertext
-out of backups. **Security does not depend on this** — restored blobs are
-useless without the original device — and since this is a plain Dart package,
-not a plugin, it can't inject manifest rules for you. Add them (API 31+):
+The store and every sidecar live beneath Android's no-backup namespace, so a
+host app no longer needs path-specific manifest exclusions for Keybay. The
+pure-Dart resolver derives that namespace from the app's framework cache path;
+the Android integration harness independently compares it with
+`Context.getNoBackupFilesDir()` on each maintained emulator tier.
 
-```xml
-<!-- AndroidManifest.xml -->
-<application android:dataExtractionRules="@xml/data_extraction_rules" …>
-```
+On the first open after upgrading from 0.1.0, Keybay atomically renames the
+complete `<dataDir>/files/<appId>/` directory into the no-backup namespace. The
+container, wrapped key, and lock move together and the Android Keystore alias
+does not change. If both locations contain state, `StoreMigrationConflict`
+fails closed without modifying either. A legacy container restored without its
+device-bound Keystore key still fails as `KeyInvalidated`; migration never
+rekeys or silently replaces it.
 
-```xml
-<!-- res/xml/data_extraction_rules.xml — <appId> is the id you pass to
-     SecretStorage(appId:) -->
-<data-extraction-rules>
-  <cloud-backup><exclude domain="file" path="<appId>/" /></cloud-backup>
-  <device-transfer><exclude domain="file" path="<appId>/" /></device-transfer>
-</data-extraction-rules>
-```
-
-The `example_flutter/` security harness carries an equivalent, stricter rule:
-it excludes its entire files domain because the suite creates several test
-`appId` namespaces. Consumer apps should normally keep the narrower rule above.
-
-Android 16 QPR2 / API 36.1 also defines a separate
-`<cross-platform-transfer platform="ios">` mode. Its rule requires the host
-application's real iOS bundle ID, Apple team ID, and content version, so Keybay
-cannot supply a correct generic stanza. If your application participates in
-that transfer mode, configure it explicitly and exclude every Keybay `appId`;
-an omitted mode must not be treated as proof of exclusion. Physical or
-service-backed transfer is not currently qualified; it is part of the
-bounded pre-1.0 lifecycle work in the
+Android-managed backup exclusion is intrinsic to this location. Physical or
+service-backed cross-platform transfer remains outside the current retained
+qualification evidence; the boundary is tracked in the
 [device security suite](../device-security-suite.md#pre-10-exploit-chain-baseline).
-See the current [Android backup and transfer rules](https://developer.android.com/identity/data/autobackup).
 
-**Validation.** The full round-trip and the on-disk shape (container is
-ciphertext; only the small wrapped-key blob is beside it) are validated on an
-API 33 emulator, including the StrongBox-fallback branch. As with iOS, an
+**Validation.** The full round-trip, 0.1.0 migration, no-backup path, and on-disk
+shape (container is ciphertext; only the small wrapped-key blob is beside it)
+are maintained on API 31 and API 36 emulators. As with iOS, an
 emulator's secure hardware is software-emulated, so the hardware property itself
 is established only by a retained physical report for
 [`KB-AND-010`](../device-security-suite.md#android). The repeatable device suite,

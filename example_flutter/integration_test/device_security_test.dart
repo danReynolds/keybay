@@ -566,6 +566,11 @@ Future<void> _resetAndroidStore(String appId) async {
   if (paths.directory.existsSync()) {
     paths.directory.deleteSync(recursive: true);
   }
+  final legacyDirectory =
+      Directory('${Directory.systemTemp.parent.path}/files/$appId');
+  if (legacyDirectory.existsSync()) {
+    legacyDirectory.deleteSync(recursive: true);
+  }
   await _deleteAndroidAlias(appId);
 }
 
@@ -573,7 +578,7 @@ Future<void> _resetAndroidStore(String appId) async {
   String appId,
 ) {
   final dataDir = Directory.systemTemp.parent.path;
-  final directory = Directory('$dataDir/files/$appId');
+  final directory = Directory('$dataDir/no_backup/$appId');
   return (
     directory: directory,
     container: File('${directory.path}/secrets.enc'),

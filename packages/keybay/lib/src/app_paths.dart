@@ -9,6 +9,7 @@ library;
 import 'dart:io';
 
 import 'errors.dart';
+import 'ffi/posix_file.dart';
 
 /// The container file name inside the app's data directory.
 const String containerFileName = 'secrets.enc';
@@ -77,11 +78,114 @@ String androidDataDirFromTmpdir(String tmpdir) {
   return dataDir;
 }
 
-/// The Android container path: `<dataDir>/files/<appId>/secrets.enc`.
+/// The Android no-backup directory derived from the framework cache path.
+///
+/// Android exposes this directory as `Context.noBackupFilesDir`, but a pure
+/// Dart package has no supported API for obtaining the process `Context`.
+/// `java.io.tmpdir` is the app cache directory, whose stable sibling is the
+/// no-backup directory. The Android integration harness independently compares
+/// this result with the public `Context.getNoBackupFilesDir()` API on every
+/// supported emulator tier.
+String androidNoBackupDirFromTmpdir(String tmpdir) =>
+    '${androidDataDirFromTmpdir(tmpdir)}/no_backup';
+
+/// The Android container path:
+/// `<dataDir>/no_backup/<appId>/secrets.enc`.
 /// [appId] must already have passed `validateAppId`; [tmpdir] is the value of
 /// `System.getProperty("java.io.tmpdir")` (see [androidDataDirFromTmpdir]).
 String androidContainerPathFor(String appId, {required String tmpdir}) =>
+    '${androidNoBackupDirFromTmpdir(tmpdir)}/$appId/$containerFileName';
+
+/// The Android 0.1.0 container path. Used only to migrate an existing
+/// installation into [androidContainerPathFor].
+String androidLegacyContainerPathFor(String appId, {required String tmpdir}) =>
     '${androidDataDirFromTmpdir(tmpdir)}/files/$appId/$containerFileName';
+
+/// Atomically moves an Android 0.1.0 store directory into the no-backup
+/// namespace. The container and every sidecar move together, so the Android
+/// Keystore alias and wrapped store key remain unchanged.
+///
+/// A same-filesystem directory rename is the migration transaction: after a
+/// crash the complete directory is visible at either the legacy or current
+/// location, never partially copied. If both locations contain state, neither
+/// is modified and [StoreMigrationConflict] is thrown. A restored legacy store
+/// still migrates as opaque ciphertext; its first operation then surfaces the
+/// existing [KeyInvalidated] result if the device-bound Keystore key is absent.
+void migrateLegacyAndroidStore(
+  String appId, {
+  required String tmpdir,
+  SecureFileSystem fs = const SecureFileSystem(),
+}) {
+  String parentOf(String path) => path.substring(0, path.lastIndexOf('/'));
+
+  final currentDir = parentOf(androidContainerPathFor(appId, tmpdir: tmpdir));
+  final legacyDir =
+      parentOf(androidLegacyContainerPathFor(appId, tmpdir: tmpdir));
+  final currentType = FileSystemEntity.typeSync(currentDir, followLinks: false);
+  final legacyType = FileSystemEntity.typeSync(legacyDir, followLinks: false);
+
+  if (currentType != FileSystemEntityType.notFound) {
+    if (currentType != FileSystemEntityType.directory) {
+      throw SecureFileError('android-current-not-directory', currentDir, 0);
+    }
+    if (legacyType != FileSystemEntityType.notFound) {
+      throw StoreMigrationConflict(
+        appId: appId,
+        legacyPath: legacyDir,
+        currentPath: currentDir,
+      );
+    }
+    return;
+  }
+  if (legacyType == FileSystemEntityType.notFound) return;
+  if (legacyType != FileSystemEntityType.directory) {
+    throw SecureFileError('android-legacy-not-directory', legacyDir, 0);
+  }
+  if (!fs.verifyPrivateDirSync(legacyDir)) {
+    throw SecureFileError('android-legacy-vanished', legacyDir, 0);
+  }
+
+  final noBackupRoot = parentOf(currentDir);
+  // ContextImpl creates this framework-owned root with 0771 on current
+  // Android releases, just like filesDir. Keybay's appId child remains 0700
+  // and holds every store artifact; do not apply the encrypted-store leaf's
+  // stricter mode policy to its Android-managed parent.
+  var rootType = FileSystemEntity.typeSync(noBackupRoot, followLinks: false);
+  if (rootType == FileSystemEntityType.notFound) {
+    try {
+      Directory(noBackupRoot).createSync(recursive: true);
+    } on FileSystemException catch (error) {
+      throw SecureFileError(
+        'create-android-no-backup-root',
+        noBackupRoot,
+        error.osError?.errorCode ?? 0,
+      );
+    }
+    rootType = FileSystemEntity.typeSync(noBackupRoot, followLinks: false);
+  }
+  if (rootType != FileSystemEntityType.directory) {
+    throw SecureFileError(
+        'android-no-backup-root-not-directory', noBackupRoot, 0);
+  }
+  try {
+    Directory(legacyDir).renameSync(currentDir);
+  } on FileSystemException catch (error) {
+    // A concurrent resolver may have completed the same atomic migration
+    // after our initial observations. Treat exactly that final state as
+    // success; every other failure stays typed and loud.
+    final sourceNow = FileSystemEntity.typeSync(legacyDir, followLinks: false);
+    final targetNow = FileSystemEntity.typeSync(currentDir, followLinks: false);
+    if (sourceNow == FileSystemEntityType.notFound &&
+        targetNow == FileSystemEntityType.directory) {
+      return;
+    }
+    throw SecureFileError(
+      'migrate-legacy-android-store',
+      legacyDir,
+      error.osError?.errorCode ?? 0,
+    );
+  }
+}
 
 /// Beside the possible macOS encrypted container so the signing configuration
 /// sees one stable trace across file/native scheme transitions.

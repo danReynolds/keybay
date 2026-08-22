@@ -316,20 +316,20 @@ void main() {
     expect(android, contains('exit 143'));
   });
 
-  test('host backup exclusions and macOS identity stay harness-scoped', () {
+  test('Android backup safety is intrinsic and macOS identity stays scoped',
+      () {
     final manifest = File(
       '$repo/example_flutter/android/app/src/main/AndroidManifest.xml',
     ).readAsStringSync();
-    expect(manifest, contains('android:allowBackup="false"'));
-    final rules = File(
-      '$repo/example_flutter/android/app/src/main/res/xml/'
-      'data_extraction_rules.xml',
-    ).readAsStringSync();
+    expect(manifest, isNot(contains('android:allowBackup')));
+    expect(manifest, isNot(contains('android:dataExtractionRules')));
     expect(
-      RegExp(r'<exclude domain="file" path="\."\s*/>').allMatches(rules),
-      hasLength(2),
+      File(
+        '$repo/example_flutter/android/app/src/main/res/xml/'
+        'data_extraction_rules.xml',
+      ).existsSync(),
+      isFalse,
     );
-    expect(rules, isNot(contains('<cross-platform-transfer platform="ios">')));
 
     final config = File(
       '$repo/example_flutter/macos/Runner/Configs/AppInfo.xcconfig',
