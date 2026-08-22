@@ -22,6 +22,7 @@ import 'package:keybay/keybay.dart';
 import 'package:keybay/src/android_keystore_key_source.dart';
 import 'package:keybay/src/app_paths.dart';
 import 'package:keybay/src/backends/encrypted_file_backend.dart';
+import 'package:keybay/src/ffi/jni.dart';
 
 /// What this leg expects — set per environment, not detected (detection is
 /// what the test is *checking*). `EXPECT_SCHEME` is `native` | `file` (the
@@ -197,8 +198,11 @@ void main() {
     // layout change without adding a production plugin or hidden-API call.
     final hostNoBackup =
         await _androidChannel.invokeMethod<String>('noBackupFilesDir');
-    final derivedNoBackup =
-        androidNoBackupDirFromTmpdir(Directory.systemTemp.path);
+    // Match the production resolver's Java property exactly. Dart's
+    // Directory.systemTemp points at a Flutter test-runner child directory on
+    // Android and is intentionally not the source used by SecretStorage.
+    final tmpdir = Jni.instance().systemProperty('java.io.tmpdir');
+    final derivedNoBackup = androidNoBackupDirFromTmpdir(tmpdir);
     expect(derivedNoBackup, hostNoBackup);
     final dir = '$derivedNoBackup/$appId';
     final container = File('$dir/secrets.enc');
@@ -218,7 +222,7 @@ void main() {
     expect(String.fromCharCodes(blobBytes), isNot(contains('pl4in')));
     expect(
       Directory(
-        '${androidDataDirFromTmpdir(Directory.systemTemp.path)}/files/$appId',
+        '${androidDataDirFromTmpdir(tmpdir)}/files/$appId',
       ).existsSync(),
       isFalse,
       reason: 'a fresh store must not create the legacy backup-eligible path',
@@ -232,7 +236,7 @@ void main() {
       return;
     }
     const migrationAppId = 'com.example.keybayHarness.ci.legacyMigration';
-    final tmpdir = Directory.systemTemp.path;
+    final tmpdir = Jni.instance().systemProperty('java.io.tmpdir');
     final legacyContainer =
         androidLegacyContainerPathFor(migrationAppId, tmpdir: tmpdir);
     final currentContainer =
