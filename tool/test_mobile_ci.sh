@@ -42,10 +42,30 @@ raise SystemExit("no available iPhone simulator")
     xcrun simctl bootstatus "$udid" -b
     (
       cd "$HARNESS"
-      flutter test integration_test/keybay_test.dart \
-        -d "$udid" \
+      # Generate an XCTest-hosted integration app, then let XCTest launch it
+      # and read the plugin's in-process result map. `flutter test` instead
+      # discovers the VM service by scraping `simctl log stream`; that
+      # discovery can wait forever after an otherwise successful build.
+      flutter build ios --config-only --simulator --debug \
+        integration_test/keybay_test.dart \
         --dart-define=APP_ID=com.example.keybayHarness.ci \
         --dart-define=EXPECT_SCHEME=native
+      result_root="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+      result_bundle="$result_root/keybay-ios-$$.xcresult"
+      xcode_log="$result_root/keybay-ios-$$.log"
+      if xcodebuild test \
+        -workspace ios/Runner.xcworkspace \
+        -scheme Runner \
+        -configuration Debug \
+        -destination "id=$udid" \
+        -parallel-testing-enabled NO \
+        -resultBundlePath "$result_bundle" >"$xcode_log" 2>&1; then
+        tail -n 100 "$xcode_log"
+      else
+        status=$?
+        tail -n 500 "$xcode_log" >&2
+        exit "$status"
+      fi
     )
     ;;
   *)

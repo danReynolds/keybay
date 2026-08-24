@@ -63,7 +63,8 @@ void main() {
     await store.deleteAll();
   });
 
-  test('resolver picked the scheme and any inspectable level', () async {
+  testWidgets('resolver picked the scheme and any inspectable level',
+      (WidgetTester _) async {
     final info = await store.backend.describe();
 
     final wantScheme = switch (expectScheme) {
@@ -100,7 +101,8 @@ void main() {
     expect(info.locked, isFalse);
   });
 
-  test('Android: security level is measured from the KEK', () async {
+  testWidgets('Android: security level is measured from the KEK',
+      (WidgetTester _) async {
     if (!Platform.isAndroid) {
       markTestSkipped('Android-only');
       return;
@@ -123,8 +125,9 @@ void main() {
         reason: 'Android Keystore level differs from the test-leg contract');
   });
 
-  test('macOS entitled: a pre-existing file store blocks native (migration)',
-      () async {
+  testWidgets(
+      'macOS entitled: a pre-existing file store blocks native (migration)',
+      (WidgetTester _) async {
     if (!(Platform.isMacOS && expectScheme == 'native')) {
       markTestSkipped('entitled-macOS-only');
       return;
@@ -150,8 +153,8 @@ void main() {
     }
   });
 
-  test('full round-trip: bytes, strings, labels, enumeration, delete',
-      () async {
+  testWidgets('full round-trip: bytes, strings, labels, enumeration, delete',
+      (WidgetTester _) async {
     expect(await store.read('token'), isNull);
     expect(await store.containsKey('token'), isFalse);
 
@@ -175,19 +178,20 @@ void main() {
     await store.delete('token'); // idempotent
   });
 
-  test('a second store instance reads the same data (shared backing)',
-      () async {
+  testWidgets('a second store instance reads the same data (shared backing)',
+      (WidgetTester _) async {
     await store.writeString('shared', 'visible');
     final second = SecretStorage(appId: appId);
     expect(await second.readString('shared'), 'visible');
   });
 
-  test('unicode values survive the round-trip', () async {
+  testWidgets('unicode values survive the round-trip', (WidgetTester _) async {
     await store.writeString('unicode', 'café ☕ 名前 — ключ');
     expect(await store.readString('unicode'), 'café ☕ 名前 — ключ');
   });
 
-  test('Android: ciphertext + wrapped-key blob stay under no-backup', () async {
+  testWidgets('Android: ciphertext + wrapped-key blob stay under no-backup',
+      (WidgetTester _) async {
     if (!Platform.isAndroid) {
       markTestSkipped('Android-only');
       return;
@@ -229,8 +233,8 @@ void main() {
     );
   });
 
-  test('Android: an existing files-dir store migrates without rekeying',
-      () async {
+  testWidgets('Android: an existing files-dir store migrates without rekeying',
+      (WidgetTester _) async {
     if (!Platform.isAndroid) {
       markTestSkipped('Android-only');
       return;
