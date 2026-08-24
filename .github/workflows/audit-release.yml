@@ -82,10 +82,14 @@ jobs:
           grep -Eq "^##[[:space:]]+${version}[[:space:]]*$" \
             source/packages/keybay/CHANGELOG.md
 
+          # A release-candidate run is dispatched on main immediately before
+          # staging. Keep push eligible for repositories that restore main-push
+          # CI, but exclude the scheduled workflow because it runs only the
+          # fuzz canary rather than the release suite.
           successful_runs="$(gh api --method GET \
             "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
             -f head_sha="$commit" -f branch=main -f status=completed \
-            --jq '[.workflow_runs[] | select(.event == "push" and .conclusion == "success")] | length')"
+            --jq '[.workflow_runs[] | select((.event == "push" or .event == "workflow_dispatch") and .conclusion == "success")] | length')"
           test "$successful_runs" -ge 1 || {
             echo "::error::no successful main CI run exists for $commit"
             exit 1
