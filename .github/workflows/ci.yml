@@ -280,6 +280,62 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # One stable branch-protection context for the conditional provider matrix.
+  # GitHub skips a matrix before expansion when its job-level `if` is false,
+  # so requiring the individual provider job names makes an unrelated change
+  # impossible to merge. This gate is always materialized for PR/manual runs:
+  # every selected provider must pass and every unselected provider must have
+  # been skipped. Keep the expensive provider jobs conditional above.
+  provider-gate:
+    if: ${{ always() && github.event_name != 'schedule' }}
+    needs:
+      - provider-impact
+      - integration-macos
+      - integration-linux
+      - integration-android
+      - integration-ios
+    runs-on: ubuntu-latest
+    env:
+      IMPACT_RESULT: ${{ needs.provider-impact.result }}
+      IMPACT_REASON: ${{ needs.provider-impact.outputs.reason }}
+      MACOS_REQUIRED: ${{ needs.provider-impact.outputs.macos }}
+      MACOS_RESULT: ${{ needs.integration-macos.result }}
+      LINUX_REQUIRED: ${{ needs.provider-impact.outputs.linux }}
+      LINUX_RESULT: ${{ needs.integration-linux.result }}
+      ANDROID_REQUIRED: ${{ needs.provider-impact.outputs.android }}
+      ANDROID_RESULT: ${{ needs.integration-android.result }}
+      IOS_REQUIRED: ${{ needs.provider-impact.outputs.ios }}
+      IOS_RESULT: ${{ needs.integration-ios.result }}
+    steps:
+      - name: require selected providers and validate skips
+        run: |
+          set -euo pipefail
+          if [[ "$IMPACT_RESULT" != success ]]; then
+            echo "::error::provider-impact did not succeed: $IMPACT_RESULT"
+            exit 1
+          fi
+
+          check_provider() {
+            provider="$1"
+            required="$2"
+            result="$3"
+            case "$required:$result" in
+              true:success|false:skipped)
+                echo "$provider: required=$required result=$result"
+                ;;
+              *)
+                echo "::error::$provider: required=$required result=$result"
+                return 1
+                ;;
+            esac
+          }
+
+          echo "provider-impact: $IMPACT_REASON"
+          check_provider macos "$MACOS_REQUIRED" "$MACOS_RESULT"
+          check_provider linux "$LINUX_REQUIRED" "$LINUX_RESULT"
+          check_provider android "$ANDROID_REQUIRED" "$ANDROID_RESULT"
+          check_provider ios "$IOS_REQUIRED" "$IOS_RESULT"
+
   site:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
