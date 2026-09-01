@@ -76,7 +76,7 @@ jobs:
             --fail-on-vuln=true
       - name: upload findings to code scanning
         if: ${{ !cancelled() }}
-        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: results.sarif
 
@@ -110,7 +110,7 @@ jobs:
           persist-credentials: false
       - name: install Dart
         id: dart
-        uses: dart-lang/setup-dart@7654d458321ee25acccccfdb86cd48bd95768ff1 # v1.8.0
+        uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
       - name: resolve the committed workspace
         id: pub_get
         run: dart pub get --enforce-lockfile
@@ -321,7 +321,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
-      - uses: dart-lang/setup-dart@7654d458321ee25acccccfdb86cd48bd95768ff1 # v1.8.0
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
       - run: dart pub get --enforce-lockfile
       - name: download discovery inputs
         id: download
