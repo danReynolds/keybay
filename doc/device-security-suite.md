@@ -343,7 +343,8 @@ receipt replacement. Reopen requires the last acknowledged sequence or its
 immediate successor, verifies another write, and resets the fixture. Cleanup
 also checks the control and acknowledgment files. The host runner tests cover
 rejected receipts, process identity, signals and failure cleanup; both native
-builds have compiled. Physical execution remains pending.
+builds have compiled. Physical iOS upgrade and crash execution passed on Sep 6;
+Android crash execution remains pending.
 
 See [the remaining mobile procedures](mobile-failure-qualification.md) for
 commands and limits. This workload does not place a signal inside a particular

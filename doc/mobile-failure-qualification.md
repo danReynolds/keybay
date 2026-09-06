@@ -1,7 +1,8 @@
 # Remaining physical mobile procedures
 
 These are the bounded procedures for the remaining device work. Physical
-execution remains **pending**. The `--crash` selection is implemented for both
+execution passed on iOS for upgrade and crash recovery on Sep 6; Android
+crash execution and the other procedures below remain **pending**. The `--crash` selection is implemented for both
 Android and iOS using the existing lifecycle fixture and runners. It has passed
 host orchestration checks and compiled as Profile/AOT for both platforms. Existing
 `--lifecycle` and `--upgrade` runners deliberately verify clean exits and must

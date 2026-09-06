@@ -10,14 +10,14 @@ reviewing their results and source applicability. Times below are UTC.
 | Platform / profile | Latest evidence | What passed | Remaining qualification |
 | --- | --- | --- | --- |
 | **Shared SDK** | **Pass**, Sep 6; current runtime | 484 SDK tests (11 opt-in/native skips): cryptography, framed storage, hostile inputs, transactions, passphrase and platform contracts. The Linux/Flatpak run separately passed 41 portal tests, including the three real D-Bus cases. | Independent external crypto/security review; maintained-device Argon2 acceptance budgets. |
-| **macOS file Keychain** | **Pass**, Sep 6 14:05; current runtime, native host | Seven tests: bounded root access, exact provider lifecycle, private files, persistence, passphrase/reset, and locked-provider record operations. Disposable Keychain deleted; user search list and default preserved. | The separate Developer ID runtime/module row now covers bounded genuine-account continuity. Other signing/runtime transitions remain open. |
+| **macOS file Keychain** | **Local pass**, Sep 6, including Dart 3.13.3; initial native CI **failed** its locked-Keychain worker | Seven tests: bounded root access, exact provider lifecycle, private files, persistence, passphrase/reset, and locked-provider record operations. Disposable Keychain deleted; user search list and default preserved. | Resolve the CI worker failure with retained diagnostics; it passed locally. The separate Developer ID row covers bounded genuine-account continuity. Other signing/runtime transitions remain open. |
 | **macOS signed app** | **Pass**, Sep 5 20:02; unchanged platform/common implementation, native Apple Development signing | Signed SDK baseline; passphrase-protected store seeded by build 101 and reopened without initialization by build 102. Explicit phase results, distinct code hashes, Apple-trusted signatures, exact sole Keychain group and sandboxing verified. Provider root, store and staging file absent after reset; harness exited; signing configuration and Keychain settings preserved. | Developer ID distribution/release upgrades, entitlement transitions, physical lock/reboot and reinstall. This qualifies the recorded development-signed profile and unchanged Apple/common implementation, not distribution signing. |
 | **macOS single-file Developer ID** | **Failed**, Sep 6; dedicated hardened AOT SDK fixture | Trusted signature, secure timestamp, hardened-runtime flag and empty entitlements verified. Actual launch was killed before fixture startup. A minimal program without Keybay reproduces the failure; signed control without hardened runtime runs. No test store created; user Keychain settings preserved. | Single-file product packaging remains deferred with CLI work. The native module form below clears the SDK continuity check; it does not repair the single-file executable. |
 | **macOS Developer ID runtime/module** | **Pass**, Sep 6 13:37; current runtime, native host | Separately signed AOT builds 101/102 reopened the passphrase-protected store without initialization. Hardened runtime, empty entitlements, matching team/designated requirements and changed module hashes verified. Native exits passed; provider/store/stage/control absent; user Keychain settings preserved. An ad-hoc module was separately rejected. | Notarization, entitled-app distribution, runtime/toolchain upgrades and other native configurations. Both modules used the same SDK and signed runtime; no format or signing-team migration. |
-| **Ordinary Linux** | **Pass**, Sep 6 14:05; current runtime, Ubuntu 24.04 arm64 in Docker | Six tests: POSIX flags, clean-account directories, raw Secret Service root lifecycle, second-data-root rejection, public SDK persistence/passphrase/reset, and locked-provider fail-closed behavior. Private disposable provider state. | Native x64 CI evidence for this source; additional supported provider configurations. Namespace isolation is not OS-enforced application isolation here. |
-| **Flatpak** | **Pass**, Sep 6 14:05; current runtime, real nested Flatpak in Docker | Two-app identity/secret/file isolation, concurrent first use, no fallback, lifecycle/reset and provider restart passed. Real GNOME prompts passed user cancellation, timeout and two overlapping cancellations; both stores reopened without provider restart. Fixed a pending blocking pipe read that previously kept cancelled processes alive. Native descriptor/process regression and cleanup passed. | Native x64 CI evidence and other provider configurations. Timeout recovery includes explicitly dismissing any remaining native dialog; it does not establish automatic dialog dismissal. This covers the recorded GNOME backend. |
-| **Android** | **Physical pass**, Sep 6 01:08 Profile/AOT upgrade; Sep 5 00:16 baseline and 20:56 process continuity; unchanged platform/common implementation, Pixel 6a / Android 16 / API 36. Latest emulator attempt Sep 5 14:42: **blocked**, no ready emulator. | Six substantive baseline tests plus source/nonce metadata: native hardware-key assertion, ciphertext/reopen/passphrase/reset, all 32 contended writes, tamper rejection, missing root and same-alias replacement. Process continuity passed separately. Upgrade from signed build 101 to distinct AOT build 102 preserved the app UID, signer and both records without initialization; missing/wrong passphrases rejected, correct passphrase accepted. Matching source/nonce/build receipts and two native self-exit/code-zero records verified. Control/store/stage removed; package absence verified across all profiles. | Abrupt termination, reboot/relock, backup/restore/transfer, peer-app procedures and other maintained devices. Upgrade covers a debug-signed Profile/AOT app with the same SDK and store format in both builds, using clean exits. Hardware baseline establishes TEE **or** StrongBox, not StrongBox specifically. |
-| **iOS** | **Physical pass**, Sep 5 20:23 baseline and 20:41 Profile/AOT continuity; unchanged platform/common implementation, iPhone 16 / iOS 18.7.3. Simulator also passed Sep 5 14:42. | Two substantive physical SDK scenarios: ciphertext, private files/backup exclusion, fresh-engine reopen, passphrase/reset and all 32 contended writes. Separately, the same signed AOT app seeded and reopened the existing store in distinct processes with native exit codes and matching source/nonce/phase receipts. Signed application identity verified; control, encrypted-store and staging files absent after reset. | Application-update continuity, lock/reboot, access-group transitions, backup/restore/transfer and other maintained devices. Separate-process continuity uses platform protection; the passphrase baseline remains in-process. |
+| **Ordinary Linux** | **Pass**, Sep 6 14:40; current runtime, native Ubuntu x64 CI; arm64 Docker also passed | Six tests: POSIX flags, clean-account directories, raw Secret Service root lifecycle, second-data-root rejection, public SDK persistence/passphrase/reset, and locked-provider fail-closed behavior. Private disposable provider state. | Additional supported provider configurations. Namespace isolation is not OS-enforced application isolation here. |
+| **Flatpak** | **Pass**, Sep 6 14:41; current runtime, native Ubuntu 24.04 x64 CI; nested arm64 Docker also passed | Two-app identity/secret/file isolation, concurrent first use, no fallback, lifecycle/reset and provider restart passed. Real GNOME prompts passed user cancellation, timeout and two overlapping cancellations; both stores reopened without provider restart. Fixed a pending blocking pipe read that previously kept cancelled processes alive. Native descriptor/process regression and cleanup passed. | Other provider configurations. Timeout recovery includes explicitly dismissing any remaining native dialog; it does not establish automatic dialog dismissal. This covers the recorded GNOME backend. |
+| **Android** | **Physical pass**, Sep 6 01:08 Profile/AOT upgrade; Sep 5 00:16 baseline and 20:56 process continuity; unchanged platform/common implementation, Pixel 6a / Android 16 / API 36. Native CI emulator baselines passed Sep 6 on API 31 and API 36. | Six substantive baseline tests plus source/nonce metadata: native hardware-key assertion, ciphertext/reopen/passphrase/reset, all 32 contended writes, tamper rejection, missing root and same-alias replacement. Process continuity passed separately. Upgrade from signed build 101 to distinct AOT build 102 preserved the app UID, signer and both records without initialization; missing/wrong passphrases rejected, correct passphrase accepted. Matching source/nonce/build receipts and two native self-exit/code-zero records verified. Control/store/stage removed; package absence verified across all profiles. | Abrupt termination, reboot/relock, backup/restore/transfer, peer-app procedures and other maintained devices. Upgrade covers a debug-signed Profile/AOT app with the same SDK and store format in both builds, using clean exits. Hardware baseline establishes TEE **or** StrongBox, not StrongBox specifically. |
+| **iOS** | **Physical pass**, Sep 6 14:38 upgrade and 14:39 crash recovery; Sep 5 baseline and process continuity; iPhone 16 / iOS 18.7.3. Simulator CI passed Sep 6. | Baseline ciphertext/private files/backup exclusion, passphrase/reset and all 32 contended writes. Signed Profile/AOT upgrade 101 to 102 preserved the passphrase store without initialization, with stable signing identity and distinct binaries. Crash qualification verified two exact native SIGKILLs after seed and during numbered writes; a third process preserved acknowledged records/auth policy, recovered the last acknowledged sequence or its successor, and wrote again. Native exits/process absence and control/store/stage/acknowledgment cleanup passed. | Lock/reboot, physical auth-change interruption, access-group transitions, actual backup/restore/transfer and other maintained devices. Both upgrade builds use the same SDK/format; crash signals are not placed within a specific syscall. |
 
 Windows and Snap are deferred and have no qualification claim. Hardware
 credentials, rollback anchors and root rotation are also outside this scope.
@@ -28,12 +28,10 @@ credentials, rollback anchors and root rotation are also outside this scope.
   cancellation defect, native AOT identity correction and qualified macOS
   runtime/module form. External
   review awaits a selected reviewer. The [mobile failure procedures](mobile-failure-qualification.md)
-  now have compiled crash runners; physical execution and remaining lock/reboot/restore phases are pending.
+  now have compiled crash runners; physical iOS execution passed. Android crash execution and remaining lock/reboot/restore phases are pending.
 
-- Upgrade qualification is now implemented for Android/iOS: signed builds
-  101/102 compiled successfully, and host orchestration/receipt rejection tests
-  passed. The physical Android upgrade passed Sep 6; the iOS upgrade remains
-  pending. The fixture now binds mode,
+- Upgrade qualification passed physically on Android and iOS using signed
+  builds 101/102, with host orchestration/receipt rejection tests also passing. The fixture now binds mode,
   build and process ID into its receipt; the older physical continuity receipts
   remain evidence for their recorded source and unchanged mobile/common implementation.
 - Eight native macOS process-crash cases passed Sep 6: writes and passphrase rotation
@@ -58,7 +56,9 @@ credentials, rollback anchors and root rotation are also outside this scope.
   Dart analysis, ShellCheck and pinned workflow lint. The signed-macOS and
   mobile runner checks include rejection of stale app receipts,
   launcher-only success and leftover fixture files. CI uses the shared commands
-  but has not been run against the prepared source snapshot.
+  against the published snapshot. The first CI run passed Linux, Flatpak,
+  minimum SDK and both mobile platforms, but failed formatting, a site check
+  and the macOS locked-Keychain worker. Corrections and diagnostic follow-up are in progress.
 
 ## Evidence and source applicability
 
@@ -92,12 +92,22 @@ Android upgrade used snapshot `93633673…`, adding build/mode-bound receipts,
 passphrase checks and upgrade orchestration. Its Android/common implementation
 is unchanged. The current harness/runners additionally implement crash mode;
 host regressions preserve the earlier process and upgrade paths, but those
-new runners have not yet executed physically. Both upgrade builds used the
+new runners have now executed physically on iOS; the Android crash selection
+remains pending. Both upgrade builds used the
 same SDK and store format; no version migration is claimed.
+
+The [initial native CI run](https://github.com/danReynolds/keybay/actions/runs/34039828520)
+uses published commit `387c0d97…`, with the same SDK runtime hash above.
+Its passing platform jobs do not turn its overall failure into a pass.
 
 These links resolve to retained **local build artifacts**, which are not
 included in a fresh checkout:
 
+- [Physical iOS upgrade/crash follow-up](../build/qualification/ios-physical-followup-20260906/observation.json),
+  [upgrade report](../build/qualification/ios-physical-followup-20260906/upgrade/report.json),
+  [crash report](../build/qualification/ios-physical-followup-20260906/crash/report.json),
+  and [reproduction instructions](../build/qualification/ios-physical-followup-20260906/REPRODUCE.md).
+- [Native x64 Flatpak assertions](../build/qualification/signing-followup-20260906/ci-first-run/flatpak-x64/flatpak-qualification.json).
 - [Qualification follow-up and source applicability](../build/qualification/signing-followup-20260906/observation.json)
   and [reproduction instructions](../build/qualification/signing-followup-20260906/REPRODUCE.md).
 - [Latest clean-source macOS/Linux/Flatpak regression](../build/qualification/signing-followup-20260906/provider-regression/report.json)

@@ -137,6 +137,8 @@ void main() {
       );
     },
     skip: skip,
+    // Five production Argon2 derivations can exceed the default JIT timeout.
+    timeout: const Timeout(Duration(minutes: 2)),
   );
 
   test(

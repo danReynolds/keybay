@@ -479,8 +479,8 @@ def validate_output(metadata)
     raise "Generated docs contain executable JavaScript: #{path}" if html.include?("<script")
   end
 
-  design = File.read(File.join(OUTPUT, "docs/design/index.html"), encoding: "UTF-8")
-  raise "Generated Markdown code was not highlighted" unless design.include?("highlighter-rouge")
+  guide = File.read(File.join(OUTPUT, "docs/guide/index.html"), encoding: "UTF-8")
+  raise "Generated Markdown code was not highlighted" unless guide.include?("highlighter-rouge")
   validate_internal_links
 end
 

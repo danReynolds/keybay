@@ -44,8 +44,10 @@ void main() {
           await process.exitCode;
           rethrow;
         }
-        expect(exitCode, 0, reason: await stderr);
-        expect(await stdout, 'locked-records-ok\n');
+        final output = await stdout;
+        final diagnostics = await stderr;
+        expect(exitCode, 0, reason: '$output\n$diagnostics');
+        expect(output, 'locked-records-ok\n');
       } finally {
         process?.kill();
         final unlock = await Process.run(helper!, ['unlock', keychain]);

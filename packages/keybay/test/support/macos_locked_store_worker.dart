@@ -13,7 +13,10 @@ Future<void> main(List<String> args) async {
   final keychain = '$accountHome/Library/Keychains/login.keychain-db';
   Future<void> fixture(String action) async {
     final result = await Process.run(helper, [action, keychain]);
-    if (result.exitCode != 0) throw StateError('Fixture $action failed');
+    if (result.exitCode != 0) {
+      // The dedicated helper emits only its action and numeric OS status.
+      throw StateError('Fixture $action failed: ${result.stdout}');
+    }
   }
 
   final platform = MacOSUnentitledHostPlatform.test(

@@ -9,6 +9,8 @@ API has no application-ID, path, provider, or alternate-store selector.
 Requires Dart 3.11 or later, including when used through Flutter. CI tests the
 SDK at that floor with the reviewed dependency lockfile.
 
+<a id="sdk-quickstart"></a>
+
 ## Open, use, close
 
 ```dart

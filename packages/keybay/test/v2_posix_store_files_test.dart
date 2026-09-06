@@ -311,30 +311,26 @@ void main() {
     },
   );
 
-  test(
-    'directory preparation rejects an existing child extended ACL',
-    () {
-      final parent = Directory('${fixture.path}/preparation-acl-parent')
-        ..createSync();
-      _chmod('0700', parent.path);
-      final appeared = Directory('${parent.path}/appeared')..createSync();
-      _chmod('0700', appeared.path);
-      if (!_tryAddAcl(appeared.path, 'everyone allow read')) {
-        markTestSkipped('the fixture file system does not support Darwin ACLs');
-        return;
-      }
+  test('directory preparation rejects an existing child extended ACL', () {
+    final parent = Directory('${fixture.path}/preparation-acl-parent')
+      ..createSync();
+    _chmod('0700', parent.path);
+    final appeared = Directory('${parent.path}/appeared')..createSync();
+    _chmod('0700', appeared.path);
+    if (!_tryAddAcl(appeared.path, 'everyone allow read')) {
+      markTestSkipped('the fixture file system does not support Darwin ACLs');
+      return;
+    }
 
-      expect(
-        () => PosixStoreFiles.durablyCreatePrivateDirectories(
-          canonicalExistingParent: Uri.directory(parent.path),
-          childComponents: const <String>['appeared'],
-        ),
-        throwsA(_failure(StoreFilesFailureCode.operationFailed)),
-      );
-      expect(_hasExtendedAcl(appeared.path), isTrue);
-    },
-    skip: Platform.isMacOS ? false : 'Darwin extended ACLs only',
-  );
+    expect(
+      () => PosixStoreFiles.durablyCreatePrivateDirectories(
+        canonicalExistingParent: Uri.directory(parent.path),
+        childComponents: const <String>['appeared'],
+      ),
+      throwsA(_failure(StoreFilesFailureCode.operationFailed)),
+    );
+    expect(_hasExtendedAcl(appeared.path), isTrue);
+  }, skip: Platform.isMacOS ? false : 'Darwin extended ACLs only');
 
   test('durably anchors only an exact private directory', () {
     final parent = Directory('${fixture.path}/mobile-parent')..createSync();
@@ -780,60 +776,56 @@ void main() {
     expect(_mode(root.path), 0x1ed);
   });
 
-  test(
-    'strips inherited ACLs from creations and rejects later ACLs',
-    () async {
-      final parent = Directory('${fixture.path}/acl-parent')..createSync();
-      _chmod('0700', parent.path);
-      if (!_tryAddAcl(
-        parent.path,
-        'everyone allow read,execute,file_inherit,directory_inherit',
-      )) {
-        markTestSkipped('the fixture file system does not support Darwin ACLs');
-        return;
-      }
+  test('strips inherited ACLs from creations and rejects later ACLs', () async {
+    final parent = Directory('${fixture.path}/acl-parent')..createSync();
+    _chmod('0700', parent.path);
+    if (!_tryAddAcl(
+      parent.path,
+      'everyone allow read,execute,file_inherit,directory_inherit',
+    )) {
+      markTestSkipped('the fixture file system does not support Darwin ACLs');
+      return;
+    }
 
-      final root = Directory('${parent.path}/store');
-      final files = _files(root);
-      await files.withExclusiveTransaction((transaction) async {
-        expect(_hasExtendedAcl(root.path), isFalse);
-        expect(_hasExtendedAcl('${root.path}/$_lockName'), isFalse);
+    final root = Directory('${parent.path}/store');
+    final files = _files(root);
+    await files.withExclusiveTransaction((transaction) async {
+      expect(_hasExtendedAcl(root.path), isFalse);
+      expect(_hasExtendedAcl('${root.path}/$_lockName'), isFalse);
 
-        final stage = await transaction.createStaging(expectedLength: 1);
-        expect(_hasExtendedAcl('${root.path}/$_stagingName'), isFalse);
-        await stage.append(Uint8List.fromList(<int>[1]));
-        final verification = await stage.finish();
-        await verification.close();
-        await stage.replaceLive();
-      });
-      expect(_hasExtendedAcl(parent.path), isTrue);
-      expect(_hasExtendedAcl('${root.path}/$_liveName'), isFalse);
+      final stage = await transaction.createStaging(expectedLength: 1);
+      expect(_hasExtendedAcl('${root.path}/$_stagingName'), isFalse);
+      await stage.append(Uint8List.fromList(<int>[1]));
+      final verification = await stage.finish();
+      await verification.close();
+      await stage.replaceLive();
+    });
+    expect(_hasExtendedAcl(parent.path), isTrue);
+    expect(_hasExtendedAcl('${root.path}/$_liveName'), isFalse);
 
-      _addAcl('${root.path}/$_liveName', 'everyone allow read');
-      await expectLater(
-        files.openPinnedLive(),
-        throwsA(_failure(StoreFilesFailureCode.operationFailed)),
-      );
-      expect(_hasExtendedAcl('${root.path}/$_liveName'), isTrue);
-      _removeAcl('${root.path}/$_liveName');
+    _addAcl('${root.path}/$_liveName', 'everyone allow read');
+    await expectLater(
+      files.openPinnedLive(),
+      throwsA(_failure(StoreFilesFailureCode.operationFailed)),
+    );
+    expect(_hasExtendedAcl('${root.path}/$_liveName'), isTrue);
+    _removeAcl('${root.path}/$_liveName');
 
-      _addAcl('${root.path}/$_lockName', 'everyone allow read');
-      await expectLater(
-        files.withExclusiveTransaction((_) async {}),
-        throwsA(_failure(StoreFilesFailureCode.operationFailed)),
-      );
-      expect(_hasExtendedAcl('${root.path}/$_lockName'), isTrue);
-      _removeAcl('${root.path}/$_lockName');
+    _addAcl('${root.path}/$_lockName', 'everyone allow read');
+    await expectLater(
+      files.withExclusiveTransaction((_) async {}),
+      throwsA(_failure(StoreFilesFailureCode.operationFailed)),
+    );
+    expect(_hasExtendedAcl('${root.path}/$_lockName'), isTrue);
+    _removeAcl('${root.path}/$_lockName');
 
-      _addAcl(root.path, 'everyone allow read');
-      await expectLater(
-        files.openPinnedLive(),
-        throwsA(_failure(StoreFilesFailureCode.operationFailed)),
-      );
-      expect(_hasExtendedAcl(root.path), isTrue);
-    },
-    skip: Platform.isMacOS ? false : 'Darwin extended ACLs only',
-  );
+    _addAcl(root.path, 'everyone allow read');
+    await expectLater(
+      files.openPinnedLive(),
+      throwsA(_failure(StoreFilesFailureCode.operationFailed)),
+    );
+    expect(_hasExtendedAcl(root.path), isTrue);
+  }, skip: Platform.isMacOS ? false : 'Darwin extended ACLs only');
 
   test(
     'reset revokes the live name while an old pin remains immutable',

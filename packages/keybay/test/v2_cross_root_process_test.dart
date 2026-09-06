@@ -67,17 +67,14 @@ void main() {
         Directory candidateRoot,
         File ready,
       ) async {
-        final process = await Process.start(
-          Platform.resolvedExecutable,
-          <String>[
-            worker.path,
-            providerDirectory.path,
-            candidateRoot.path,
-            ready.path,
-            go.path,
-          ],
-          workingDirectory: packageRoot.path,
-        );
+        final process =
+            await Process.start(Platform.resolvedExecutable, <String>[
+              worker.path,
+              providerDirectory.path,
+              candidateRoot.path,
+              ready.path,
+              go.path,
+            ], workingDirectory: packageRoot.path);
         processes.add(process);
         return _WorkerProcess(
           process: process,
