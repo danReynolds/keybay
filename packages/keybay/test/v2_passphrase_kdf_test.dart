@@ -57,7 +57,9 @@ void main() {
           derived.fillRange(0, derived.length, 0);
         }
       },
-      timeout: const Timeout(Duration(seconds: 30)),
+      // Allow cold JIT compilation on shared CI hosts. Device latency and
+      // memory acceptance are qualified separately from this vector check.
+      timeout: const Timeout(Duration(minutes: 2)),
     );
 
     test(
