@@ -34,16 +34,16 @@ def elapsed_ms(command: list[str]) -> float:
 
 
 def main() -> int:
-    if len(sys.argv) != 5:
+    if len(sys.argv) != 4:
         print(
-            f"usage: {sys.argv[0]} HARNESS APP_ID MANIFEST ITERATIONS",
+            f"usage: {sys.argv[0]} HARNESS MANIFEST ITERATIONS",
             file=sys.stderr,
         )
         return 2
-    harness, app_id, manifest, raw_iterations = sys.argv[1:]
+    harness, manifest, raw_iterations = sys.argv[1:]
     iterations = int(raw_iterations)
     child = ["/usr/bin/true"]
-    keybay = [harness, app_id, "run", "-f", manifest, "--", *child]
+    keybay = [harness, "run", "-f", manifest, "--", *child]
 
     elapsed_ms(keybay)
     baseline = [elapsed_ms(child) for _ in range(iterations)]

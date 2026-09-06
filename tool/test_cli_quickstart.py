@@ -114,7 +114,7 @@ def main() -> int:
         )
 
         missing = run_checked([executable, "run", "--", "./app.sh"], repo)
-        if missing.returncode != 78:
+        if missing.returncode != 3:
             raise AssertionError(f"initial run exited {missing.returncode}: {missing.stderr}")
         expected_missing = (
             "error: 1 of 1 reference in ./.secrets.env is not set on this machine:\n"
@@ -156,7 +156,7 @@ def main() -> int:
             raise AssertionError(f"second rm was not silent/idempotent: {removed_again!r}")
 
         missing_again = run_checked([executable, "run", "--", "./app.sh"], repo)
-        if missing_again.returncode != 78:
+        if missing_again.returncode != 3:
             raise AssertionError(
                 f"post-cleanup run exited {missing_again.returncode}: "
                 f"{missing_again.stderr}"

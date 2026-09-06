@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add `keybay get KEY` as an explicit human reveal path. It requires stdin and
+  stdout to be the foreground interactive TTY and refuses redirected, piped,
+  captured, or background output before opening the store or decrypting a
+  value.
+
 ## 0.1.1
 
 - Require Dart 3.11 or newer so the Dart-native install path uses the patched

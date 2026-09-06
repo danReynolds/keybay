@@ -26,26 +26,57 @@ ProviderImpact classifyProviderImpact(
   bool forceAll = false,
 }) {
   final paths = changedPaths.toSet();
-  final workflowChanged = paths.contains('.github/workflows/ci.yml') ||
-      paths.contains('tool/ci_provider_impact.dart');
-  final coreChanged = paths.any((path) =>
-      path.startsWith('packages/keybay/lib/') ||
-      path == 'packages/keybay/pubspec.yaml' ||
-      path == 'pubspec.lock');
-  final cliChanged = paths.any((path) =>
-      path.startsWith('packages/keybay_cli/bin/') ||
-      path.startsWith('packages/keybay_cli/lib/') ||
-      path == 'packages/keybay_cli/pubspec.yaml');
-  final macosHarnessChanged = paths.any((path) =>
-      path == 'packages/keybay/test/keychain_integration_test.dart' ||
-      path.startsWith('tool/test_cli_') ||
-      path == 'tool/benchmark_cli.sh');
-  final linuxHarnessChanged = paths.any((path) =>
-      path.startsWith('packages/keybay/test/secret_service_') ||
-      path.startsWith('tool/test_cli_') ||
-      path == 'tool/benchmark_cli.sh');
-  final mobileHarnessChanged = paths.any((path) =>
-      path.startsWith('example_flutter/') || path == 'tool/test_mobile_ci.sh');
+  final workflowChanged =
+      paths.contains('.github/workflows/ci.yml') ||
+      paths.contains('tool/ci_provider_impact.dart') ||
+      paths.contains('tool/platform_regression.dart') ||
+      paths.contains('tool/test_e2e.sh') ||
+      paths.contains('tool/test_core.sh');
+  final coreChanged = paths.any(
+    (path) =>
+        path.startsWith('packages/keybay/lib/') ||
+        path == 'packages/keybay/pubspec.yaml' ||
+        path == 'pubspec.lock',
+  );
+  final cliChanged = paths.any(
+    (path) =>
+        path.startsWith('packages/keybay_cli/bin/') ||
+        path.startsWith('packages/keybay_cli/lib/') ||
+        path == 'packages/keybay_cli/pubspec.yaml',
+  );
+  final macosHarnessChanged = paths.any(
+    (path) =>
+        path == 'packages/keybay/test/keychain_integration_test.dart' ||
+        path.startsWith('packages/keybay/test/v2_macos_') ||
+        path.startsWith('packages/keybay/test/support/macos_') ||
+        path == 'tool/test_macos_native.sh' ||
+        path == 'tool/test_macos_signed.sh' ||
+        path == 'tool/test_macos_developer_id.sh' ||
+        path == 'tool/device_security/macos_developer_id.py' ||
+        path == 'tool/macos_test_keychain.c' ||
+        path.startsWith('tool/test_cli_') ||
+        path == 'tool/benchmark_cli.sh',
+  );
+  final linuxHarnessChanged = paths.any(
+    (path) =>
+        path.startsWith('packages/keybay/test/v2_linux_') ||
+        path.startsWith('packages/keybay/test/v2_flatpak_') ||
+        path.startsWith(
+          'packages/keybay/test/support/linux_public_facade_app/',
+        ) ||
+        path == 'packages/keybay/test/support/flatpak_native_harness.dart' ||
+        path == 'tool/test_flatpak.sh' ||
+        path == 'tool/flatpak_prompt_checks.py' ||
+        path == 'tool/test_linux.sh' ||
+        path == 'tool/test_linux_docker.sh' ||
+        path == 'tool/linux_test.Dockerfile' ||
+        path.startsWith('tool/test_cli_') ||
+        path == 'tool/benchmark_cli.sh',
+  );
+  final mobileHarnessChanged = paths.any(
+    (path) =>
+        path.startsWith('example_flutter/') || path == 'tool/test_mobile_ci.sh',
+  );
 
   final all = forceAll || workflowChanged || coreChanged || coreVersionChanged;
   final macos = all || cliChanged || cliVersionChanged || macosHarnessChanged;
@@ -68,8 +99,9 @@ ProviderImpact classifyProviderImpact(
     linux: linux,
     android: android,
     ios: ios,
-    reason:
-        reasons.isEmpty ? 'no provider-sensitive change' : reasons.join('; '),
+    reason: reasons.isEmpty
+        ? 'no provider-sensitive change'
+        : reasons.join('; '),
   );
 }
 
@@ -88,14 +120,20 @@ void main(List<String> args) {
   }
   final base = _validatedRevision(args[1]);
   final head = _validatedRevision(args[3]);
-  final changed = _git(
-    ['diff', '--name-only', '--diff-filter=ACMR', base, head],
-  ).split('\n').where((line) => line.isNotEmpty);
+  final changed = _git([
+    'diff',
+    '--name-only',
+    '--diff-filter=ACDMR',
+    base,
+    head,
+  ]).split('\n').where((line) => line.isNotEmpty);
   final impact = classifyProviderImpact(
     changed,
-    coreVersionChanged: _versionAt(base, 'packages/keybay/pubspec.yaml') !=
+    coreVersionChanged:
+        _versionAt(base, 'packages/keybay/pubspec.yaml') !=
         _versionAt(head, 'packages/keybay/pubspec.yaml'),
-    cliVersionChanged: _versionAt(base, 'packages/keybay_cli/pubspec.yaml') !=
+    cliVersionChanged:
+        _versionAt(base, 'packages/keybay_cli/pubspec.yaml') !=
         _versionAt(head, 'packages/keybay_cli/pubspec.yaml'),
   );
   _printOutputs(impact);
@@ -111,8 +149,10 @@ String _validatedRevision(String value) {
 String? _versionAt(String revision, String path) {
   final result = Process.runSync('git', ['show', '$revision:$path']);
   if (result.exitCode != 0) return null;
-  final match = RegExp(r'^version:\s*([^\s#]+)', multiLine: true)
-      .firstMatch(result.stdout as String);
+  final match = RegExp(
+    r'^version:\s*([^\s#]+)',
+    multiLine: true,
+  ).firstMatch(result.stdout as String);
   return match?.group(1);
 }
 

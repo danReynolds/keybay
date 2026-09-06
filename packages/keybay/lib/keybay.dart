@@ -1,46 +1,20 @@
-/// Secret storage for Dart without Flutter.
+/// One encrypted, platform-protected store for the current host application.
 ///
-/// See doc/sdk.md for the per-platform protection table and doc/design.md for
-/// the full design. The public surface is deliberately minimal — every symbol
-/// here is attack surface and compatibility surface:
-///
-/// - [SecretStorage] — the store. One constructor, one input (`appId`); the
-///   library resolves its fixed policy for the current platform. No mechanism,
-///   path, or key-home knobs exist.
-/// - The typed error taxonomy.
-/// - [SecretBackend] / [BackendInfo] / [BackendCapabilities] /
-///   [SecurityLevel] — the `describe()` surface, and the interface consumers
-///   fake in their own tests via `SecretStorage.withBackend`.
-///
-/// Everything else (backends, keystore bindings, key sources, the POSIX shim,
-/// the subprocess runner) is internal: mechanism is the library's decision.
+/// The public surface is deliberately limited to opening the resolved
+/// application's store, operating through an authenticated session, and
+/// resetting that same store. Platform selection, paths, providers, and
+/// application identity remain internal and cannot be supplied at runtime.
 library;
 
-export 'src/backend.dart'
+export 'src/v2/keybay_v2.dart'
     show
-        BackendCapabilities,
-        BackendInfo,
-        AtomicDeleteAllBackend,
-        SecretBackend,
-        SecurityLevel,
-        StorageScheme;
-export 'src/errors.dart'
-    show
-        AuthenticationFailed,
-        ContainerCorrupt,
-        ContainerMissing,
-        KeyInvalidated,
-        KeystoreLocked,
-        KeystoreOperationFailed,
-        KeystoreUnreachable,
-        MigrationRequired,
-        KeychainAccessGroupChanged,
-        SecretStoreException,
-        SecureFileError,
-        StoreBusy,
-        StoreKeyMissing,
-        StoreMigrationConflict,
-        StoreTooLarge,
-        UnsupportedCapability,
-        WrongStoreKey;
-export 'src/secret_storage.dart' show SecretStorage;
+        AuthMethod,
+        Keybay,
+        KeybayAuthManager,
+        KeybayCredential,
+        KeybayErrorCode,
+        KeybayException,
+        KeybayLimits,
+        KeybaySession,
+        PassphraseCredential,
+        PassphraseMethod;

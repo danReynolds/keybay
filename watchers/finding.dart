@@ -14,16 +14,13 @@ final class WatcherFinding {
   final List<({String label, String url})> references;
 
   Map<String, Object> toJson() => <String, Object>{
-        'watcher': watcher,
-        'marker': marker,
-        'title': title,
-        'subjects': subjects,
-        'references': <Map<String, String>>[
-          for (final reference in references)
-            <String, String>{
-              'label': reference.label,
-              'url': reference.url,
-            },
-        ],
-      };
+    'watcher': watcher,
+    'marker': marker,
+    'title': title,
+    'subjects': subjects,
+    'references': <Map<String, String>>[
+      for (final reference in references)
+        <String, String>{'label': reference.label, 'url': reference.url},
+    ],
+  };
 }

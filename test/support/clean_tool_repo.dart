@@ -23,10 +23,11 @@ Future<Directory> stageCleanToolRepo(
 }
 
 Future<void> _git(Directory repository, List<String> arguments) async {
-  final result = await Process.run(
-    '/usr/bin/git',
-    ['-C', repository.path, ...arguments],
-  );
+  final result = await Process.run('/usr/bin/git', [
+    '-C',
+    repository.path,
+    ...arguments,
+  ]);
   if (result.exitCode != 0) {
     throw StateError('git ${arguments.join(' ')} failed: ${result.stderr}');
   }

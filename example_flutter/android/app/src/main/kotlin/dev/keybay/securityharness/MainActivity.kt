@@ -1,6 +1,9 @@
 package dev.keybay.securityharness
 
+import android.app.Application
 import android.content.pm.ApplicationInfo
+import android.os.Process
+import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyInfo
 import android.security.keystore.KeyProperties
 import io.flutter.embedding.android.FlutterActivity
@@ -8,6 +11,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.security.KeyStore
+import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.SecretKeyFactory
 
@@ -32,11 +36,28 @@ class MainActivity : FlutterActivity() {
     private fun handleDeviceSecurityCall(call: MethodCall, result: MethodChannel.Result) {
         try {
             when (call.method) {
+                "lifecyclePhase" -> result.success(
+                    intent.getStringExtra("keybayLifecyclePhase")
+                        ?.takeIf { it in setOf("seed", "mutate", "reopen", "cleanup") },
+                )
                 "keyInfo" -> result.success(readKeyInfo(testAlias(call)))
                 "noBackupFilesDir" -> result.success(noBackupFilesDir.absolutePath)
+                "hostFacts" -> result.success(
+                    mapOf(
+                        "packageName" to packageName,
+                        "processName" to Application.getProcessName(),
+                        "uid" to Process.myUid(),
+                        "cacheDir" to cacheDir.absolutePath,
+                        "noBackupFilesDir" to noBackupFilesDir.absolutePath,
+                    ),
+                )
                 "deleteAlias" -> {
                     requireDebuggable()
                     result.success(deleteAlias(testAlias(call)))
+                }
+                "replaceAliasWithFreshAesKey" -> {
+                    requireDebuggable()
+                    result.success(replaceAliasWithFreshAesKey(testAlias(call)))
                 }
                 else -> result.notImplemented()
             }
@@ -81,13 +102,35 @@ class MainActivity : FlutterActivity() {
         return existed
     }
 
+    /** Replaces the fixed alias without access to Keybay's provider state. */
+    private fun replaceAliasWithFreshAesKey(alias: String): Boolean {
+        val keyStore = androidKeyStore()
+        val existed = keyStore.containsAlias(alias)
+        if (existed) keyStore.deleteEntry(alias)
+
+        val parameters = KeyGenParameterSpec.Builder(
+            alias,
+            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+        )
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setKeySize(256)
+            .setUserAuthenticationRequired(false)
+            .build()
+        KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE).apply {
+            init(parameters)
+            generateKey()
+        }
+        return existed
+    }
+
     private fun androidKeyStore(): KeyStore =
         KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
 
     private fun testAlias(call: MethodCall): String {
         val alias = call.argument<String>("alias")
             ?: throw IllegalArgumentException("alias is required")
-        require(alias.startsWith(TEST_ALIAS_PREFIX)) {
+        require(TEST_ALIAS_PREFIXES.any(alias::startsWith)) {
             "oracle is restricted to the device-security test namespace"
         }
         return alias
@@ -111,6 +154,9 @@ class MainActivity : FlutterActivity() {
         const val DEVICE_SECURITY_CHANNEL =
             "dev.keybay.securityharness/keybay_device_security"
         const val ANDROID_KEYSTORE = "AndroidKeyStore"
-        const val TEST_ALIAS_PREFIX = "com.example.keybayDeviceSecurity."
+        val TEST_ALIAS_PREFIXES = listOf(
+            "com.example.keybayDeviceSecurity.",
+            "keybay.v2.",
+        )
     }
 }

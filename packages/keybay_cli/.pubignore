@@ -7,3 +7,4 @@ example/rails/.bundle/
 example/rails/log/
 example/rails/tmp/
 example/rails/vendor/bundle/
+test/

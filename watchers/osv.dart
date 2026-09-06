@@ -2,10 +2,8 @@ import 'http.dart' as http;
 
 typedef JsonObject = Map<String, Object?>;
 typedef OsvPoster = Future<Object?> Function(JsonObject body);
-typedef OsvQuery = Future<List<JsonObject>> Function(
-  String ecosystem,
-  String name,
-);
+typedef OsvQuery =
+    Future<List<JsonObject>> Function(String ecosystem, String name);
 
 final _advisoryId = RegExp(r'^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$');
 final _endpoint = Uri.parse('https://api.osv.dev/v1/query');
@@ -31,10 +29,7 @@ Future<List<JsonObject>> queryPackage(
       throw const FormatException('OSV vulnerabilities was not a list');
     }
     for (final rawVulnerability in rawVulnerabilities) {
-      final vulnerability = _object(
-        rawVulnerability,
-        'OSV vulnerability',
-      );
+      final vulnerability = _object(rawVulnerability, 'OSV vulnerability');
       final id = vulnerability['id'];
       if (id is! String || !isSafeAdvisoryId(id)) {
         throw FormatException('OSV returned an unsafe advisory ID: $id');

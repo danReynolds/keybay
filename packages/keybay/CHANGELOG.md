@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — V2
+
+- Replace the previous storage API with one application store opened through
+  `Keybay.open()`, closable sessions, and additive passphrase protection. V1
+  stores are not migrated automatically.
+- Use one shared authenticated framed-file engine with fixed platform identity,
+  file storage, and key-protection profiles. Flatpak remains a qualification
+  candidate; release evidence is tracked in the repository's security suite.
+- Reject interaction-forbidden classic macOS Keychain acquisitions before
+  native access, preserving prompt-free record operations.
+- Bind iOS stores to their signed identity and fixed container-relative location
+  so an OS relocation of the preserved application container does not change
+  the cryptographic domain.
+- Close portal secret reads synchronously on cancellation or timeout so a
+  retained provider descriptor cannot keep the application process alive.
+- Resolve embedded declared identity for separate native AOT modules, and add
+  `keybay_compile --aot-snapshot` for compiling that distribution form.
+
 ## 0.1.1
 
 - Keep Android containers and wrapped-key sidecars beneath the app's no-backup
@@ -42,7 +60,8 @@ Ships as `keybay`: the package was developed under the working name
 `secret_store` and renamed before this first publish (nothing was ever
 released under the old name). The container's wire-format constants that
 happen to carry the old name — the HKDF info strings `secret_store:v1:*` —
-are frozen protocol constants, deliberately not rebranded (doc/design.md §7).
+are frozen protocol constants, deliberately not rebranded (see repository
+history for the pre-V2 format).
 
 ### API
 

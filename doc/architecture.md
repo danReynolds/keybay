@@ -1,174 +1,141 @@
-# keybay — architecture
+# Keybay V2 architecture
 
-The canonical, current-state architecture. The reasoning behind individual
-choices lives in `design.md`; this is the austere summary of where we landed.
+The accepted design is [RFC 0001](rfcs/0001-per-application-stores.md). This is
+the short implementation map.
 
-## TL;DR
+## One shape
 
-**Two shapes, one input, zero knobs.** You name your app; the library resolves
-the fixed, platform-appropriate scheme for Keybay's threat model:
+Every supported host application has exactly one store:
 
-- On iOS and entitled macOS apps, each secret is a **native Data Protection
-  Keychain item** with a fixed device-bound, non-synchronizing accessibility
-  policy. Keybay does not attest or report a hardware-backing level for these
-  items.
-- On the other supported paths—unentitled macOS, Linux desktop, and Android—
-  every secret lives in **one authenticated encrypted file**
-  (XChaCha20-Poly1305 + key commitment). Its 32-byte key lives in the desktop
-  OS credential store or is wrapped by Android Keystore. The Android key's
-  actual security level is inspected rather than assumed.
-
-No per-platform secret formats beyond those two, no configuration knobs, no
-fallbacks. The macOS choice between them is automatic (a once-per-process Data
-Protection probe: −34018 → the file scheme, quietly — the normal CLI result;
-success → native items; anything else → a loud typed error, never a silent
-downgrade).
-
-```dart
-final store = SecretStorage(appId: 'com.example.myapp');
-await store.writeString('token', 's3cr3t');
-final t = await store.readString('token');
-final info = await store.backend.describe();   // which scheme + SecurityLevel
+```text
+Keybay.open()
+    |
+    v
+resolved application identity + qualified host profile
+    |
+    +-- one platform-protected wrapping root
+    |
+    `-- one atomically replaced encrypted file
+          bootstrap | key package | record frames | sealed manifest
 ```
 
-## The layers
+There are no named stores, runtime application IDs, backend selectors,
+plaintext modes, V1 probes, migrations, or fallback providers.
 
+The random 256-bit store key derives independent keys for the manifest and
+record frames. The platform root seals the small changing key package, which
+contains the authoritative unlock policy and routes to the store key.
+
+`Keybay.open()` recovers the store key into an explicitly closable session. It
+does not preload record names or values. Reads authenticate the manifest and
+decrypt only requested frames. Writes authenticate the source snapshot, copy
+unchanged frames as ciphertext, seal changed frames with fresh nonces, and
+atomically replace the complete file. This keeps the format transactional
+without adding an encrypted database, journal, free list, or compaction logic.
+
+## Layers
+
+```text
+public API
+  Keybay / KeybaySession / KeybayAuthManager
+
+common engine
+  framed reader + writer + protection rotation
+  bounded binary format + XChaCha20-Poly1305 + HKDF-SHA256
+  Argon2id passphrase derivation
+
+host profile
+  authenticated/declared application identity
+  fixed file root
+  fixed platform protector
+
+platform boundaries
+  POSIX descriptor-relative files and atomic replacement
+  Apple Security/CoreFoundation FFI
+  Android Keystore through the existing JNI FFI boundary
+  Linux Secret Service and XDG Secret Portal through typed D-Bus
 ```
-SecretStorage            bytes-first async KV; appId validation (traversal-proof
-    │                    grammar); the per-platform resolver. Primary entry point.
-    │  (appId → derived file path + keystore identity)
-    │
-    ├─ KeystoreBackend        native items — Apple Data Protection Keychain
-    │      │                  (iOS; entitled macOS via the DP probe)
-    │      └─ KeystoreApi (per OS)
-    │
-    └─ EncryptedFileBackend   the encrypted file: XChaCha20-Poly1305 +
-           │                  key-commitment header, binary TLV, atomic 0600
-           │                  writes, per-location lock. Platform-independent.
-           └─ KeySource       where the file's 32-byte key lives:
-                  │             desktop login → the OS keystore (SystemKeySource)
-                  │             Android      → AndroidKeystoreKeySource
-                  │                            (Keystore KEK over the pure-FFI
-                  │                            JNI shim, API 31+)
-                  └─ KeystoreApi (per OS)  store/retrieve ONE key:
-                                AppleKeychainApi (SecItem, login or DP mode),
-                                SecretToolApi (secret-tool), [Windows: future].
+
+The common engine depends only on the `HostPlatform` contract. Platform code
+cannot choose another application's identity or feed an arbitrary path or
+provider into the public API.
+
+## Stored file
+
+The public bootstrap is deliberately powerless: it identifies the format and
+bounds the sealed package/provider continuation lengths. It cannot select a
+path, provider, application, credential item, or deletion target.
+
+The authenticated manifest contains canonical record names, exact serialized
+frame lengths, and SHA-256 digests. Offsets are derived from physical order.
+Each record value is independently AEAD-sealed with context binding it to the
+store domain, key epoch, format, and exact record key.
+
+The format is a framed snapshot, not an in-place database. Ordinary reads are
+selective; ordinary writes still stage and replace one whole file but do not
+decrypt unchanged record values. Complete store-key rotation re-encrypts every
+frame.
+
+## Protection policy
+
+Platform protection is mandatory. With no configured unlock method it is
+sufficient to recover the store key. When methods exist, opening requires:
+
+```text
+platform protection AND (passphrase OR future hardware method A OR ...)
 ```
 
-Three seams, all with fakes: `SecretBackend` (what storage looks like),
-`KeySource` (where the key lives), and `KeystoreApi` (how one OS stores an
-item/key). **Both shapes share the same per-OS `KeystoreApi` binding** — native
-items use it directly, the file scheme uses it through `SystemKeySource` — so
-the platform policy composes the same bindings two ways rather than forking a
-stack per OS.
+V2 implements zero or one passphrase. Methods are alternatives, not implicit
+multi-factor authentication. Adding, updating, or removing a method is an
+authenticated transaction that rewrites the key package and preserves the
+record set.
 
-## Why this shape
+Provider calls carry an internal interaction policy fixed by the operation.
+Open, authentication changes, and reset may invoke trusted OS/provider UI;
+record operations and authentication listing never do. A provider recheck
+cannot broaden that permission. The public API has no interaction option.
 
-- **Native item storage where the platform provides it.** Apple's Data
-  Protection Keychain holds arbitrary secret items and supplies device-bound
-  accessibility and access-group policy, so Keybay uses it directly rather than
-  layering a second container over it.
-- **Uniform, integrity-protected at-rest crypto everywhere else — one
-  implementation to audit.** On the legacy stores (macOS login keychain: 3DES; gnome-keyring:
-  AES-128-CBC + ad-hoc KDF; kwallet: Blowfish) our AEAD file adds **integrity**
-  and a **portable** encrypted container the native stores can't give. It is
-  *not* categorically stronger at rest: when the file's key lives in that same
-  legacy keystore and both are captured off one stolen disk, confidentiality is
-  login-password-bound just like a native item (cracking the keystore yields the
-  key, which opens the container) — hardware resistance comes only when the
-  wrapping key is actually reported in hardware, not from the container cipher.
-  One crypto path to vector-firewall and review.
-- **Minimal per-platform code.** Per OS, the binding is "put/get small items"
-  — shared by both shapes. No second stack.
-- **Android-native.** Android's Keystore is a *key* store, not a secret store;
-  the file shape is the only one that works there, so it removes a special
-  case rather than adding one.
-- **Future key homes are a one-class difference.** Anything new (a TPM for
-  headless, DPAPI for Windows) is *only* a `KeySource`/binding over the shared
-  container — never a second architecture. (A TPM key source was prototyped
-  and validated on exactly this seam, then removed with headless's descoping.)
+## Platform profiles
 
-## Security model
-
-- **At rest:** Apple native-item paths delegate confidentiality and integrity to
-  the Data Protection Keychain. File paths use XChaCha20-Poly1305 with a
-  key-committing header: a wrong or mismatched key fails closed
-  (`WrongStoreKey`) before decryption; tamper fails as `AuthenticationFailed`.
-- **The file key:** held by the selected desktop credential store or wrapped by
-  Android Keystore. The container's confidentiality reduces to that key's
-  protection — so on
-  legacy-at-rest platforms, when the key shares a stolen disk with the container,
-  it is login-password-bound *just like* storing secrets natively (the AEAD's
-  honest wins there are **integrity** and a **portable** backup unit, not more
-  confidentiality). Android reports `hardwareBacked` only when platform
-  inspection returns TEE or StrongBox; software-backed providers remain
-  possible and are reported as such.
-- **Fail-closed, never fake it.** No usable key store (a headless box with no
-  keyring) → throw with guidance, never a silent insecure fallback.
-- **Errors never carry secret values;** identifiers are validated; the Linux
-  subprocess keeps values off argv, captures output as bytes, and scrubs
-  buffers after use. (The input is transient base64 text on stdin; details in
-  `design.md`.)
-
-## Per-platform resolution
-
-The [SDK guide's formal table](sdk.md#how-your-secrets-are-protected) is the
-reference; the shape summary:
-
-| Platform (context) | Shape | Key store | Status |
+| Profile | Identity | File isolation | Root protection |
 |---|---|---|---|
-| macOS — CLI / unentitled | encrypted file | login Keychain (`SecItem`) | **shipped** |
-| macOS — signed + entitled | **native items** (Data Protection Keychain) | — (data is the item) | **shipped**; fixed device-bound policy; hardware backing not attested; refusal path CI-tested and success path exercised via the signed `example_flutter/` harness |
-| Linux — desktop | encrypted file | Secret Service (`secret-tool`) | **shipped** |
-| Windows | encrypted file | DPAPI / wincred | future |
-| iOS | **native items** (Data Protection Keychain) | — (data is the item) | **shipped**; fixed device-bound policy; hardware backing not attested; round-trip exercised on the iOS simulator (`example_flutter/`) |
-| Android (API 31+) | encrypted file in the app no-backup directory | Android Keystore KEK via **pure-FFI JNI** — StrongBox requested, actual level inspected | **shipped**; migration and provider behavior maintained on API 31 and 36 emulators; physical hardware mediation not established by emulator testing |
-| **headless deployment** | no dedicated shape | no dedicated provider | **out of scope**. The desktop resolver may still reach a configured desktop credential service, but there is no supported availability contract. Historical prototype work remains in git history. |
+| iOS | signed application identifier | app-private container | exact Data Protection Keychain group |
+| Android 12+ | installed package/UID | app-private no-backup directory | one non-exportable Keystore key |
+| entitled macOS | signed application identifier | sandbox when present; otherwise same-user writable | exact Data Protection Keychain group |
+| unentitled macOS | owning pubspec/build declaration | restrictive Application Support directory | explicit login-Keychain item |
+| ordinary Linux | owning pubspec/build declaration | restrictive XDG data directory | Secret Service item plus private runtime creation lock |
 
-## What is deliberately NOT here
+The last two profiles are `namespaceOnly`: a same-user process can claim the
+same declaration and may reach the platform item/file. A passphrase prevents
+those artifacts alone from yielding the store key, but cannot prevent deletion
+or modification by an actor with filesystem/keyring authority.
 
-- **No third shape.** Native items exist where the Data Protection Keychain
-  stores arbitrary secrets; the authenticated file covers everything else. No
-  per-platform bespoke formats beyond those two.
-- **No configuration knobs.** No `keyStore` / `path` / `dataStore` /
-  `api` / `nonInteractive` parameters — `appId` is the only input; the file
-  path, the keystore identity, and the scheme are derived. (Non-interactive
-  keychain behavior is simply always on: a locked keychain fails typed instead
-  of raising a GUI prompt.)
-- **No insecure fallback.** No plaintext key-on-disk option; if there is no secure place
-  for the key, we throw.
-- **No dedicated headless mode** (out of scope). It cannot be safely
-  auto-detected, so
-  it would need its own explicit entry point — and until there is demand, no
-  entry point beats a rarely-used one. A headless process can still encounter
-  the desktop resolver; if its credential service is absent or locked, the
-  operation fails typed. The macOS DP probe is *not* an instance of the
-  auto-detection problem:
-  entitlements are baked into the code signature, so the probe is
-  deterministic per binary, and every ambiguous outcome fails loud rather
-  than switching schemes.
-- **No bring-your-own / KMS keys in v1.** The `KeySource` interface is the seam
-  if that demand ever appears.
+The Flatpak candidate binds the application identity from `/.flatpak-info` to
+`<instance-path>/data/keybay-v2` and a domain-separated XDG Secret Portal root.
+The portal owns the reusable application secret; Keybay owns no deletable
+provider item in this profile. Qualification requires native Linux evidence
+with two installed application IDs. Flatpak never falls back to Secret Service.
+Snap, Windows, and unsupported provider configurations fail closed.
 
-## The Apple note (stated honestly)
+## Concurrency and reset
 
-On iOS and entitled macOS apps, secrets are **native per-item Data Protection
-Keychain entries**. Keybay uses
-`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`: items do not migrate to a
-different device, but after the first unlock following boot they remain
-available when the device relocks. They are non-synchronizing. The access group
-is derived from the signed process and included explicitly in every operation;
-duplicate updates reassert both policies. A separate hardware-
-backing level is deliberately omitted because Keybay cannot attest it.
+Readers pin one immutable file generation. Mutations serialize, take the
+platform/file locks required by the profile, authenticate the source, stage a
+complete replacement, fsync it, and rename it atomically. A session whose
+generation lost a protection-changing race becomes stale.
 
-Two lifecycle consequences matter: Apple Keychain items commonly persist after
-app uninstall, but Apple does not document that as a contract, so applications
-must not depend on either persistence or automatic deletion. A macOS app that
-gains the entitlement between versions moves from the file scheme to Data
-Protection Keychain items. Keybay surfaces the existing file as
-`MigrationRequired` instead of silently presenting an empty store. A private,
-non-secret native-use marker likewise makes later entitlement loss or an
-access-group change loud rather than selecting a fresh namespace. Plain CLIs
-and `dart run` use the authenticated file plus a login-Keychain key; AEAD adds
-integrity and a portable container, while at-rest confidentiality remains
-login-password-bound.
+`clearAll` commits an empty record snapshot without changing protection.
+`Keybay.reset()` locks the store, revokes the live file, removes staging, and
+deletes an exact provider item where the profile owns one. It retains the
+nonsecret coordination lock and its directory to preserve mutual exclusion. Flatpak
+retains its portal-owned secret. Reset initializes nothing; the next successful
+open generates a fresh store key. An operation pinned before live-file
+revocation may finish from that generation; later pins fail. Restoring an old
+complete encrypted store can restore access under a retained portal secret.
+
+## Deliberate limits
+
+V2 does not provide rollback detection, sync, export, recovery, multiple
+stores, background unlock agents, a capability/inspection API, or protection
+against root, process injection, keyloggers, or a malicious Keybay binary.
+Plaintext explicitly returned to the application is ordinary process data.

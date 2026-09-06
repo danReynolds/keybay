@@ -76,16 +76,18 @@ void main() {
       );
     });
 
-    test('parses rm, list, and doctor', () {
+    test('parses get, rm, and list', () {
+      final get =
+          parseCommand(<String>['get', 'acme/project-key']) as GetCommand;
+      expect(get.key, 'acme/project-key');
       final remove =
           parseCommand(<String>['rm', 'acme/project-key']) as RemoveCommand;
       expect(remove.key, 'acme/project-key');
       expect(parseCommand(<String>['list']), isA<ListCommand>());
-      expect(parseCommand(<String>['doctor']), isA<DoctorCommand>());
     });
 
-    test('rejects bare keys for both mutating commands', () {
-      for (final verb in <String>['set', 'rm']) {
+    test('rejects bare keys for every single-key command', () {
+      for (final verb in <String>['set', 'get', 'rm']) {
         expect(
           () => parseCommand(<String>[verb, 'openai-api-key']),
           throwsA(isA<CliUsageException>()),
@@ -97,8 +99,10 @@ void main() {
       for (final arguments in <List<String>>[
         <String>[],
         <String>['list', 'acme'],
+        <String>['doctor'],
         <String>['doctor', '--verbose'],
-        <String>['get', 'acme/key'],
+        <String>['get'],
+        <String>['get', 'acme/key', 'extra'],
         <String>['--quiet', 'list'],
       ]) {
         expect(

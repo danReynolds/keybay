@@ -85,25 +85,28 @@ void main() {
   });
 
   group('HKDF-SHA256 (RFC 5869 Test Case 1)', () {
-    test('deriveKey reproduces the published OKM; nonce==salt confirmed',
-        () async {
-      final ikm = _hex('0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b');
-      final salt = _hex('000102030405060708090a0b0c');
-      final info = _hex('f0f1f2f3f4f5f6f7f8f9');
-      final expectedOkm = _hex(
-        '3cb25f25faacd57a90434f64d0362f2a'
-        '2d2d0a90cf1a5a4c5db02d56ecc4c5bf'
-        '34007208d5b887185865',
-      );
+    test(
+      'deriveKey reproduces the published OKM; nonce==salt confirmed',
+      () async {
+        final ikm = _hex('0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b');
+        final salt = _hex('000102030405060708090a0b0c');
+        final info = _hex('f0f1f2f3f4f5f6f7f8f9');
+        final expectedOkm = _hex(
+          '3cb25f25faacd57a90434f64d0362f2a'
+          '2d2d0a90cf1a5a4c5db02d56ecc4c5bf'
+          '34007208d5b887185865',
+        );
 
-      final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 42);
-      final derived = await hkdf.deriveKey(
-        secretKey: SecretKey(ikm),
-        nonce: salt, // library's `nonce` == HKDF salt — asserted by the vector
-        info: info,
-      );
-      expect(await derived.extractBytes(), expectedOkm);
-    });
+        final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 42);
+        final derived = await hkdf.deriveKey(
+          secretKey: SecretKey(ikm),
+          nonce:
+              salt, // library's `nonce` == HKDF salt — asserted by the vector
+          info: info,
+        );
+        expect(await derived.extractBytes(), expectedOkm);
+      },
+    );
   });
 
   group('pinned Dart implementations (bypassing Cryptography.instance)', () {
@@ -143,19 +146,48 @@ void main() {
     });
 
     test('DartHkdf reproduces RFC 5869 Test Case 1', () async {
-      final hkdf =
-          DartHkdf(hmac: const DartHmac(DartSha256()), outputLength: 42);
+      final hkdf = DartHkdf(
+        hmac: const DartHmac(DartSha256()),
+        outputLength: 42,
+      );
       final derived = await hkdf.deriveKey(
-        secretKey:
-            SecretKey(_hex('0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b')),
+        secretKey: SecretKey(
+          _hex('0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b'),
+        ),
         nonce: _hex('000102030405060708090a0b0c'),
         info: _hex('f0f1f2f3f4f5f6f7f8f9'),
       );
       expect(
         await derived.extractBytes(),
-        _hex('3cb25f25faacd57a90434f64d0362f2a'
-            '2d2d0a90cf1a5a4c5db02d56ecc4c5bf'
-            '34007208d5b887185865'),
+        _hex(
+          '3cb25f25faacd57a90434f64d0362f2a'
+          '2d2d0a90cf1a5a4c5db02d56ecc4c5bf'
+          '34007208d5b887185865',
+        ),
+      );
+    });
+  });
+
+  group('Argon2id v19 (RFC 9106 section 5.3)', () {
+    test('DartArgon2id reproduces the published 32-byte tag', () async {
+      const algorithm = DartArgon2id(
+        parallelism: 4,
+        memory: 32,
+        iterations: 3,
+        hashLength: 32,
+      );
+      final derived = await algorithm.deriveKey(
+        secretKey: SecretKey(List<int>.filled(32, 0x01)),
+        nonce: List<int>.filled(16, 0x02),
+        optionalSecret: List<int>.filled(8, 0x03),
+        associatedData: List<int>.filled(12, 0x04),
+      );
+      expect(
+        await derived.extractBytes(),
+        _hex(
+          '0d640df58d78766c08c037a34a8b53c9'
+          'd01ef0452d75b65eb52520e96b01e659',
+        ),
       );
     });
   });
@@ -207,32 +239,37 @@ void main() {
     for (final size in [0, 1, 63, 64, 65, 128]) {
       for (final aad in [
         <int>[],
-        [1, 2, 3]
+        [1, 2, 3],
       ]) {
         test(
-            'round-trips $size-byte plaintext with '
-            '${aad.isEmpty ? 'empty' : 'non-empty'} AAD; tamper still fails',
-            () async {
-          final plaintext = List<int>.generate(size, (i) => (i * 7) % 256);
-          final box = await algo.encrypt(plaintext,
-              secretKey: key, nonce: nonce, aad: aad);
-          final back = await algo.decrypt(
-            SecretBox(box.cipherText, nonce: nonce, mac: box.mac),
-            secretKey: key,
-            aad: aad,
-          );
-          expect(back, plaintext);
-
-          final flippedTag = Uint8List.fromList(box.mac.bytes)..[0] ^= 0x01;
-          expect(
-            () => algo.decrypt(
-              SecretBox(box.cipherText, nonce: nonce, mac: Mac(flippedTag)),
+          'round-trips $size-byte plaintext with '
+          '${aad.isEmpty ? 'empty' : 'non-empty'} AAD; tamper still fails',
+          () async {
+            final plaintext = List<int>.generate(size, (i) => (i * 7) % 256);
+            final box = await algo.encrypt(
+              plaintext,
+              secretKey: key,
+              nonce: nonce,
+              aad: aad,
+            );
+            final back = await algo.decrypt(
+              SecretBox(box.cipherText, nonce: nonce, mac: box.mac),
               secretKey: key,
               aad: aad,
-            ),
-            throwsA(isA<SecretBoxAuthenticationError>()),
-          );
-        });
+            );
+            expect(back, plaintext);
+
+            final flippedTag = Uint8List.fromList(box.mac.bytes)..[0] ^= 0x01;
+            expect(
+              () => algo.decrypt(
+                SecretBox(box.cipherText, nonce: nonce, mac: Mac(flippedTag)),
+                secretKey: key,
+                aad: aad,
+              ),
+              throwsA(isA<SecretBoxAuthenticationError>()),
+            );
+          },
+        );
       }
     }
   });

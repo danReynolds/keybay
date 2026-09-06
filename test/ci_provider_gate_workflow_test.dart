@@ -19,6 +19,7 @@ void main() {
       'provider-impact',
       'integration-macos',
       'integration-linux',
+      'integration-flatpak',
       'integration-android',
       'integration-ios',
     ]) {
@@ -33,6 +34,10 @@ void main() {
     }
     expect(gate, contains('true:success|false:skipped'));
     expect(gate, contains('provider-impact did not succeed'));
+    expect(
+      gate,
+      contains(r'check_provider flatpak "$LINUX_REQUIRED" "$FLATPAK_RESULT"'),
+    );
   });
 }
 

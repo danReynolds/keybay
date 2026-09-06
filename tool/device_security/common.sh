@@ -50,9 +50,11 @@ ds_prepare_source() {
   DEVICE_SECURITY_SOURCE_IDENTITY="git-commit:$commit"
   export DEVICE_SECURITY_SOURCE_IDENTITY
   (
-    cd "$DEVICE_SECURITY_HARNESS"
+    cd "$DEVICE_SECURITY_HARNESS" || exit 1
     flutter pub get --enforce-lockfile
   )
+  [[ -z "$(git -C "$DEVICE_SECURITY_REPO" status --porcelain --untracked-files=all)" ]] ||
+    ds_die "dependency preparation changed the qualified source checkout"
 }
 
 ds_write_report() {
@@ -72,51 +74,32 @@ ds_write_report() {
     "$@"
 }
 
-ds_flutter_test() {
-  local device="$1" test_file="$2" log="$3"
-  shift 3
-  ds_require flutter
-  (
-    cd "$DEVICE_SECURITY_HARNESS"
-    flutter test "$test_file" -d "$device" "$@"
-  ) 2>&1 | tee "$log"
-  local command_rc="${PIPESTATUS[0]}" tee_rc="${PIPESTATUS[1]}"
-  if [[ "$tee_rc" -ne 0 ]]; then
-    echo "device-security: evidence logger failed with exit $tee_rc" >&2
-    return 74
-  fi
-  return "$command_rc"
-}
-
 ds_flutter_security_test() {
-  local device="$1" selection="$2" log="$3" results="$4"
+  local device="$1" selection="$2" log="$3" results="$4" test_file
   shift 4
-  local raw="$DEVICE_SECURITY_RUN_DIR/flutter-report.jsonl"
-  local had_errexit=0
-  [[ $- == *e* ]] && had_errexit=1
+  case "$selection" in
+    android-baseline|android-tamper)
+      test_file="integration_test/keybay_v2_android_test.dart" ;;
+    ios-baseline) test_file="integration_test/keybay_v2_ios_test.dart" ;;
+    *) ds_die "this device-security selection has not yet been ported to Keybay V2" ;;
+  esac
+  local reporter="${results%.json}.flutter.jsonl" command_rc=0 parser_rc=0
   ds_require flutter
-  set +e
+  ds_require dart
+  # Flutter build output is not JSON and can contain device identifiers. Keep
+  # it private; parse only the dedicated test reporter, never console text.
   (
-    cd "$DEVICE_SECURITY_HARNESS"
-    flutter test integration_test/device_security_test.dart \
-      -d "$device" \
-      --file-reporter "json:$raw" \
-      --dart-define=SECURITY_RUN_NONCE="$DEVICE_SECURITY_NONCE" \
-      --dart-define=SECURITY_SUBJECT_IDENTITY="$DEVICE_SECURITY_SOURCE_IDENTITY" \
+    cd "$DEVICE_SECURITY_HARNESS" || exit 1
+    flutter test "$test_file" -d "$device" \
+      --file-reporter "json:$reporter" \
+      --dart-define="KEYBAY_SECURITY_NONCE=$DEVICE_SECURITY_NONCE" \
+      --dart-define="KEYBAY_SECURITY_SUBJECT=$DEVICE_SECURITY_SOURCE_IDENTITY" \
       "$@"
-  ) 2>&1 | tee "$log"
-  local command_rc="${PIPESTATUS[0]}" tee_rc="${PIPESTATUS[1]}"
-  local result_rc=0
+  ) >"$log" 2>&1 || command_rc=$?
   dart run "$DEVICE_SECURITY_REPO/tool/device_security/result.dart" \
-    --input "$raw" \
-    --output "$results" \
-    --selection "$selection" \
+    --input "$reporter" --output "$results" --selection "$selection" \
     --nonce "$DEVICE_SECURITY_NONCE" \
-    --subject "$DEVICE_SECURITY_SOURCE_IDENTITY"
-  result_rc=$?
-  rm -f -- "$raw"
-  if [[ "$had_errexit" == "1" ]]; then set -e; else set +e; fi
-  [[ "$tee_rc" -eq 0 ]] || return 74
-  [[ "$result_rc" -eq 0 ]] || return "$result_rc"
+    --subject "$DEVICE_SECURITY_SOURCE_IDENTITY" >/dev/null || parser_rc=$?
+  [[ "$parser_rc" -eq 0 ]] || return "$parser_rc"
   return "$command_rc"
 }

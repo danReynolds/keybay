@@ -22,11 +22,15 @@ dev_output="$(
   exit 1
 }
 
-dart compile exe packages/keybay_cli/bin/keybay.dart -o "$tmp/keybay"
+dart run keybay:keybay_compile \
+  packages/keybay_cli/bin/keybay.dart -o "$tmp/keybay"
 dart compile exe packages/keybay_cli/tool/prompt_harness.dart \
   -o "$tmp/prompt_harness"
+dart compile exe packages/keybay_cli/tool/passphrase_prompt_harness.dart \
+  -o "$tmp/passphrase_prompt_harness"
 python3 tool/test_cli_exec.py "$tmp/keybay"
 python3 tool/test_cli_pty.py "$tmp/prompt_harness"
+python3 tool/test_cli_passphrase.py "$tmp/passphrase_prompt_harness"
 python3 tool/test_cli_archive.py
 python3 tool/test_homebrew_formula.py
 if [[ "$(uname -s)" == "Darwin" ]]; then

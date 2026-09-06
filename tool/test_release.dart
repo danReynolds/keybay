@@ -9,15 +9,19 @@ import 'release.dart' as release_tool;
 /// its own suite covers it.
 void main() {
   if (release_tool.changelogHasEntry(
-      '# Changelog\n\n## 1.2.3-beta\n', '1.2.3')) {
+    '# Changelog\n\n## 1.2.3-beta\n',
+    '1.2.3',
+  )) {
     _fail('a prerelease changelog heading satisfied a stable release');
   }
   if (!release_tool.changelogHasEntry('# Changelog\n\n## 1.2.3\n', '1.2.3')) {
     _fail('an exact stable changelog heading was rejected');
   }
 
-  final stub =
-      release_tool.insertChangelogStub('# Changelog\n\n## 1.0.0\n', '1.1.0');
+  final stub = release_tool.insertChangelogStub(
+    '# Changelog\n\n## 1.0.0\n',
+    '1.1.0',
+  );
   if (!release_tool.changelogHasEntry(stub, '1.1.0')) {
     _fail('an inserted changelog stub was not recognized');
   }

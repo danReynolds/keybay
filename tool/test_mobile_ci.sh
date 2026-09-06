@@ -7,25 +7,29 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HARNESS="$REPO/example_flutter"
 PLATFORM="${1:-}"
+require() {
+  command -v "$1" >/dev/null || { echo "missing prerequisite: $1" >&2; exit 69; }
+}
 
 case "$PLATFORM" in
   android)
+    require flutter
+    require adb
     serials="$(adb devices | awk '/^emulator-[0-9]+[[:space:]]+device$/ {print $1}')"
     count="$(printf '%s\n' "$serials" | awk 'NF {n++} END {print n + 0}')"
     [[ "$count" -eq 1 ]] || {
       echo "expected exactly one ready Android emulator, found $count" >&2
-      exit 2
+      exit 69
     }
     serial="$(printf '%s\n' "$serials" | awk 'NF {print; exit}')"
     (
       cd "$HARNESS"
-      flutter test integration_test/keybay_test.dart \
-        -d "$serial" \
-        --dart-define=APP_ID=com.example.keybayHarness.ci \
-        --dart-define=EXPECT_SCHEME=file
+      flutter test integration_test/keybay_v2_android_test.dart -d "$serial"
     )
     ;;
   ios)
+    [[ "$(uname -s)" == Darwin ]] || { echo 'iOS requires macOS.' >&2; exit 69; }
+    for program in flutter xcrun xcodebuild python3; do require "$program"; done
     udid="$({ xcrun simctl list devices available -j || exit 1; } | python3 -c '
 import json, sys
 data = json.load(sys.stdin)
@@ -36,7 +40,8 @@ for runtime, devices in data.get("devices", {}).items():
         if device.get("isAvailable") and device.get("name", "").startswith("iPhone"):
             print(device["udid"])
             raise SystemExit(0)
-raise SystemExit("no available iPhone simulator")
+print("no available iPhone simulator", file=sys.stderr)
+raise SystemExit(69)
 ')"
     xcrun simctl boot "$udid" 2>/dev/null || true
     xcrun simctl bootstatus "$udid" -b
@@ -47,9 +52,7 @@ raise SystemExit("no available iPhone simulator")
       # discovers the VM service by scraping `simctl log stream`; that
       # discovery can wait forever after an otherwise successful build.
       flutter build ios --config-only --simulator --debug \
-        integration_test/keybay_test.dart \
-        --dart-define=APP_ID=com.example.keybayHarness.ci \
-        --dart-define=EXPECT_SCHEME=native
+        integration_test/keybay_v2_ios_test.dart
       result_root="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
       result_bundle="$result_root/keybay-ios-$$.xcresult"
       xcode_log="$result_root/keybay-ios-$$.log"

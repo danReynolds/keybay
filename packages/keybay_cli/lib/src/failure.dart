@@ -1,8 +1,5 @@
 import 'package:keybay/keybay.dart';
 
-const String recoveryUrl =
-    'https://github.com/danReynolds/keybay/blob/main/doc/cli-recovery.md';
-
 final class CliFailure implements Exception {
   CliFailure({required this.exitCode, required List<String> lines})
     : lines = List<String>.unmodifiable(lines);
@@ -17,154 +14,76 @@ final class CliFailure implements Exception {
   }
 }
 
-CliFailure failureForSecretStore(SecretStoreException error) {
-  return switch (error) {
-    KeystoreLocked() => CliFailure(
-      exitCode: 69,
-      lines: <String>[
-        'error: the OS keystore is locked or needs interactive access.',
-        'Unlock the login keychain or Secret Service and retry.',
-        'Over SSH this is expected: keybay is a dev-machine tool.',
-      ],
-    ),
-    KeystoreUnreachable() => CliFailure(
-      exitCode: 69,
-      lines: <String>[
-        'error: no usable OS keystore is available.',
-        'Keybay is a dev-machine tool; in CI, use the CI platform secret store.',
-      ],
-    ),
-    StoreKeyMissing() => CliFailure(
-      exitCode: 69,
-      lines: <String>[
-        'error: the encrypted container exists, but its store key was not returned.',
-        'Unlock or reconnect the OS keystore and retry first; some locked Linux '
-            'providers report this state as a missing key.',
-        'If the key is truly lost, restore the matching key and container pair '
-            'or follow the platform recovery procedure before re-provisioning.',
-        'Plain keybay set cannot heal an unreadable existing container.',
-        'Recovery procedure: $recoveryUrl',
-      ],
-    ),
-    ContainerMissing() => CliFailure(
-      exitCode: 69,
-      lines: <String>[
-        'error: the store key exists, but the encrypted container is missing.',
-        'Restore the container, or deliberately re-provision with keybay set.',
-      ],
-    ),
-    WrongStoreKey() => CliFailure(
-      exitCode: 69,
-      lines: <String>[
-        'error: the encrypted container does not match this machine store key.',
-        'Restore the matching pair. To abandon it, follow the platform recovery '
-            'procedure and preserve or move the old container first.',
-        'Recovery procedure: $recoveryUrl',
-      ],
-    ),
-    AuthenticationFailed() || ContainerCorrupt() => CliFailure(
-      exitCode: 69,
-      lines: <String>[
-        'error: the encrypted container is corrupt or failed authentication.',
-        'Restore it from backup. To abandon it, follow the platform recovery '
-            'procedure before setting replacement values.',
-        'Recovery procedure: $recoveryUrl',
-      ],
-    ),
-    MigrationRequired(:final from, :final to) => CliFailure(
-      exitCode: 69,
-      lines: <String>[
-        'error: a store migration from ${from.name} to ${to.name} is required.',
-        'Keybay will not migrate implicitly; follow the deliberate platform '
-            'migration procedure.',
-        'Recovery procedure: $recoveryUrl',
-      ],
-    ),
-    StoreMigrationConflict() => CliFailure(
-      exitCode: 69,
-      lines: <String>[
-        'error: Keybay found both legacy and current store locations.',
-        'Neither was changed. Preserve both and follow the deliberate platform '
-            'migration procedure before retrying.',
-        'Recovery procedure: $recoveryUrl',
-      ],
-    ),
-    KeychainAccessGroupChanged() => CliFailure(
-      exitCode: 69,
-      lines: <String>[
-        'error: the Apple Keychain access group for this store changed.',
-        'Keybay will not switch namespaces implicitly; restore the original '
-            'signing configuration or follow the deliberate migration procedure.',
-        'Recovery procedure: $recoveryUrl',
-      ],
-    ),
-    StoreTooLarge() => CliFailure(
-      exitCode: 69,
-      lines: <String>[
-        'error: the value or sealed store exceeds Keybay\'s size limit.',
-        'Keybay stores credentials, not large blobs; store a reference instead.',
-      ],
-    ),
-    SecureFileError(:final operation, :final path)
-        when operation.startsWith('read(insecure-mode:') =>
-      CliFailure(
-        exitCode: 69,
-        lines: <String>[
-          'error: a Keybay store file has unsafe permissions.',
-          'Restrict it and retry: chmod 600 -- ${_shellQuote(path)}',
-        ],
-      ),
-    SecureFileError(:final operation, :final path)
-        when operation.startsWith('insecure-dir-mode(') =>
-      CliFailure(
-        exitCode: 69,
-        lines: <String>[
-          'error: the Keybay store directory has unsafe permissions.',
-          'Restrict it and retry: chmod 700 -- ${_shellQuote(path)}',
-        ],
-      ),
-    SecureFileError(:final operation, :final errno) => CliFailure(
-      exitCode: 69,
-      lines: <String>[
-        'error: secure store filesystem operation $operation failed '
-            '(errno $errno).',
-        'Keep the store on local application-data storage and consult the '
-            'platform recovery procedure; Keybay will not weaken locking or '
-            'permissions.',
-      ],
-    ),
-    StoreBusy() => CliFailure(
-      exitCode: 75,
-      lines: <String>[
-        'error: another live Keybay writer still holds the store lock.',
-        'Retry. If it persists, find the wedged Keybay or library process; '
-            'this is not a stale lock file.',
-      ],
-    ),
-    KeyInvalidated() => CliFailure(
-      exitCode: 69,
-      lines: <String>[
-        'error: the OS-keystore key for this store is no longer usable.',
-        'The store cannot be decrypted; follow the platform recovery procedure '
-            'before re-provisioning.',
-        'Recovery procedure: $recoveryUrl',
-      ],
-    ),
-    UnsupportedCapability() => CliFailure(
-      exitCode: 70,
-      lines: <String>[
-        'error: the resolved backend lacks a capability required by the CLI.',
-        'This is a Keybay bug; report it upstream.',
-      ],
-    ),
-    KeystoreOperationFailed(:final message) => CliFailure(
-      exitCode: 69,
-      lines: <String>[
-        'error: OS keystore operation failed: $message',
-        'Run keybay doctor for backend health details.',
-      ],
-    ),
+/// Maps the redacted V2 error code without incorporating provider detail.
+CliFailure failureForKeybay(KeybayException error) {
+  final lines = switch (error.code) {
+    KeybayErrorCode.applicationIdentityUnavailable => <String>[
+      'error: Keybay could not establish this CLI build\'s application identity.',
+      'Install an official build or compile it with the Keybay build command.',
+    ],
+    KeybayErrorCode.platformProtectorUnavailable => <String>[
+      'error: no qualified Keybay platform protector is available.',
+      'Use a supported platform profile; Keybay will not fall back to weaker storage.',
+    ],
+    KeybayErrorCode.platformProtectorLocked ||
+    KeybayErrorCode.platformInteractionRequired => <String>[
+      'error: platform protection is locked or requires interaction.',
+      'Unlock the platform key store and retry from an attended session.',
+    ],
+    KeybayErrorCode.platformKeyInvalidated => <String>[
+      'error: the platform-protected store key is no longer usable.',
+      'Restore the matching platform state or deliberately reset Keybay; existing values cannot be recovered without it.',
+    ],
+    KeybayErrorCode.authRequired ||
+    KeybayErrorCode.protectionMismatch ||
+    KeybayErrorCode.unlockFailed => <String>[
+      'error: Keybay authentication failed.',
+      'Check the passphrase and retry.',
+    ],
+    KeybayErrorCode.storeBusy => <String>[
+      'error: the Keybay store is busy.',
+      'Retry after the other Keybay operation completes.',
+    ],
+    KeybayErrorCode.resetIncomplete => <String>[
+      'error: a previous Keybay reset did not complete.',
+      'Retry the reset before accessing this store.',
+    ],
+    KeybayErrorCode.storeAuthenticationFailed ||
+    KeybayErrorCode.unsupportedStoreVersion ||
+    KeybayErrorCode.storeStateConflict => <String>[
+      'error: Keybay could not authenticate a single supported store state.',
+      'Preserve the existing state and follow the documented recovery procedure.',
+    ],
+    KeybayErrorCode.staleSession || KeybayErrorCode.sessionClosed => <String>[
+      'error: the Keybay session is no longer usable.',
+      'Retry the command to open a fresh session.',
+    ],
+    KeybayErrorCode.invalidRecordKey ||
+    KeybayErrorCode.invalidRecordEncoding ||
+    KeybayErrorCode.limitExceeded ||
+    KeybayErrorCode.invalidAuthInput => <String>[
+      'error: the supplied Keybay input is invalid or exceeds a limit.',
+      'Check the key, value, or passphrase and retry.',
+    ],
+    KeybayErrorCode.authMethodAlreadyConfigured ||
+    KeybayErrorCode.authMethodNotConfigured => <String>[
+      'error: the requested authentication configuration is not valid for this store.',
+      'Reopen Keybay and inspect its configured authentication methods.',
+    ],
+    KeybayErrorCode.platformOperationFailed ||
+    KeybayErrorCode.storageOperationFailed ||
+    KeybayErrorCode.entropyUnavailable => <String>[
+      'error: a required secure Keybay operation failed.',
+      'Retry once; if it persists, preserve the store and report the failure.',
+    ],
   };
-}
 
-String _shellQuote(String value) => "'${value.replaceAll("'", "'\\''")}'";
+  final inputFailure = switch (error.code) {
+    KeybayErrorCode.invalidRecordKey ||
+    KeybayErrorCode.invalidRecordEncoding ||
+    KeybayErrorCode.limitExceeded ||
+    KeybayErrorCode.invalidAuthInput => true,
+    _ => false,
+  };
+  return CliFailure(exitCode: inputFailure ? 2 : 1, lines: lines);
+}

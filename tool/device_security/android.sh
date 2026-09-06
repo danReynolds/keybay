@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 ANDROID_HARNESS_PACKAGE="dev.keybay.securityharness"
-ANDROID_STORE_APP_ID="com.example.keybayHarness"
 
 android_usage() {
   cat <<'USAGE'
@@ -10,6 +9,10 @@ Android options:
   --device-user ID             Android user/profile (default: 0).
   --tamper                     Add artifact corruption and a dedicated
                                harness-only missing-KEK challenge.
+  --lifecycle                  Instead, run Profile/AOT seed/reopen in two
+                               processes, verify native exits, then uninstall.
+  --upgrade                    Instead, verify a passphrase store across builds 101/102.
+  --crash                      Instead, SIGKILL after seed and during writes, then recover.
   --expect-level LEVEL         hardware or software (default: hardware).
   --allow-package-reset        Permit removing a pre-existing dedicated
                                harness package for the selected user first.
@@ -26,7 +29,7 @@ _android_prop() {
 _android_pick_device() {
   if [[ -n "$ANDROID_DEVICE" ]]; then
     adb -s "$ANDROID_DEVICE" get-state >/dev/null 2>&1 ||
-      ds_die "Android device is not connected/authorized: $ANDROID_DEVICE"
+      ds_die "selected Android device is not connected/authorized"
     return
   fi
   local candidates
@@ -55,7 +58,7 @@ _android_inventory() {
   ANDROID_FBE="$(adb -s "$ANDROID_DEVICE" shell sm get-fbe-mode 2>/dev/null | tr -d '\r' || true)"
 
   [[ "$ANDROID_QEMU" != "1" ]] ||
-    ds_die "device-security requires physical hardware; $ANDROID_DEVICE is an emulator"
+    ds_die "device-security requires physical hardware; the selected target is an emulator"
   [[ "$ANDROID_API" =~ ^[0-9]+$ ]] && [[ "$ANDROID_API" -ge 31 ]] ||
     ds_die "Keybay requires Android API 31+; target reports '$ANDROID_API'"
   [[ "$ANDROID_CURRENT_USER" == "$ANDROID_USER" ]] ||
@@ -135,8 +138,6 @@ _android_run_selection() {
     done <<<"$installed_users"
     [[ "$ANDROID_ALLOW_PACKAGE_RESET" == "1" ]] ||
       ds_die "$ANDROID_HARNESS_PACKAGE is already installed; rerun with --allow-package-reset to remove only that dedicated harness for user $ANDROID_USER"
-    _android_cleanup_harness ||
-      ds_die "could not remove the pre-existing dedicated harness"
   fi
 
   local selection="android-baseline" security_mode="baseline"
@@ -144,8 +145,18 @@ _android_run_selection() {
     selection="android-tamper"
     security_mode="tamper"
   fi
+  if [[ -n "$ANDROID_LIFECYCLE" ]]; then
+    ds_require python3
+    [[ "$(_android_prop ro.product.cpu.abi)" == "arm64-v8a" ]] ||
+      ds_die "the Android Profile/AOT lifecycle lane requires an arm64 device"
+    selection="android-$ANDROID_LIFECYCLE"
+  fi
   ds_new_run_dir android "$selection"
   ds_prepare_source
+  if [[ -n "$installed_users" ]]; then
+    _android_cleanup_harness ||
+      ds_die "could not remove the pre-existing dedicated harness"
+  fi
   local challenge_log="$DEVICE_SECURITY_RUN_DIR/security-challenge.log"
   local results="$DEVICE_SECURITY_RUN_DIR/$selection.results.json"
   local rc=0 challenge_rc=0
@@ -157,12 +168,18 @@ _android_run_selection() {
   trap '_android_cleanup_harness >/dev/null 2>&1 || true; exit 130' INT
   trap '_android_cleanup_harness >/dev/null 2>&1 || true; exit 143' TERM
 
+  if [[ -n "$ANDROID_LIFECYCLE" ]]; then
+    [[ "$ANDROID_LIFECYCLE" != "lifecycle" ]] || ANDROID_LIFECYCLE="process"
+    python3 "$DEVICE_SECURITY_REPO/tool/device_security/android_lifecycle.py" \
+      "$ANDROID_DEVICE" "$ANDROID_USER" "$ANDROID_MODEL" "$ANDROID_RELEASE" "$ANDROID_API" "$ANDROID_LIFECYCLE"
+    trap - EXIT INT TERM
+    return 0
+  fi
+
   set +e
   ds_flutter_security_test "$ANDROID_DEVICE" "$selection" \
     "$challenge_log" "$results" \
     --device-user "$ANDROID_USER" \
-    --dart-define=APP_ID="$ANDROID_STORE_APP_ID" \
-    --dart-define=EXPECT_SCHEME=file \
     --dart-define=EXPECT_ANDROID_LEVEL="$ANDROID_EXPECT_LEVEL" \
     --dart-define=SECURITY_MODE="$security_mode"
   challenge_rc=$?
@@ -186,7 +203,7 @@ _android_run_selection() {
     --field "verifiedBoot=$ANDROID_AVB; vbmeta=$ANDROID_BOOT_STATE; flash-locked=$ANDROID_LOCKED"
     --field "selinux=$ANDROID_SELINUX"
     --field "fbe=${ANDROID_FBE:-unreported}"
-    --limitation "One physical device configuration; no reboot, backup, restore, or transfer was exercised."
+    --limitation "One physical device configuration; no force-stop/relaunch, reboot, backup, restore, or transfer was exercised."
   )
   ds_write_report "$DEVICE_SECURITY_RUN_DIR/report.json" android \
     "$selection" physical-device "$results" "$command_status" \
@@ -205,6 +222,7 @@ device_security_main() {
   ANDROID_DEVICE=""
   ANDROID_USER="0"
   ANDROID_TAMPER="0"
+  ANDROID_LIFECYCLE=""
   ANDROID_EXPECT_LEVEL="hardware"
   ANDROID_ALLOW_PACKAGE_RESET="0"
 
@@ -213,6 +231,7 @@ device_security_main() {
       --device) [[ $# -ge 2 ]] || ds_die "--device needs a value"; ANDROID_DEVICE="$2"; shift 2 ;;
       --device-user) [[ $# -ge 2 ]] || ds_die "--device-user needs a value"; ANDROID_USER="$2"; shift 2 ;;
       --tamper) ANDROID_TAMPER="1"; shift ;;
+      --lifecycle|--upgrade|--crash) [[ -z "$ANDROID_LIFECYCLE" ]] || ds_die "select one lifecycle mode"; ANDROID_LIFECYCLE="${1#--}"; shift ;;
       --expect-level) [[ $# -ge 2 ]] || ds_die "--expect-level needs a value"; ANDROID_EXPECT_LEVEL="$2"; shift 2 ;;
       --allow-package-reset) ANDROID_ALLOW_PACKAGE_RESET="1"; shift ;;
       -h|--help) android_usage; return 0 ;;
@@ -221,6 +240,8 @@ device_security_main() {
   done
 
   case "$ANDROID_EXPECT_LEVEL" in hardware|software) ;; *) ds_die "--expect-level must be hardware or software" ;; esac
+  [[ "$ANDROID_TAMPER" != "1" || -z "$ANDROID_LIFECYCLE" ]] ||
+    ds_die "--tamper and lifecycle modes are separate selections"
   [[ "$ANDROID_USER" =~ ^[0-9]+$ ]] ||
     ds_die "--device-user must be a non-negative integer"
 

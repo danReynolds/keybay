@@ -11,10 +11,12 @@ Future<void> main(List<String> arguments) async {
 }
 
 Future<int> run(List<String> arguments) async {
-  final flags =
-      arguments.where((argument) => argument.startsWith('-')).toList();
-  final selections =
-      arguments.where((argument) => !argument.startsWith('-')).toList();
+  final flags = arguments
+      .where((argument) => argument.startsWith('-'))
+      .toList();
+  final selections = arguments
+      .where((argument) => !argument.startsWith('-'))
+      .toList();
   const allowedFlags = <String>{'--backfill', '--json'};
   if (flags.any((flag) => !allowedFlags.contains(flag)) ||
       flags.toSet().length != flags.length ||
@@ -26,8 +28,11 @@ Future<int> run(List<String> arguments) async {
     return 64;
   }
   final selection = selections.single;
-  if (!const <String>{'dependencies', 'platforms', 'peers'}
-      .contains(selection)) {
+  if (!const <String>{
+    'dependencies',
+    'platforms',
+    'peers',
+  }.contains(selection)) {
     stderr.writeln('unknown watcher: $selection');
     return 64;
   }
@@ -39,27 +44,27 @@ Future<int> run(List<String> arguments) async {
   final emitJson = flags.contains('--json');
   try {
     final found = switch (selection) {
-      'platforms' => backfill
-          ? await platformBackfillFindings(
-              await _readObject('platforms/config.json'),
-            )
-          : await platformFindings(
-              await _readObject('platforms/config.json'),
-            ),
+      'platforms' =>
+        backfill
+            ? await platformBackfillFindings(
+                await _readObject('platforms/config.json'),
+              )
+            : await platformFindings(
+                await _readObject('platforms/config.json'),
+              ),
       'peers' => await peerFindings(
-          peerBaseline(await _readObject('peers/baseline.json')),
-        ),
+        peerBaseline(await _readObject('peers/baseline.json')),
+      ),
       'dependencies' => await dependencyReleaseFindings(
-          await _readObject('dependencies/reviewed.json'),
-        ),
+        await _readObject('dependencies/reviewed.json'),
+      ),
       _ => throw StateError('unreachable watcher selection'),
     };
     if (emitJson) {
       stdout.writeln(
-        const JsonEncoder.withIndent(
-          '  ',
-        ).convert(
-            <Map<String, Object>>[for (final item in found) item.toJson()]),
+        const JsonEncoder.withIndent('  ').convert(<Map<String, Object>>[
+          for (final item in found) item.toJson(),
+        ]),
       );
       return 0;
     }
@@ -126,17 +131,15 @@ int _printHuman(String selection, List<WatcherFinding> found) {
       }
     case 'dependencies':
       for (final finding in found) {
-        stdout.writeln(
-          'dependencies: REVIEW REQUIRED: ${finding.title}',
-        );
+        stdout.writeln('dependencies: REVIEW REQUIRED: ${finding.title}');
       }
   }
   return 1;
 }
 
 String _prefix(String selection) => switch (selection) {
-      'platforms' => 'platform-advisories',
-      'peers' => 'peer-signals',
-      'dependencies' => 'dependencies',
-      _ => selection,
-    };
+  'platforms' => 'platform-advisories',
+  'peers' => 'peer-signals',
+  'dependencies' => 'dependencies',
+  _ => selection,
+};

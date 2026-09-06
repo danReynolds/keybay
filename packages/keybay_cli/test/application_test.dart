@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:keybay/keybay.dart';
@@ -8,309 +7,36 @@ import 'package:keybay_cli/src/command.dart';
 import 'package:keybay_cli/src/manifest.dart';
 import 'package:test/test.dart';
 
+import '../../keybay/test/support/v2_test_keybay.dart';
+
 void main() {
-  test('help and version are complete, compact, and storage-free', () async {
-    final stdout = StringBuffer();
-    final application = CliApplication(
-      loadManifest: (_) => throw StateError('manifest loaded'),
-      createStorage: () => throw StateError('storage constructed'),
-      readSecretValue: _unusedSecretReader,
-      commandExecutor: _FakeCommandExecutor(),
-      parentEnvironment: const <String, String>{},
-      stdout: stdout,
-      stderr: StringBuffer(),
-    );
+  test('help and version are compact and never open Keybay', () async {
+    final harness = _Harness();
+    final output = StringBuffer();
+    final application = _application(harness: harness, stdout: output);
 
     expect(await application.execute(const HelpCommand()), exitSuccess);
-    final helpLines = stdout.toString().trimRight().split('\n');
-    expect(helpLines.length, lessThanOrEqualTo(24));
-    expect(
-      helpLines.map((line) => line.length),
-      everyElement(lessThanOrEqualTo(80)),
-    );
-    for (final command in <String>['run', 'set', 'rm', 'list', 'doctor']) {
-      expect(stdout.toString(), contains(command));
-    }
+    expect(output.toString(), isNot(contains('doctor')));
+    expect(output.toString(), contains('get KEY'));
+    expect(harness.openCalls, 0);
 
-    stdout.clear();
+    output.clear();
     expect(await application.execute(const VersionCommand()), exitSuccess);
-    expect(stdout.toString(), '$cliVersion\n');
+    expect(output.toString(), '$cliVersion\n');
+    expect(harness.openCalls, 0);
   });
 
   group('run', () {
-    test('literal-only manifests never construct storage', () async {
+    test('literal-only manifest never opens Keybay', () async {
+      final harness = _Harness();
       final executor = _FakeCommandExecutor();
-      final stdout = StringBuffer();
-      final stderr = StringBuffer();
-      final application = CliApplication(
-        loadManifest: (_) async => Manifest(<String, ManifestValue>{
-          'API_URL': const LiteralManifestValue('https://example.test'),
+      final application = _application(
+        harness: harness,
+        executor: executor,
+        parentEnvironment: const <String, String>{'PARENT': 'kept'},
+        manifest: Manifest(<String, ManifestValue>{
+          'URL': const LiteralManifestValue('https://example.test'),
           'EMPTY': const LiteralManifestValue(''),
-        }),
-        createStorage: () => throw StateError('storage was constructed'),
-        readSecretValue: _unusedSecretReader,
-        commandExecutor: executor,
-        parentEnvironment: const <String, String>{
-          'PATH': '/usr/bin',
-          'API_URL': 'inherited',
-          'UNCHANGED': 'yes',
-        },
-        stdout: stdout,
-        stderr: stderr,
-      );
-
-      final result = await application.execute(
-        RunCommand(
-          manifestPath: '.secrets.env',
-          executable: 'server',
-          arguments: <String>['--port', '3000'],
-        ),
-      );
-
-      expect(result, 0);
-      expect(executor.calls, hasLength(1));
-      expect(executor.calls.single.executable, 'server');
-      expect(executor.calls.single.arguments, <String>['--port', '3000']);
-      expect(executor.calls.single.environment, <String, String>{
-        'PATH': '/usr/bin',
-        'API_URL': 'https://example.test',
-        'UNCHANGED': 'yes',
-        'EMPTY': '',
-      });
-      // The overlay is exactly the manifest's entries: the executor
-      // materializes these and passes the rest of the parent environment
-      // through byte-exact from raw environ.
-      expect(executor.calls.single.overlay, <String, String>{
-        'API_URL': 'https://example.test',
-        'EMPTY': '',
-      });
-      expect(stdout.toString(), isEmpty);
-      expect(stderr.toString(), isEmpty);
-    });
-
-    test(
-      'resolves namespaced references and overlays only named variables',
-      () async {
-        final backend = _MemoryBackend(<String, List<int>>{
-          'acme-api/openai-key': utf8.encode('project-value'),
-          'acme-shared/stripe-key': utf8.encode('shared-value'),
-          'other-project/openai-key': utf8.encode('other-value'),
-        });
-        final executor = _FakeCommandExecutor();
-        final application = _application(
-          backend: backend,
-          executor: executor,
-          manifest: Manifest(<String, ManifestValue>{
-            'OPENAI_API_KEY': const SecretManifestValue('acme-api/openai-key'),
-            'OPENAI_ALIAS': const SecretManifestValue('acme-api/openai-key'),
-            'STRIPE_KEY': const SecretManifestValue('acme-shared/stripe-key'),
-            'LOG_LEVEL': const LiteralManifestValue('debug'),
-          }),
-          parentEnvironment: const <String, String>{
-            'OPENAI_API_KEY': 'inherited',
-            'PARENT_ONLY': 'kept',
-          },
-        );
-
-        final result = await application.execute(
-          RunCommand(
-            manifestPath: '.secrets.env',
-            executable: 'true',
-            arguments: const <String>[],
-          ),
-        );
-
-        expect(result, 0);
-        expect(backend.readAllCalls, 1);
-        expect(executor.calls.single.environment, <String, String>{
-          'OPENAI_API_KEY': 'project-value',
-          'PARENT_ONLY': 'kept',
-          'OPENAI_ALIAS': 'project-value',
-          'STRIPE_KEY': 'shared-value',
-          'LOG_LEVEL': 'debug',
-        });
-        expect(
-          executor.calls.single.environment.values,
-          isNot(contains('other-value')),
-        );
-        expect(executor.calls.single.overlay, <String, String>{
-          'OPENAI_API_KEY': 'project-value',
-          'OPENAI_ALIAS': 'project-value',
-          'STRIPE_KEY': 'shared-value',
-          'LOG_LEVEL': 'debug',
-        });
-        expect(
-          executor.calls.single.overlay.keys,
-          isNot(contains('PARENT_ONLY')),
-        );
-      },
-    );
-
-    test(
-      'different repository namespaces keep the same env name independent',
-      () async {
-        final backend = _MemoryBackend(<String, List<int>>{
-          'acme-api/openai-key': utf8.encode('api-value'),
-          'acme-web/openai-key': utf8.encode('web-value'),
-        });
-
-        for (final entry in <String, String>{
-          'acme-api/openai-key': 'api-value',
-          'acme-web/openai-key': 'web-value',
-        }.entries) {
-          final executor = _FakeCommandExecutor();
-          final application = _application(
-            backend: backend,
-            executor: executor,
-            manifest: Manifest(<String, ManifestValue>{
-              'OPENAI_API_KEY': SecretManifestValue(entry.key),
-            }),
-          );
-
-          expect(
-            await application.execute(
-              RunCommand(
-                manifestPath: '.secrets.env',
-                executable: 'true',
-                arguments: const <String>[],
-              ),
-            ),
-            exitSuccess,
-          );
-          expect(
-            executor.calls.single.environment['OPENAI_API_KEY'],
-            entry.value,
-          );
-        }
-      },
-    );
-
-    test(
-      'two repositories using one complete reference share its value',
-      () async {
-        final backend = _MemoryBackend(<String, List<int>>{
-          'acme-shared/openai-key': utf8.encode('shared-value'),
-        });
-
-        for (final repository in <String>['api', 'web']) {
-          final executor = _FakeCommandExecutor();
-          final application = _application(
-            backend: backend,
-            executor: executor,
-            manifest: Manifest(<String, ManifestValue>{
-              'OPENAI_API_KEY': const SecretManifestValue(
-                'acme-shared/openai-key',
-              ),
-            }),
-          );
-
-          expect(
-            await application.execute(
-              RunCommand(
-                manifestPath: '.secrets.$repository.env',
-                executable: 'true',
-                arguments: const <String>[],
-              ),
-            ),
-            exitSuccess,
-          );
-          expect(
-            executor.calls.single.environment['OPENAI_API_KEY'],
-            'shared-value',
-          );
-        }
-      },
-    );
-
-    test('reports every missing key once and launches nothing', () async {
-      final backend = _MemoryBackend(<String, List<int>>{
-        'acme/present': utf8.encode('present-value'),
-      });
-      final executor = _FakeCommandExecutor();
-      final stderr = StringBuffer();
-      final application = _application(
-        backend: backend,
-        executor: executor,
-        stderr: stderr,
-        manifest: Manifest(<String, ManifestValue>{
-          'PRESENT': const SecretManifestValue('acme/present'),
-          'MISSING_A': const SecretManifestValue('acme/missing-a'),
-          'MISSING_A_ALIAS': const SecretManifestValue('acme/missing-a'),
-          'MISSING_B': const SecretManifestValue('shared/missing-b'),
-        }),
-      );
-
-      final result = await application.execute(
-        RunCommand(
-          manifestPath: '.secrets.env',
-          executable: 'must-not-launch',
-          arguments: const <String>[],
-        ),
-      );
-
-      expect(result, exitConfig);
-      expect(executor.calls, isEmpty);
-      expect(
-        stderr.toString(),
-        'error: 3 of 4 references in .secrets.env are not set on this machine:\n'
-        '\n'
-        '  keybay set acme/missing-a\n'
-        '  keybay set shared/missing-b\n'
-        '\n'
-        'Nothing was launched.\n',
-      );
-    });
-
-    test('maps unreadable and malformed manifests to config failure', () async {
-      final unreadableError = StringBuffer();
-      final unreadable = _application(
-        stderr: unreadableError,
-        loadManifest: (_) => throw const FileSystemException('denied'),
-      );
-      expect(
-        await unreadable.execute(
-          RunCommand(
-            manifestPath: '.secrets.env',
-            executable: 'true',
-            arguments: const <String>[],
-          ),
-        ),
-        exitConfig,
-      );
-      expect(unreadableError.toString(), contains('could not be read'));
-      expect(unreadableError.toString(), contains('Nothing was launched.'));
-
-      final malformedError = StringBuffer();
-      final malformed = _application(
-        stderr: malformedError,
-        loadManifest: (_) =>
-            throw const ManifestParseException('expected NAME=VALUE', line: 2),
-      );
-      expect(
-        await malformed.execute(
-          RunCommand(
-            manifestPath: '.secrets.env',
-            executable: 'true',
-            arguments: const <String>[],
-          ),
-        ),
-        exitConfig,
-      );
-      expect(malformedError.toString(), contains('line 2'));
-      expect(malformedError.toString(), contains('Nothing was launched.'));
-    });
-
-    test('decodes only referenced stored values', () async {
-      final backend = _MemoryBackend(<String, List<int>>{
-        'acme/text': utf8.encode('usable'),
-        'acme/binary': <int>[0xff, 0x00, 0xfe],
-      });
-      final executor = _FakeCommandExecutor();
-      final application = _application(
-        backend: backend,
-        executor: executor,
-        manifest: Manifest(<String, ManifestValue>{
-          'TEXT': const SecretManifestValue('acme/text'),
         }),
       );
 
@@ -318,240 +44,477 @@ void main() {
         await application.execute(
           RunCommand(
             manifestPath: '.secrets.env',
-            executable: 'true',
+            executable: '/usr/bin/true',
             arguments: const <String>[],
           ),
         ),
-        0,
+        exitSuccess,
       );
-      expect(executor.calls.single.environment['TEXT'], 'usable');
+      expect(harness.openCalls, 0);
+      expect(executor.calls.single.overlay, <String, String>{
+        'URL': 'https://example.test',
+        'EMPTY': '',
+      });
+      expect(executor.calls.single.environment['PARENT'], 'kept');
     });
 
     test(
-      'rejects referenced non-UTF-8 and NUL values without echoing them',
+      'requests only distinct manifest references in one operation',
       () async {
-        for (final entry in <String, List<int>>{
-          'not UTF-8': <int>[0xff, 0xfe],
-          'contains NUL': utf8.encode('sentinel-before\u0000sentinel-after'),
-        }.entries) {
-          final backend = _MemoryBackend(<String, List<int>>{
-            'acme/bad': entry.value,
-          });
-          final stderr = StringBuffer();
-          final application = _application(
-            backend: backend,
-            stderr: stderr,
-            manifest: Manifest(<String, ManifestValue>{
-              'BAD': const SecretManifestValue('acme/bad'),
-            }),
-          );
-
-          expect(
-            await application.execute(
-              RunCommand(
-                manifestPath: '.secrets.env',
-                executable: 'true',
-                arguments: const <String>[],
-              ),
-            ),
-            exitConfig,
-            reason: entry.key,
-          );
-          expect(stderr.toString(), contains('acme/bad'));
-          expect(stderr.toString(), isNot(contains('sentinel')));
-        }
-      },
-    );
-  });
-
-  group('storage commands', () {
-    test('maps core failures at the application boundary', () async {
-      for (final entry in <SecretStoreException, int>{
-        const KeystoreUnreachable(): exitUnavailable,
-        StoreBusy('/tmp/store.lock', const Duration(seconds: 10)): exitTempFail,
-        const UnsupportedCapability('enumeration'): exitSoftware,
-      }.entries) {
-        final stderr = StringBuffer();
+        final harness = _Harness();
+        await harness.seed(<String, List<int>>{
+          'acme/api': utf8.encode('api-value'),
+          'acme/shared': utf8.encode('shared-value'),
+          'unreferenced/value': utf8.encode('must-not-read'),
+        });
+        final executor = _FakeCommandExecutor();
         final application = _application(
-          stderr: stderr,
-          createStorage: () => throw entry.key,
+          harness: harness,
+          executor: executor,
+          manifest: Manifest(<String, ManifestValue>{
+            'API': const SecretManifestValue('acme/api'),
+            'API_ALIAS': const SecretManifestValue('acme/api'),
+            'SHARED': const SecretManifestValue('acme/shared'),
+            'LITERAL': const LiteralManifestValue('text'),
+          }),
         );
 
         expect(
-          await application.execute(const ListCommand()),
-          entry.value,
-          reason: '${entry.key.runtimeType}',
-        );
-        expect(stderr.toString(), startsWith('error:'));
-      }
-    });
-
-    test(
-      'set writes through the core and only interactive mode acknowledges',
-      () async {
-        final backend = _MemoryBackend();
-        final interactiveError = StringBuffer();
-        final interactive = _application(
-          backend: backend,
-          stderr: interactiveError,
-          secretValue: 'interactive-secret',
-        );
-        expect(
-          await interactive.execute(
-            const SetCommand(key: 'acme/key', readFromStdin: false),
+          await application.execute(
+            RunCommand(
+              manifestPath: '.secrets.env',
+              executable: '/usr/bin/true',
+              arguments: const <String>[],
+            ),
           ),
-          0,
+          exitSuccess,
         );
-        expect(utf8.decode(backend.values['acme/key']!), 'interactive-secret');
-        expect(interactiveError.toString(), 'Stored.\n');
-
-        final pipedError = StringBuffer();
-        final piped = _application(
-          backend: backend,
-          stderr: pipedError,
-          secretValue: 'piped-secret',
-        );
+        expect(harness.getManyCalls, 1);
+        expect(harness.requestedKeys.single, <String>[
+          'acme/api',
+          'acme/shared',
+        ]);
         expect(
-          await piped.execute(
-            const SetCommand(key: 'acme/key', readFromStdin: true),
-          ),
-          0,
+          harness.requestedKeys.single,
+          isNot(contains('unreferenced/value')),
         );
-        expect(utf8.decode(backend.values['acme/key']!), 'piped-secret');
-        expect(pipedError.toString(), isEmpty);
-        expect(backend.labels, everyElement(isNull));
+        expect(executor.calls.single.overlay, <String, String>{
+          'API': 'api-value',
+          'API_ALIAS': 'api-value',
+          'SHARED': 'shared-value',
+          'LITERAL': 'text',
+        });
+        expect(harness.allSessionsClosed, isTrue);
+        expect(harness.returnedValueBuffers, everyElement(_isZeroed));
       },
     );
 
-    test('rm is idempotent and silent', () async {
-      final backend = _MemoryBackend(<String, List<int>>{
-        'acme/key': utf8.encode('value'),
+    test('missing references return 3 and launch nothing', () async {
+      final harness = _Harness();
+      await harness.seed(<String, List<int>>{
+        'acme/present': utf8.encode('present'),
       });
-      final stdout = StringBuffer();
-      final stderr = StringBuffer();
+      final executor = _FakeCommandExecutor();
+      final errors = StringBuffer();
       final application = _application(
-        backend: backend,
-        stdout: stdout,
-        stderr: stderr,
+        harness: harness,
+        executor: executor,
+        stderr: errors,
+        manifest: Manifest(<String, ManifestValue>{
+          'PRESENT': const SecretManifestValue('acme/present'),
+          'MISSING': const SecretManifestValue('acme/missing'),
+          'MISSING_AGAIN': const SecretManifestValue('acme/missing'),
+        }),
       );
 
-      for (var iteration = 0; iteration < 2; iteration++) {
-        expect(await application.execute(const RemoveCommand('acme/key')), 0);
-      }
-      expect(backend.values, isEmpty);
-      expect(backend.deleteCalls, 2);
-      expect(stdout.toString(), isEmpty);
-      expect(stderr.toString(), isEmpty);
+      expect(
+        await application.execute(
+          RunCommand(
+            manifestPath: '.secrets.env',
+            executable: 'must-not-launch',
+            arguments: const <String>[],
+          ),
+        ),
+        exitNotFound,
+      );
+      expect(executor.calls, isEmpty);
+      expect(errors.toString(), contains('2 of 3 references'));
+      expect(
+        RegExp('keybay set acme/missing').allMatches(errors.toString()),
+        hasLength(1),
+      );
+      expect(harness.returnedValueBuffers, everyElement(_isZeroed));
+      expect(harness.allSessionsClosed, isTrue);
     });
 
-    test('list writes sorted qualified names and never values', () async {
-      const sentinel = 'never-print-this-value';
-      final backend = _MemoryBackend(<String, List<int>>{
-        'zeta/key': utf8.encode(sentinel),
-        'acme/key': utf8.encode('other-value'),
-        'acme/project/key': <int>[0xff, 0xfe],
-      });
-      final stdout = StringBuffer();
-      final stderr = StringBuffer();
+    test('malformed manifests fail before opening Keybay', () async {
+      final harness = _Harness();
       final application = _application(
-        backend: backend,
-        stdout: stdout,
-        stderr: stderr,
+        harness: harness,
+        loadManifest: (_) =>
+            throw const ManifestParseException('expected NAME=VALUE', line: 2),
       );
-
-      expect(await application.execute(const ListCommand()), 0);
-      expect(stdout.toString(), 'acme/key\nacme/project/key\nzeta/key\n');
-      expect(stdout.toString(), isNot(contains(sentinel)));
-      expect(stderr.toString(), isEmpty);
+      expect(
+        await application.execute(
+          RunCommand(
+            manifestPath: '.secrets.env',
+            executable: '/usr/bin/true',
+            arguments: const <String>[],
+          ),
+        ),
+        exitUsage,
+      );
+      expect(harness.openCalls, 0);
     });
   });
 
-  group('doctor', () {
-    test('reports the backend and returns healthy only when usable', () async {
-      final stdout = StringBuffer();
+  group('authentication lifecycle', () {
+    test('protected command prompts once, authenticates, and closes', () async {
+      final harness = _Harness();
+      await harness.protect('correct horse battery staple');
+      var promptCalls = 0;
+      late Uint8List supplied;
       final application = _application(
-        backend: _MemoryBackend.withInfo(
-          const BackendInfo(
-            scheme: StorageScheme.encryptedFile,
-            available: true,
-            locked: false,
-            capabilities: _memoryCapabilities,
-            level: SecurityLevel.loginBound,
-            detail: 'container=present key=present via test',
-          ),
-        ),
-        stdout: stdout,
-        isCompiled: true,
+        harness: harness,
+        passphraseReader: () async {
+          promptCalls++;
+          supplied = Uint8List.fromList(
+            utf8.encode('correct horse battery staple'),
+          );
+          return supplied;
+        },
       );
 
-      expect(await application.execute(const DoctorCommand()), exitSuccess);
-      expect(
-        stdout.toString(),
-        'scheme:   encrypted file\n'
-        'level:    loginBound\n'
-        'keystore: reachable, unlocked\n'
-        'detail:   container=present key=present via test\n'
-        'runtime:  compiled executable (signature not inspected)\n'
-        'keybay:   $cliVersion\n',
-      );
+      expect(await application.execute(const ListCommand()), exitSuccess);
+      expect(promptCalls, 1);
+      expect(harness.openCalls, 2);
+      expect(harness.credentialOpenCalls, 1);
+      expect(supplied, _isZeroed);
+      expect(harness.allSessionsClosed, isTrue);
     });
 
-    test('reports unhealthy snapshots before returning unavailable', () async {
-      final stdout = StringBuffer();
+    test('wrong passphrase maps to 1 without creating a session', () async {
+      final harness = _Harness();
+      await harness.protect('correct');
+      final errors = StringBuffer();
       final application = _application(
-        backend: _MemoryBackend.withInfo(
-          const BackendInfo(
-            scheme: StorageScheme.nativeItems,
-            available: false,
-            locked: true,
-            capabilities: _memoryCapabilities,
-          ),
-        ),
-        stdout: stdout,
+        harness: harness,
+        stderr: errors,
+        passphraseReader: () async => Uint8List.fromList(utf8.encode('wrong')),
       );
 
-      expect(await application.execute(const DoctorCommand()), exitUnavailable);
-      expect(stdout.toString(), contains('keystore: unreachable, locked'));
-      expect(
-        stdout.toString(),
-        contains('runtime:  Dart VM (shared VM is the keychain trust unit)'),
+      expect(await application.execute(const ListCommand()), exitFailure);
+      expect(errors.toString(), contains('authentication failed'));
+      expect(harness.openCalls, 2);
+      expect(harness.sessions, isEmpty);
+    });
+
+    test('platform-only access warns before reading a new value', () async {
+      final harness = _Harness();
+      final events = <String>[];
+      final errors = _RecordingSink(events, 'warning');
+      final application = _application(
+        harness: harness,
+        stderr: errors,
+        valueReader: ({required key, required fromStdin}) async {
+          events.add('value');
+          return Uint8List.fromList(utf8.encode('secret'));
+        },
       );
+
+      expect(
+        await application.execute(
+          const SetCommand(key: 'acme/key', readFromStdin: true),
+        ),
+        exitSuccess,
+      );
+      expect(events.take(2), <String>['warning', 'value']);
+      expect(harness.allSessionsClosed, isTrue);
+    });
+
+    test(
+      'platform-only warning does not advertise a deferred command',
+      () async {
+        final harness = _Harness();
+        final errors = StringBuffer();
+        final application = _application(harness: harness, stderr: errors);
+
+        expect(await application.execute(const ListCommand()), exitSuccess);
+        expect(errors.toString(), contains('platform protection only'));
+        expect(errors.toString(), isNot(contains('keybay open')));
+      },
+    );
+  });
+
+  group('record commands', () {
+    test('set snapshots bytes, clears caller input, and closes', () async {
+      final harness = _Harness();
+      final value = Uint8List.fromList(utf8.encode('secret-value'));
+      final application = _application(
+        harness: harness,
+        valueReader: ({required key, required fromStdin}) async => value,
+      );
+
+      expect(
+        await application.execute(
+          const SetCommand(key: 'acme/key', readFromStdin: true),
+        ),
+        exitSuccess,
+      );
+      expect(value, _isZeroed);
+      final checking = await harness.store.open();
+      expect(await checking.get('acme/key'), 'secret-value');
+      await checking.close();
+      expect(harness.allSessionsClosed, isTrue);
+    });
+
+    test('get reveals only one safe value and clears returned bytes', () async {
+      final harness = _Harness();
+      await harness.seed(<String, List<int>>{
+        'acme/key': utf8.encode('revealed-value'),
+        'acme/other': utf8.encode('must-not-print'),
+      });
+      final output = StringBuffer();
+      var authorizationCalls = 0;
+      final application = _application(
+        harness: harness,
+        stdout: output,
+        authorizeSecretOutput: () => authorizationCalls++,
+      );
+
+      expect(
+        await application.execute(const GetCommand('acme/key')),
+        exitSuccess,
+      );
+      expect(authorizationCalls, 1);
+      expect(output.toString(), 'revealed-value\n');
+      expect(output.toString(), isNot(contains('must-not-print')));
+      expect(harness.getBytesCalls, 1);
+      expect(harness.returnedValueBuffers, everyElement(_isZeroed));
+      expect(harness.allSessionsClosed, isTrue);
+    });
+
+    test('get authorizes output before opening the store', () async {
+      final harness = _Harness();
+      final application = _application(
+        harness: harness,
+        authorizeSecretOutput: () => throw StateError('refused'),
+      );
+      await expectLater(
+        application.execute(const GetCommand('acme/key')),
+        throwsA(isA<StateError>()),
+      );
+      expect(harness.openCalls, 0);
+    });
+
+    test('missing get returns 3 and prints no value', () async {
+      final harness = _Harness();
+      final output = StringBuffer();
+      final errors = StringBuffer();
+      final application = _application(
+        harness: harness,
+        stdout: output,
+        stderr: errors,
+      );
+      expect(
+        await application.execute(const GetCommand('acme/missing')),
+        exitNotFound,
+      );
+      expect(output.toString(), isEmpty);
+      expect(errors.toString(), contains('Key not found: acme/missing'));
+      expect(harness.allSessionsClosed, isTrue);
+    });
+
+    test('get refuses all terminal controls without echoing value', () async {
+      const sentinel = 'must-not-render';
+      final harness = _Harness();
+      await harness.seed(<String, List<int>>{
+        'acme/control': utf8.encode('$sentinel\nsecond-line'),
+      });
+      final output = StringBuffer();
+      final errors = StringBuffer();
+      final application = _application(
+        harness: harness,
+        stdout: output,
+        stderr: errors,
+      );
+      expect(
+        await application.execute(const GetCommand('acme/control')),
+        exitUsage,
+      );
+      expect(output.toString(), isEmpty);
+      expect(errors.toString(), isNot(contains(sentinel)));
+      expect(harness.returnedValueBuffers, everyElement(_isZeroed));
+    });
+
+    test('rm is idempotent and list emits names without values', () async {
+      final harness = _Harness();
+      await harness.seed(<String, List<int>>{
+        'zeta/key': utf8.encode('never-print-this'),
+        'acme/key': utf8.encode('also-hidden'),
+      });
+      final output = StringBuffer();
+      final application = _application(harness: harness, stdout: output);
+
+      expect(await application.execute(const RemoveCommand('zeta/key')), 0);
+      expect(await application.execute(const RemoveCommand('zeta/key')), 0);
+      expect(await application.execute(const ListCommand()), 0);
+      expect(output.toString(), 'acme/key\n');
+      expect(harness.listKeysCalls, 1);
+      expect(harness.allSessionsClosed, isTrue);
     });
   });
 }
 
 CliApplication _application({
-  _MemoryBackend? backend,
+  required _Harness harness,
   Manifest? manifest,
+  ManifestLoader? loadManifest,
   _FakeCommandExecutor? executor,
   StringBuffer? stdout,
-  StringBuffer? stderr,
-  String secretValue = 'secret-value',
+  StringSink? stderr,
   Map<String, String> parentEnvironment = const <String, String>{},
-  bool isCompiled = false,
-  ManifestLoader? loadManifest,
-  StorageFactory? createStorage,
+  SecretValueReader? valueReader,
+  PassphraseReader? passphraseReader,
+  SecretOutputAuthorizer authorizeSecretOutput = _allowSecretOutput,
 }) {
-  final effectiveBackend = backend ?? _MemoryBackend();
+  addTearDown(harness.dispose);
   return CliApplication(
     loadManifest:
         loadManifest ??
         (_) async => manifest ?? Manifest(<String, ManifestValue>{}),
-    createStorage:
-        createStorage ?? () => SecretStorage.withBackend(effectiveBackend),
-    readSecretValue: ({required key, required fromStdin}) async => secretValue,
+    openSession: harness.open,
+    readSecretValue:
+        valueReader ??
+        ({required key, required fromStdin}) async =>
+            Uint8List.fromList(utf8.encode('secret-value')),
+    readPassphrase:
+        passphraseReader ??
+        () async => Uint8List.fromList(utf8.encode('unused-passphrase')),
+    authorizeSecretOutput: authorizeSecretOutput,
     commandExecutor: executor ?? _FakeCommandExecutor(),
     parentEnvironment: parentEnvironment,
     stdout: stdout ?? StringBuffer(),
     stderr: stderr ?? StringBuffer(),
-    isCompiled: isCompiled,
   );
 }
 
-Future<String> _unusedSecretReader({
-  required String key,
-  required bool fromStdin,
-}) => throw StateError('secret reader was called');
+void _allowSecretOutput() {}
+
+final class _Harness {
+  final V2TestKeybay store = V2TestKeybay(
+    applicationId: 'dev.keybay.cli-application-test',
+  );
+  final List<_TrackingSession> sessions = <_TrackingSession>[];
+  final List<List<String>> requestedKeys = <List<String>>[];
+  final List<Uint8List> returnedValueBuffers = <Uint8List>[];
+  int openCalls = 0;
+  int credentialOpenCalls = 0;
+  int getManyCalls = 0;
+  int getBytesCalls = 0;
+  int listKeysCalls = 0;
+
+  bool get allSessionsClosed => sessions.every((session) => session.isClosed);
+
+  Future<KeybaySession> open({KeybayCredential? credential}) async {
+    openCalls++;
+    if (credential != null) credentialOpenCalls++;
+    final delegate = await store.open(credential: credential);
+    final tracked = _TrackingSession(this, delegate);
+    sessions.add(tracked);
+    return tracked;
+  }
+
+  Future<void> seed(Map<String, List<int>> values) async {
+    final session = await store.open();
+    for (final entry in values.entries) {
+      await session.setBytes(entry.key, Uint8List.fromList(entry.value));
+    }
+    await session.close();
+  }
+
+  Future<void> protect(String passphrase) async {
+    final session = await store.open();
+    final bytes = Uint8List.fromList(utf8.encode(passphrase));
+    try {
+      await session.auth.add(PassphraseCredential(phrase: bytes));
+    } finally {
+      bytes.fillRange(0, bytes.length, 0);
+      await session.close();
+    }
+    sessions.clear();
+    openCalls = 0;
+  }
+
+  Future<void> dispose() async {
+    for (final session in sessions) {
+      await session.close();
+    }
+    await store.dispose();
+  }
+}
+
+final class _TrackingSession implements KeybaySession {
+  _TrackingSession(this.owner, this.delegate);
+
+  final _Harness owner;
+  final KeybaySession delegate;
+
+  @override
+  KeybayAuthManager get auth => delegate.auth;
+
+  @override
+  bool get isClosed => delegate.isClosed;
+
+  @override
+  bool get wasInitialized => delegate.wasInitialized;
+
+  @override
+  Future<void> clearAll() => delegate.clearAll();
+
+  @override
+  Future<void> close() => delegate.close();
+
+  @override
+  Future<bool> contains(String key) => delegate.contains(key);
+
+  @override
+  Future<bool> delete(String key) => delegate.delete(key);
+
+  @override
+  Future<String?> get(String key) => delegate.get(key);
+
+  @override
+  Future<Uint8List?> getBytes(String key) async {
+    owner.getBytesCalls++;
+    final value = await delegate.getBytes(key);
+    if (value != null) owner.returnedValueBuffers.add(value);
+    return value;
+  }
+
+  @override
+  Future<Map<String, Uint8List?>> getManyBytes(Iterable<String> keys) async {
+    owner.getManyCalls++;
+    final requested = keys.toList();
+    owner.requestedKeys.add(requested);
+    final values = await delegate.getManyBytes(requested);
+    owner.returnedValueBuffers.addAll(values.values.whereType<Uint8List>());
+    return values;
+  }
+
+  @override
+  Future<List<String>> listKeys() {
+    owner.listKeysCalls++;
+    return delegate.listKeys();
+  }
+
+  @override
+  Future<void> set(String key, String value) => delegate.set(key, value);
+
+  @override
+  Future<void> setBytes(String key, Uint8List value) =>
+      delegate.setBytes(key, value);
+}
 
 final class _ExecutionCall {
   _ExecutionCall({
@@ -571,7 +534,6 @@ final class _ExecutionCall {
 
 final class _FakeCommandExecutor implements CommandExecutor {
   final List<_ExecutionCall> calls = <_ExecutionCall>[];
-  int result = 0;
 
   @override
   Future<int> execute({
@@ -588,65 +550,30 @@ final class _FakeCommandExecutor implements CommandExecutor {
         overlay: overlay,
       ),
     );
-    return result;
+    return 0;
   }
 }
 
-const _memoryCapabilities = BackendCapabilities(
-  enumeration: true,
-  persistent: false,
-);
+final class _RecordingSink implements StringSink {
+  _RecordingSink(this.events, this.event);
 
-final class _MemoryBackend implements SecretBackend {
-  _MemoryBackend([Map<String, List<int>> initial = const <String, List<int>>{}])
-    : info = const BackendInfo(
-        scheme: StorageScheme.encryptedFile,
-        available: true,
-        locked: false,
-        capabilities: _memoryCapabilities,
-        level: SecurityLevel.loginBound,
-        detail: 'memory',
-      ),
-      values = <String, Uint8List>{
-        for (final entry in initial.entries)
-          entry.key: Uint8List.fromList(entry.value),
-      };
+  final List<String> events;
+  final String event;
 
-  _MemoryBackend.withInfo(this.info) : values = <String, Uint8List>{};
-
-  final Map<String, Uint8List> values;
-  final BackendInfo info;
-  final List<String?> labels = <String?>[];
-  int readAllCalls = 0;
-  int deleteCalls = 0;
+  void _record() => events.add(event);
 
   @override
-  BackendCapabilities get capabilities => _memoryCapabilities;
+  void write(Object? object) => _record();
 
   @override
-  Future<bool> contains(String key) async => values.containsKey(key);
+  void writeAll(Iterable<Object?> objects, [String separator = '']) =>
+      _record();
 
   @override
-  Future<void> delete(String key) async {
-    deleteCalls++;
-    values.remove(key);
-  }
+  void writeCharCode(int charCode) => _record();
 
   @override
-  Future<BackendInfo> describe() async => info;
-
-  @override
-  Future<Uint8List?> read(String key) async => values[key];
-
-  @override
-  Future<Map<String, Uint8List>> readAll() async {
-    readAllCalls++;
-    return Map<String, Uint8List>.of(values);
-  }
-
-  @override
-  Future<void> write(String key, Uint8List value, {String? label}) async {
-    values[key] = Uint8List.fromList(value);
-    labels.add(label);
-  }
+  void writeln([Object? object = '']) => _record();
 }
+
+final Matcher _isZeroed = everyElement(0);

@@ -2,20 +2,15 @@ import 'dart:io';
 
 enum DevicePlatform { android, ios, macos, linux }
 
-enum EvidenceClass {
-  hermetic,
-  nativeHost,
-  virtualDevice,
-  physicalDevice,
-}
+enum EvidenceClass { hermetic, nativeHost, virtualDevice, physicalDevice }
 
 extension EvidenceClassName on EvidenceClass {
   String get wireName => switch (this) {
-        EvidenceClass.hermetic => 'hermetic',
-        EvidenceClass.nativeHost => 'native-host',
-        EvidenceClass.virtualDevice => 'virtual-device',
-        EvidenceClass.physicalDevice => 'physical-device',
-      };
+    EvidenceClass.hermetic => 'hermetic',
+    EvidenceClass.nativeHost => 'native-host',
+    EvidenceClass.virtualDevice => 'virtual-device',
+    EvidenceClass.physicalDevice => 'physical-device',
+  };
 }
 
 final class SecurityScenario {
@@ -73,11 +68,8 @@ const securityScenarios = <SecurityScenario>[
   SecurityScenario(
     id: 'KB-AND-040',
     platform: DevicePlatform.android,
-    // Deleting only the harness KEK and proving KeyInvalidated with unchanged
-    // artifacts and no silent re-provision is also the executable check that
-    // restore behavior matches the documented policy (KB-INV-004) and that
-    // device-bound state does not survive transfer (KB-INV-008).
-    guarantees: ['KB-INV-003', 'KB-INV-004', 'KB-INV-005', 'KB-INV-008'],
+    // Provider-root loss does not establish actual backup or transfer behavior.
+    guarantees: ['KB-INV-003', 'KB-INV-005'],
     minimumEvidence: EvidenceClass.physicalDevice,
     destructive: true,
   ),
@@ -102,45 +94,12 @@ const securityScenarios = <SecurityScenario>[
     minimumEvidence: EvidenceClass.physicalDevice,
     destructive: false,
   ),
-  SecurityScenario(
-    id: 'KB-MAC-001',
-    platform: DevicePlatform.macos,
-    guarantees: ['KB-INV-005'],
-    minimumEvidence: EvidenceClass.nativeHost,
-    destructive: false,
-  ),
-  SecurityScenario(
-    id: 'KB-MAC-010',
-    platform: DevicePlatform.macos,
-    guarantees: ['KB-INV-001', 'KB-INV-002', 'KB-INV-005'],
-    minimumEvidence: EvidenceClass.nativeHost,
-    destructive: false,
-  ),
-  SecurityScenario(
-    id: 'KB-MAC-020',
-    platform: DevicePlatform.macos,
-    guarantees: ['KB-INV-007'],
-    minimumEvidence: EvidenceClass.nativeHost,
-    destructive: false,
-  ),
-  SecurityScenario(
-    id: 'KB-MAC-030',
-    platform: DevicePlatform.macos,
-    guarantees: ['KB-INV-003', 'KB-INV-007'],
-    minimumEvidence: EvidenceClass.nativeHost,
-    destructive: false,
-  ),
 ];
 
 /// Current executable runner selections. This is execution wiring, not a
 /// certification profile or a roadmap: only runnable scenarios appear here.
 const scenarioSelections = <String, List<String>>{
-  'android-baseline': [
-    'KB-AND-001',
-    'KB-AND-010',
-    'KB-AND-011',
-    'KB-AND-020',
-  ],
+  'android-baseline': ['KB-AND-001', 'KB-AND-010', 'KB-AND-011', 'KB-AND-020'],
   'android-tamper': [
     'KB-AND-001',
     'KB-AND-010',
@@ -150,19 +109,12 @@ const scenarioSelections = <String, List<String>>{
     'KB-AND-040',
   ],
   'ios-baseline': ['KB-IOS-001', 'KB-IOS-010', 'KB-IOS-020'],
-  'macos-baseline': ['KB-MAC-001', 'KB-MAC-010', 'KB-MAC-020'],
-  'macos-tamper': [
-    'KB-MAC-001',
-    'KB-MAC-010',
-    'KB-MAC-020',
-    'KB-MAC-030',
-  ],
 };
 
 SecurityScenario scenarioById(String id) => securityScenarios.singleWhere(
-      (scenario) => scenario.id == id,
-      orElse: () => throw ArgumentError.value(id, 'id', 'unknown scenario'),
-    );
+  (scenario) => scenario.id == id,
+  orElse: () => throw ArgumentError.value(id, 'id', 'unknown scenario'),
+);
 
 List<SecurityScenario> scenariosForSelection(String selection) {
   final ids = scenarioSelections[selection];

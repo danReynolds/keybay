@@ -78,8 +78,9 @@ _Config _parse(List<String> args) {
     if (option == '--field') {
       final pair = _pair(value, option);
       final key = _fieldKey(pair.$1);
-      if (RegExp(r'(^|_)(serial|udid|identifier|device_id)($|_)')
-          .hasMatch(key)) {
+      if (RegExp(
+        r'(^|_)(serial|udid|identifier|device_id)($|_)',
+      ).hasMatch(key)) {
         throw ReportException('raw device identifiers are not accepted');
       }
       if (!_knownFieldNames.split(' ').contains(key)) {
@@ -133,8 +134,9 @@ _Config _parse(List<String> args) {
   if (selected.any((scenario) => scenario.platform.name != platform)) {
     throw ReportException('selection $selection does not belong to $platform');
   }
-  final requiredExecution =
-      platform == 'macos' ? 'native-host' : 'physical-device';
+  final requiredExecution = platform == 'macos'
+      ? 'native-host'
+      : 'physical-device';
   if (executionClass != requiredExecution) {
     throw ReportException(
       '$platform/$selection requires execution class $requiredExecution',
@@ -180,20 +182,22 @@ _Config _parse(List<String> args) {
 Future<Map<String, Object?>> _buildReport(_Config config) async {
   final repo = File.fromUri(Platform.script).parent.parent.parent.absolute;
   final git = _firstExisting(['/usr/bin/git', '/bin/git']);
-  final commit = await _run(
-    git,
-    ['-C', repo.path, 'rev-parse', 'HEAD'],
-    cleanGitEnv: true,
-  );
+  final commit = await _run(git, [
+    '-C',
+    repo.path,
+    'rev-parse',
+    'HEAD',
+  ], cleanGitEnv: true);
   if (!RegExp(r'^[0-9a-f]{40}$').hasMatch(commit)) {
     throw ReportException('source commit was malformed');
   }
-  final dirty = (await _run(
-    git,
-    ['-C', repo.path, 'status', '--porcelain', '--untracked-files=all'],
-    cleanGitEnv: true,
-  ))
-      .isNotEmpty;
+  final dirty = (await _run(git, [
+    '-C',
+    repo.path,
+    'status',
+    '--porcelain',
+    '--untracked-files=all',
+  ], cleanGitEnv: true)).isNotEmpty;
   if (dirty) {
     throw ReportException('reports require a clean source checkout');
   }
@@ -243,8 +247,13 @@ Future<Map<String, Object?>> _buildReport(_Config config) async {
     final id = entry['id'] as String;
     final status = entry['status'] as String;
     if (!expectedTestIds.contains(id) ||
-        !const {'pass', 'fail', 'blocked', 'skipped', 'inconclusive'}
-            .contains(status) ||
+        !const {
+          'pass',
+          'fail',
+          'blocked',
+          'skipped',
+          'inconclusive',
+        }.contains(status) ||
         resultStatuses.containsKey(id)) {
       throw ReportException('unexpected or duplicate scenario result: $id');
     }
@@ -278,17 +287,17 @@ Future<Map<String, Object?>> _buildReport(_Config config) async {
   final status = statuses.contains('fail')
       ? 'fail'
       : config.commandStatus == 'fail' || config.cleanupStatus == 'fail'
-          ? 'inconclusive'
-          : statuses.every((value) => value == 'pass')
-              ? 'pass'
-              : statuses.contains('inconclusive') ||
-                      statuses.contains('skipped')
-                  ? 'inconclusive'
-                  : 'blocked';
+      ? 'inconclusive'
+      : statuses.every((value) => value == 'pass')
+      ? 'pass'
+      : statuses.contains('inconclusive') || statuses.contains('skipped')
+      ? 'inconclusive'
+      : 'blocked';
 
   final fields = config.fields;
-  final api =
-      fields['api_level'] == null ? null : int.tryParse(fields['api_level']!);
+  final api = fields['api_level'] == null
+      ? null
+      : int.tryParse(fields['api_level']!);
   if (fields['api_level'] != null && api == null) {
     throw ReportException('apiLevel must be an integer');
   }

@@ -1,106 +1,104 @@
-# Keybay Security
+# Keybay security
 
-Keybay holds secrets for apps and CLIs on macOS, iOS, Android, and Linux.
-It is austere on purpose: the smallest design that can be trusted, no
-security knobs to misconfigure, and no claim without evidence.
+Keybay holds local secrets for applications and its CLI on macOS, iOS, Android,
+and ordinary Linux desktop. It is austere on purpose: one store shape, no
+weaker configuration mode, and no platform claim without matching evidence.
 
-## Where your secrets live
+## Storage model
 
-On each platform, Keybay uses the storage the platform itself provides for
-credentials — directly, with no plugin layer and no deprecated wrappers.
+Every supported application has one atomically replaced encrypted file. Record
+names live in an authenticated encrypted manifest; each value is an independent
+XChaCha20-Poly1305 frame. One random store key derives separate manifest and
+frame keys. A small key package routes from the platform protector to that
+store key.
 
-| Platform | Storage | Key protection |
-| --- | --- | --- |
-| iOS | Data Protection Keychain items | Device-bound, never synced |
-| macOS (entitled app) | Data Protection Keychain items | Device-bound, access-group pinned |
-| macOS (CLI, `dart run`) | Encrypted container, XChaCha20-Poly1305 | Key in the login Keychain |
-| Android 12+ | Encrypted container, XChaCha20-Poly1305 | AES-256-GCM key in Android Keystore, StrongBox when available |
-| Linux desktop | Encrypted container, XChaCha20-Poly1305 | Key in Secret Service |
+| Host | Platform protection | Application isolation |
+|---|---|---|
+| iOS | exact signed Data Protection Keychain group | signed group plus app-private file container |
+| Android 12+ | one non-exportable Android Keystore key | installed package/UID sandbox plus no-backup file directory |
+| entitled macOS | exact signed Data Protection Keychain group | root isolated by entitlement; file isolation depends separately on App Sandbox |
+| unentitled macOS / CLI | one explicit login-Keychain item | declared namespace and restrictive files; not a portable app sandbox |
+| ordinary Linux desktop | one Secret Service item | declared namespace and restrictive files; not an OS-enforced app boundary |
 
-Accessibility and sync policy are fixed constants chosen from each platform's
-current guidance — there is no setting that selects weaker storage. Hardware
-backing is measured from the platform's own key metadata, never assumed from
-the API used.
+Platform protection is mandatory. Applications may add one passphrase, making
+opening require platform access and the passphrase. Passphrases are especially
+important for high-value records on ordinary Linux and unentitled macOS, where
+another same-user process may claim the same declared namespace and reach
+login-bound storage.
 
-Nothing is written to disk in the clear, and no failure downgrades silently:
-a corrupted store, a missing key, a lost entitlement, a changed signing
-identity — each is a typed error. An unreachable store never reads as an
-empty one. Lifecycle behavior — reboot, backup, restore, reinstall — is
-documented per platform ([macOS](doc/platforms/macos.md),
-[iOS](doc/platforms/ios.md), [Android](doc/platforms/android.md),
-[Linux](doc/platforms/linux.md)) and exercised by the
-[device security suite](doc/device-security-suite.md).
+The Flatpak candidate uses authenticated sandbox identity and XDG Secret Portal
+protection. Its isolation claim requires native Linux evidence with two
+installed application IDs; neither hermetic tests nor Docker establish it.
+Flatpak never falls back to raw Secret Service. Snap, Windows, and unsupported
+provider configurations fail closed.
 
-The full threat model, and the numbered `KB-INV-*` invariants these
-properties decompose into: [doc/design.md](doc/design.md).
+Opening, changing authentication, and resetting may invoke trusted OS/provider
+UI. Record operations and authentication listing never prompt. The public API
+has no interaction option.
 
-## How it stays that way
+Classic macOS file Keychains cannot suppress UI per call. Their provider is
+never called when interaction is forbidden, including optional record-failure
+diagnostics. This can leave a changed store classified as
+`storeAuthenticationFailed` instead of a confirmed peer authentication change.
 
-Every change runs the hermetic tests, analysis, dependency scans, and
-repository checks. A package version change or shared core change runs every
-supported provider lane. Provider-specific implementation or harness changes
-run the affected login Keychain, GNOME Keyring, Android-emulator, and
-iOS-simulator lanes. Documentation-only and unrelated tooling changes do not
-spend those runners. All provider lanes can also be started on demand from the
-CI workflow's **Run workflow** button. Fresh-seed fuzzing runs on its scheduled
-canary.
+## What Keybay protects
 
-The operating model is event-driven. A new advisory, security-shaped issue,
-relevant implementation or platform change, or release review is triaged
-against the numbered guarantees in [doc/design.md](doc/design.md). Actionable
-or uncertain signals are tracked as GitHub issues. Weekly and on-demand public
-source watchers keep one compact [raw report and separate Codex
-assessment](watchers/reports/SUMMARY.md) per run. A quiet scanner creates no
-issue; a scanner that cannot complete is recorded as failed, never clean.
+Keybay is designed so that:
 
-Physical and signed-host scenarios run when a claim depends on affected OS,
-hardware, entitlement, lifecycle, or provider behavior. Their reports identify
-the clean source commit, named configuration, date, results, and limitations.
-They are scoped observations, not release certificates, and a release alone
-does not require them. Missing evidence narrows the affected qualification
-claim rather than becoming a pass.
+- its managed persistent files contain no plaintext record values;
+- an encrypted file is insufficient without its platform-protected root;
+- configured passphrase protection remains necessary even with access to the
+  root item and file;
+- corruption, wrong keys, unsupported formats, and missing provider state fail
+  before plaintext is returned;
+- concurrent writers produce one authenticated complete generation; and
+- platform selection cannot be redirected by fields in the encrypted file.
 
-Releases are signed with a maintainer-controlled SSH key. To check a release
-yourself:
+The full threat model and numbered evidence-linked invariants are in
+[doc/design.md](doc/design.md). The accepted construction is
+[RFC 0001](doc/rfcs/0001-per-application-stores.md).
 
-```sh
-git verify-tag v<version>          # signed by the key published at
-                                   # github.com/danReynolds.keys
-```
+## What Keybay does not protect
 
-Publication is performed locally by rk. A credential-free GitHub auditor
-checks the signed core tag, the exact successful source commit, and whether the
-package pub.dev serves has the same canonical contents as that tagged source.
-CLI binary provenance remains a separate release concern because consumers run
-those exact bytes.
+Plaintext explicitly returned to an application is ordinary process data.
+Keybay does not defend against root/kernel compromise, code injected into the
+host process, a malicious Keybay binary, keyloggers, screen capture, terminal
+compromise, or rollback to an older complete authentic snapshot. Flatpak reset
+removes the encrypted store and staging but retains nonsecret coordination
+locks and the portal-owned application secret.
+The next successful open creates a fresh store key; restoring an old complete
+encrypted store can nevertheless restore access under its old protection.
 
-Dependency advisories are scanned on every change and by scheduled monitoring;
-the runtime dependency set contains one exact-pinned third-party package
-(`cryptography`) whose new releases receive explicit review. Applicable public
-signals become issues and then code, test, device qualification, or claim
-changes. Plausible undisclosed Keybay vulnerabilities move to private draft
-security advisories. The small watcher set and report methodology are defined
-in [watchers/README.md](watchers/README.md).
+A passphrase does not prevent denial of service by an actor that can delete or
+replace both provider state and application files. Best-effort clearing narrows
+the lifetime of Keybay-owned mutable buffers but cannot prove erasure of every
+Dart VM or operating-system copy.
 
-Critical and High findings block a release. A release never claims what its
-evidence does not show.
+For the CLI, `get` is a disclosure guard rather than an authorization boundary:
+it refuses redirected/captured output before decrypting, but a foreground
+terminal can display the selected value. `run` necessarily supplies referenced
+values to its child process. Neither operation reveals unrelated records.
 
-No independent security review has been performed yet. Keybay has a single
-maintainer. If development ever stops, the packages will be marked as
-discontinued on pub.dev with migration guidance.
+## Engineering and evidence
 
-## What Keybay does not defend
+Runtime dependencies are exact-pinned and the resolved hosted closure is
+checked in CI. Changes run formatting, analysis, unit/adversarial tests, and the
+affected genuine provider lanes. Simulator and emulator runs prove API paths,
+not physical secure-hardware mediation. Hardware claims are made only from
+measured platform metadata and retained qualification.
 
-Code running as you while the store is unlocked reads what you can read. An
-attacker holding your unlocked device gets what you would get. Process
-memory, OS rollback, and timing side channels are out of scope — each
-decision recorded, with rationale, in [doc/design.md](doc/design.md).
+The current device, lifecycle, and provider evidence is tracked in
+[doc/device-security-suite.md](doc/device-security-suite.md). No independent
+security review has been performed yet; Keybay currently has one maintainer.
 
 ## Reporting
 
 Use GitHub [private vulnerability reporting](https://github.com/danReynolds/keybay/security/advisories/new)
 or email **me@danreynolds.ca**. Do not open a public issue for an undisclosed
-security bug. Reports go directly to the maintainer; response times are
-best-effort because Keybay currently has one maintainer. Critical and High
-findings block the next release. Security fixes target the latest minor release
-and `main`.
+security bug. Critical and High findings block the next release.
+
+Releases are signed with the maintainer-controlled SSH key. Verify a tag with:
+
+```sh
+git verify-tag v<version>
+```

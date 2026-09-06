@@ -1,67 +1,76 @@
-# Verifying the macOS Data Protection keychain (entitled success path)
+# Verifying the entitled macOS V2 profile
 
-On macOS the resolver picks native Data Protection Keychain items **only** for a
-signed app carrying a `keychain-access-groups` entitlement authorized by a
-provisioning profile. `describe().scheme` reports native items;
-`describe().level` stays null because Keybay does not infer or attest hardware
-backing for arbitrary keychain-item bytes. The resolver's two other outcomes
-are covered automatically:
-
-- **Refusal path** (`errSecMissingEntitlement` −34018 → the file scheme) — CI,
-  every push (`keychain_integration_test.dart`, plus the resolver end-to-end).
-- **Unentitled file scheme inside a real `.app`** — the `example_flutter/`
-  harness, `flutter test integration_test/keybay_test.dart -d macos
-  --dart-define=EXPECT_SCHEME=file --dart-define=EXPECT_LEVEL=login` (no
-  development signing needed).
-
-The **entitled success path** can't run in CI (no signing identity) and needs a
-repeatable local run on a Mac with Xcode and an Apple Development identity.
-Re-run it after entitlement, signing, resolver, native-FFI, or major macOS
-changes; retain the result under the device-suite evidence policy.
-
-## Just run the script
-
-`tool/test_e2e.sh --entitled` is the supported path. It applies the entitled
-config overlay temporarily, provisions with `-allowProvisioningUpdates`, runs the
-entitled leg with the right dart-defines, and **always restores** the overlay on
-exit (a trap), so the default unentitled build stays runnable:
+The supported path is:
 
 ```sh
-./tool/test_e2e.sh --entitled
+KEYBAY_APPLE_TEAM_ID=<your-team-id> ./tool/test_e2e.sh macos-signed
 ```
 
-Look for `macOS entitled (DP success)  PASS` in the summary. Everything below is
-just what that leg (`leg_entitled` / `apply_entitled_overlay` in the script)
-does, for when you want to reproduce it by hand or diagnose a failure.
+It temporarily adds an Apple Development team and the exact
+`keychain-access-groups` entitlement to `example_flutter`, provisions the host,
+verifies the resulting code signature, runs
+`integration_test/keybay_v2_macos_entitled_test.dart`, then runs the signed
+seed/reopen continuity fixture as builds 101 and 102. It verifies each tested
+app and restores the original configuration on exit. Verification
+requires Apple-trusted signing, the expected
+team and application identifier, the sole expected Keychain group, and sandboxing.
+A configuration restoration failure fails the run and retains the backup.
 
-## Prerequisite (this is what blocks it)
+The test exercises the complete V2 profile: signed application identity, one
+Data Protection Keychain root in the exact signed group, an encrypted framed
+file under Application Support, reopen, passphrase protection, and reset. It
+does not infer Secure Enclave backing for a generic Keychain item.
 
-The account holder must have accepted the **current Apple Developer Program
-License Agreement**. If not, automatic provisioning fails with:
+## Prerequisites
 
-> Unable to process request - PLA Update available: … your team's Account
-> Holder … must agree to the latest Program License Agreement.
+- Xcode and an Apple Development identity.
+- Automatic provisioning access for the selected team.
+- Acceptance of the current Apple Developer Program agreement.
 
-Accept it at <https://developer.apple.com/account> (or App Store Connect) →
-then provisioning works. Nothing in this repo can bypass this; it is a legal
-agreement tied to the Apple ID.
+Use the team identifier from the provisioning profile or Xcode signing settings.
+The suffix in an Apple Development certificate's display name may identify an
+individual developer and must not be inferred to be the team.
 
-## By hand (what the script automates)
+## Isolated native file-Keychain qualification
 
-The permanent harness is `example_flutter/` — no throwaway app.
+```sh
+./tool/test_macos_native.sh
+```
 
-1. **Signing + identity** — append to
-   `example_flutter/macos/Runner/Configs/AppInfo.xcconfig` (a target-level
-   xcconfig outranks the project's ad-hoc `CODE_SIGN_IDENTITY = "-"`):
+This compiles a small test-only fixture with the installed Apple build tools,
+creates a temporary Keychain with a fixed test password, and removes that
+Keychain from the search list immediately. It verifies the existing search list
+and default are unchanged and deletes its fixture on exit. No user item values
+are read. The tests cover bounded root reads, lifecycle and passphrase changes,
+reset, and a locked-keychain regression for prompt-free record operations.
+Run in a native user session; an execution sandbox can report misleading
+`OSStatus -50` errors or hide signing identities.
 
-   ```
-   DEVELOPMENT_TEAM = <YOUR_TEAM_ID>
-   CODE_SIGN_IDENTITY = Apple Development
-   ```
+## Signed build continuity
 
-2. **Entitlement** — in `example_flutter/macos/Runner/DebugProfile.entitlements`
-   add (the default access group is implicit; `$(AppIdentifierPrefix)` resolves
-   at sign time):
+The same `macos-signed` command runs
+`integration_test/keybay_v2_macos_continuity_test.dart` in explicit `seed` and
+`reopen` phases. It changes the build number from 101 to 102 and requires
+different signed code-directory hashes, with the same exact application
+identifier and sole Keychain group. Reopen must read the passphrase-protected
+first build's value without initializing a store, then verify removal of the
+provider root, encrypted store, and staging file after reset.
+
+Each phase retains its JSON test events and verified signature metadata beside
+the regression report. Missing, skipped, or failed test results cannot pass.
+This demonstrates the tested Apple Development build replacement only; it does
+not establish Developer ID release upgrades, entitlement transitions,
+lock/reboot, or reinstall behavior.
+
+If provisioning needs account authentication, open the workspace in Xcode once
+and complete the account/2FA flow before rerunning the script.
+
+## Manual equivalent
+
+1. Add `DEVELOPMENT_TEAM` and `CODE_SIGN_IDENTITY = Apple Development` to
+   `example_flutter/macos/Runner/Configs/AppInfo.xcconfig`.
+2. Add the following to
+   `example_flutter/macos/Runner/DebugProfile.entitlements`:
 
    ```xml
    <key>keychain-access-groups</key>
@@ -70,40 +79,18 @@ The permanent harness is `example_flutter/` — no throwaway app.
    </array>
    ```
 
-3. **Provision once** — Flutter's build does not pass
-   `-allowProvisioningUpdates`, so create the managed profile directly
-   (registers the App ID under your team):
-
-   ```sh
-   cd example_flutter && flutter build macos --debug --config-only
-   cd macos && xcodebuild build -workspace Runner.xcworkspace -scheme Runner \
-     -configuration Debug -destination 'platform=macOS' -allowProvisioningUpdates
-   ```
-
-   Expected: `** BUILD SUCCEEDED **`. If it fails on the PLA, do the
-   prerequisite above. If it fails with "No profiles found" *after* accepting
-   the PLA, open the workspace in Xcode once so it can sign in / 2FA, then retry.
-
-4. **Run the entitled leg** — pass the same dart-defines the script uses. The
-   distinct `APP_ID` matters: it keeps this native-scheme store from colliding
-   with any default-appId **file**-scheme store left by a manual unentitled run
-   on the same machine, which would otherwise trip the scheme-migration guard
-   (`MigrationRequired`) at construction.
+3. Provision and run:
 
    ```sh
    cd example_flutter
-   flutter test integration_test/keybay_test.dart -d macos \
-     --dart-define=EXPECT_SCHEME=native \
-     --dart-define=APP_ID=com.example.keybayHarness.native
+   flutter build macos --debug --config-only
+   cd macos
+   xcodebuild build -workspace Runner.xcworkspace -scheme Runner \
+     -configuration Debug -destination 'platform=macOS' \
+     -allowProvisioningUpdates
+   cd ..
+   flutter test integration_test/keybay_v2_macos_entitled_test.dart -d macos
    ```
 
-   Expected: **All tests passed!** The first test asserts `info.scheme ==
-   StorageScheme.nativeItems`; the round-trip proves the Data Protection
-   Keychain **success** branch is live. A build error about "entitlements that
-   require signing with a development certificate" means step 1's identity didn't
-   take; a runtime `keystore_unreachable` means the entitlement/profile isn't in
-   effect (recheck steps 2–3).
-
-5. **Revert the overlay** — remove the two edits from steps 1–2 to restore the
-   default ad-hoc build so the unentitled leg (`--dart-define=EXPECT_SCHEME=file`,
-   `-d macos`) runs again. (`tool/test_e2e.sh` does this automatically.)
+4. Restore both configuration files. The script does this automatically and is
+   preferred because its exit trap also restores them after a failed run.
