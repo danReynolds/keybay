@@ -72,7 +72,9 @@ encrypted store can nevertheless restore access under its old protection.
 A passphrase does not prevent denial of service by an actor that can delete or
 replace both provider state and application files. Best-effort clearing narrows
 the lifetime of Keybay-owned mutable buffers but cannot prove erasure of every
-Dart VM or operating-system copy.
+Dart VM, cryptographic dependency, or operating-system copy. In particular,
+the pinned HKDF implementation returns an immutable key wrapper whose destruction
+discards its reference without overwriting the dependency's backing bytes.
 
 For the CLI, `get` is a disclosure guard rather than an authorization boundary:
 it refuses redirected/captured output before decrypting, but a foreground

@@ -122,6 +122,54 @@ claim. Unit rejection cases, real compiled modules and the full hardened SDK
 continuity fixture passed. Native module image recognition is not signature
 verification; signed-page enforcement remains the platform loader's job.
 
+### SR-004: HKDF destruction was described too broadly — documentation corrected
+
+The pinned `cryptography` 2.9.0 `DartHkdf.deriveKey` returns
+`SecretKeyData(result)` with `overwriteWhenDestroyed` left false. Its
+`SensitiveBytes` view is immutable. Calling `destroy()` on this result releases
+the reference but does not overwrite the backing bytes. Keybay correctly clears
+its separate mutable snapshots, but the RFC's unqualified references to clearing
+derived keys and Flatpak roots overstated what that dependency boundary achieves.
+
+The RFC and security policy now distinguish these lifetimes explicitly. This is
+a low-severity documentation finding within the existing exclusion of live-memory
+confidentiality; no plaintext persistence, authentication bypass or return of
+unauthenticated plaintext was demonstrated. A custom HKDF implementation solely
+to erase this allocation would add crypto code while leaving other dependency,
+VM and OS copies outside our control. Keep the pinned implementation and its
+independent vectors. External review should assess this residual memory exposure.
+
+## Adversarial source review, 2026-09-06
+
+This additional engineering review inspected the SDK runtime at
+`808738874ec3d0d6e8ee4d6d8f5289c0393bf1a8`, whose SDK Dart-source digest is
+`4f88c9e5546a35a5e1827d8b12fcaa909c48a6370a966542584ae713535d1cf9`.
+The digest rule is recorded in the qualification report. Runtime code, format,
+dependency pins and public API were unchanged by this review. New tests and the
+claim correction accompany the results. This is not independent external review.
+
+| Boundary inspected | Assessment and regression evidence |
+| --- | --- |
+| Format, AEAD, HKDF, Argon2 and public inputs | Canonical decoders and fixed bounds precede expensive work; each transcript binds its intended context; only authenticated plaintext is returned. Existing independent format vectors remain the construction check. Six new dependency checks confirm the in-place AEAD workspace assumption for empty, 32-byte and maximum-size record values with valid and invalid tags. Invalid-tag decryption writes plaintext into that workspace; both SDK AEAD opening paths clear it in `finally`. These checks do not prove erasure of cipher internals. |
+| Reader, writer, rotation, reset and session queues | Reviewed pinned reads, copy-forward frame digests, partial reset, indeterminate replacement classification, close and peer invalidation. Two new tests combine the production engine with real POSIX lock contention: a waiting writer fails stale after committed rotation, but commits after an aborted rotation. They also check reopened protection, acknowledged data, subsequent writing and reset cleanup. Provider custody and KDF are disposable test implementations in these cases. |
+| POSIX boundary | Reviewed descriptor-relative fixed names, no-follow opens, file/directory modes, macOS ACL checks, staging ownership, rename/fsync ordering, lock deadlines and failure precedence. Existing symlink, FIFO, ACL, staging-fault and process-kill tests exercise these paths. This inspection does not establish filesystem behavior under sudden power loss or every mount configuration. |
+| Host identity and platform custody | Reviewed ordinary declaration resolution, domain/address separation, Apple exact-group and classic-Keychain dispatch, Android package/UID/no-backup facts and JNI key operations, and Linux confinement selection. No new fallback, root-selection or cross-application authority defect was confirmed. Native platform behavior remains bounded by the configurations in the qualification report. |
+| Secret Service and portal transport | Reviewed fixed D-Bus destinations, response shape, owner/sender checks, bounded pipe reads, forbidden interaction and post-timeout continuations. The new concurrent cancellation test proves that a late reply from a cancelled request cannot finish or abort its surviving peer. Existing timeout, cancellation, malformed-response and no-fallback cases remain in the same routine suite. |
+
+No additional SDK correctness or security defect was confirmed in the reviewed
+paths. The result supports retaining the existing shared engine and narrow
+platform adapters. It does not justify a broader security claim or close the
+remaining qualification gates. SR-004 is a claim correction, not an implementation
+redesign. The nine added cases run automatically in the existing `core` lane;
+there is no new qualification framework or runtime seam.
+
+Validation and retained run details are linked from the
+[qualification report](qualification-status.md). Independent review, maintained-
+device Argon2 acceptance budgets, remaining physical lifecycle procedures and
+final supported-configuration/release acceptance remain open. No physical device
+was operated during this source-review pass. The earlier immutable handoff
+archives remain evidence for their recorded contents.
+
 ## Evidence and acceptance
 
 Use the linked qualification report for each source/configuration's actual

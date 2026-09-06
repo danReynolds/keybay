@@ -9,7 +9,7 @@ reviewing their results and source applicability. Times below are UTC.
 
 | Platform / profile | Latest evidence | What passed | Remaining qualification |
 | --- | --- | --- | --- |
-| **Shared SDK** | **Pass**, Sep 6; current runtime | 484 SDK tests (11 opt-in/native skips): cryptography, framed storage, hostile inputs, transactions, passphrase and platform contracts. The Linux/Flatpak run separately passed 41 portal tests, including the three real D-Bus cases. | Independent external crypto/security review; maintained-device Argon2 acceptance budgets. |
+| **Shared SDK** | **Pass**, Sep 6; current runtime | Latest local `core` lane: 493 passed, three real D-Bus cases skipped on macOS; Dart 3.13.3 analysis clean. Includes nine additional source-review regressions for native rotation contention, crypto workspace ownership and concurrent portal cancellation. Earlier Linux/Flatpak evidence passed the real D-Bus cases. | Independent external crypto/security review; maintained-device Argon2 acceptance budgets. |
 | **macOS file Keychain** | **Pass**, Sep 6 15:34, native CI and local Dart 3.13.3 | Seven tests: bounded root access, exact provider lifecycle, private files, persistence, passphrase/reset, and locked-provider record operations. Current and stale sessions are prepared before locking; native locked status is verified, current operations succeed and stale access fails closed. Disposable Keychain deleted; user search list and default preserved. The public facade separately passed on the CI account. | Unlock/recovery after a provider lock is not covered by this fixture. The separate Developer ID row covers bounded genuine-account continuity. Other signing/runtime transitions remain open. |
 | **macOS signed app** | **Pass**, Sep 5 20:02; unchanged platform/common implementation, native Apple Development signing | Signed SDK baseline; passphrase-protected store seeded by build 101 and reopened without initialization by build 102. Explicit phase results, distinct code hashes, Apple-trusted signatures, exact sole Keychain group and sandboxing verified. Provider root, store and staging file absent after reset; harness exited; signing configuration and Keychain settings preserved. | Developer ID distribution/release upgrades, entitlement transitions, physical lock/reboot and reinstall. This qualifies the recorded development-signed profile and unchanged Apple/common implementation, not distribution signing. |
 | **macOS single-file Developer ID** | **Failed**, Sep 6; dedicated hardened AOT SDK fixture | Trusted signature, secure timestamp, hardened-runtime flag and empty entitlements verified. Actual launch was killed before fixture startup. A minimal program without Keybay reproduces the failure; signed control without hardened runtime runs. No test store created; user Keychain settings preserved. | Single-file product packaging remains deferred with CLI work. The native module form below clears the SDK continuity check; it does not repair the single-file executable. |
@@ -23,6 +23,14 @@ Windows and Snap are deferred and have no qualification claim. Hardware
 credentials, rollback anchors and root rotation are also outside this scope.
 
 ## Additional checks already recorded
+
+- The [adversarial source review](security-review.md#adversarial-source-review-2026-09-06)
+  found no additional confirmed SDK correctness or security defect in the reviewed
+  paths. SR-004 corrects an overbroad HKDF memory-clearing claim. Runtime source,
+  format, API and dependencies are unchanged; nine new regressions use the existing
+  core lane. The local [run report](../build/qualification/sdk-adversarial-review-20260906/core-report.json)
+  records 493 passes and three host-specific skips; its dirty-source flag represents
+  the new uncommitted tests against base `80873887…`, not a runtime change.
 
 - The [security review handoff](security-review.md) records the fixed portal
   cancellation defect, native AOT identity correction and qualified macOS

@@ -428,9 +428,15 @@ Returned bytes belong to the caller. A caller with a narrow plaintext lifetime
 can overwrite its `Uint8List` with zeros in `finally`, but this is optional,
 best-effort hygiene rather than a security guarantee: Dart, native APIs, or the
 caller may already have made copies. Keybay does not impose a custom disposable
-byte type on every integration. Internally, `Kstore`, derived keys, passphrase
-copies, decrypted manifests, selected-frame scratch, and input snapshots use
-mutable buffers and are cleared on every success and failure path. A successful
+byte type on every integration. Keybay's directly owned `Kstore`, derived-key
+snapshots, passphrase copies, decrypted manifests, selected-frame scratch, and
+input snapshots use mutable buffers and are cleared on every success and failure
+path. Dependency-owned buffers have a separate limitation: cryptography 2.9.0's
+HKDF returns a `SecretKeyData` without overwrite-on-destroy enabled, and its
+immutable byte view prevents Keybay from clearing that backing allocation.
+Destroying that wrapper only discards its reference. Internal cipher/KDF state,
+immutable provider data and VM copies are not covered by a zeroization guarantee.
+A successful
 read's transferred result buffer is no longer SDK-owned. AEAD opening uses a
 single Keybay-owned ciphertext workspace for in-place decryption, copies out
 only an authenticated result, and clears that workspace even when tag
@@ -1302,8 +1308,9 @@ generation. No content-based entropy heuristic is used.
 
 HKDF-SHA256 derives 32 wrapping bytes using the resolved storage-domain bytes as
 salt and the UTF-8 info label `keybay:v2:linux-flatpak:portal-root:v1`.
-Raw and derived root buffers are cleared
-after the operation. This separates Keybay's use from another use of the same
+Keybay-owned raw and derived root snapshots are cleared after the operation;
+the dependency-owned HKDF result has the memory-clearing limitation described
+above. This separates Keybay's use from another use of the same
 application secret without inventing a provider item lifecycle.
 
 The initial profile supports no continuation state. It rejects a response

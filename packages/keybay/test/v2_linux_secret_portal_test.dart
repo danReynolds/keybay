@@ -419,6 +419,68 @@ void main() {
   );
 
   test(
+    'cancelled request cannot abort or complete its concurrent peer',
+    () async {
+      final cancelled = _Connection();
+      final survivor = _Connection();
+      final cancelledReply = Completer<DBusMethodSuccessResponse>();
+      final survivorEntered = Completer<void>();
+      final releaseSurvivor = Completer<void>();
+      addTearDown(() {
+        if (!releaseSurvivor.isCompleted) releaseSurvivor.complete();
+        if (!cancelledReply.isCompleted) {
+          cancelledReply.complete(cancelled.handleReply);
+        }
+      });
+      cancelled.retrieveAction = (_) {
+        cancelled.respond(code: 1);
+        return cancelledReply.future;
+      };
+      survivor.retrieveAction = (output) async {
+        survivorEntered.complete();
+        await releaseSurvivor.future;
+        await output.writeFrom(survivor.secret);
+        survivor.respond();
+        return survivor.handleReply;
+      };
+      final connections = [cancelled, survivor].iterator;
+      final portal = DbusLinuxSecretPortal(
+        clientFactory: () {
+          expect(connections.moveNext(), isTrue);
+          return connections.current;
+        },
+      );
+      final failure = expectLater(
+        portal.retrieveSecret(interaction: _allowed),
+        _throwsCode(PlatformProtectorFailureCode.interactionRequired),
+      );
+      final surviving = portal.retrieveSecret(interaction: _allowed);
+      await survivorEntered.future;
+      await failure;
+      await cancelled.closed.future;
+      cancelledReply.complete(cancelled.handleReply);
+      await Future<void>.delayed(Duration.zero);
+      expect(cancelled.events, isNot(contains('verify')));
+      expect(survivor.closed.isCompleted, isFalse);
+      expect(survivor.closeRequests, 0);
+      releaseSurvivor.complete();
+      final result = await surviving;
+      try {
+        expect(result, survivor.secret);
+        expect(survivor.events, [
+          'owner',
+          'subscribe',
+          'retrieve',
+          'verify',
+          'close',
+        ]);
+      } finally {
+        result.fillRange(0, result.length, 0);
+      }
+    },
+  );
+
+  test(
     'each concurrent request owns a connection and unpredictable token',
     () async {
       final connections = <_Connection>[];
