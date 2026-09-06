@@ -13,7 +13,8 @@ cleanup() {
   local result=$?
   trap - EXIT
   if [[ "$created" == 1 ]]; then
-    "$fixture/keychain-fixture" unlock "$keychain" || result=1
+    # Deleting our disposable Keychain works while locked. An unnecessary
+    # unlock can fail independently and obscure the SDK test outcome.
     if ! "$fixture/keychain-fixture" delete "$keychain"; then
       echo "Temporary Keychain cleanup failed: $fixture" >&2
       exit 1

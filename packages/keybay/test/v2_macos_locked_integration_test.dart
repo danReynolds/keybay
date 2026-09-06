@@ -17,7 +17,6 @@ void main() {
       final files = Directory.systemTemp.createTempSync(
         'keybay_locked_records_',
       );
-      final keychain = '$accountHome/Library/Keychains/login.keychain-db';
       final packageConfig = await Isolate.packageConfig;
       final worker = await Isolate.resolvePackageUri(
         Uri.parse('package:keybay/keybay.dart'),
@@ -50,8 +49,9 @@ void main() {
         expect(output, 'locked-records-ok\n');
       } finally {
         process?.kill();
-        final unlock = await Process.run(helper!, ['unlock', keychain]);
-        expect(unlock.exitCode, 0, reason: '${unlock.stderr}');
+        // The worker verifies its required unlock/reset. The shell adapter
+        // deletes the disposable Keychain even when a failed worker left it
+        // locked; a redundant unlock here can mask the worker's result.
         files.deleteSync(recursive: true);
       }
     },
