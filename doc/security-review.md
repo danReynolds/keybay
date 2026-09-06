@@ -14,6 +14,12 @@ includes a source manifest, exact snapshot identity, selected
 public evidence, and this brief. Raw device/provider logs and signing material
 are excluded. No external recipient has been selected or sent the package.
 
+The R2 archive remains immutable at `387c0d97…`. Subsequent physical iOS
+upgrade/crash evidence and native CI reports are linked from the qualification
+report and retained in a [public evidence addendum](../build/qualification/signing-followup-20260906/security-review/keybay-sdk-review-20260906-addendum.tar.gz).
+Later changes affect test fixtures, CI and documentation;
+the reviewed SDK runtime, dependency locks and physical iOS harness are unchanged.
+
 The design has one common framed-snapshot engine, one immutable host binding,
 and one platform protector per supported profile. Review the actual boundary
 and lifecycle invariants; avoid adding general-purpose storage or capability
