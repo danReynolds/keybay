@@ -163,8 +163,13 @@ remaining qualification gates. SR-004 is a claim correction, not an implementati
 redesign. The nine added cases run automatically in the existing `core` lane;
 there is no new qualification framework or runtime seam.
 
-Validation and retained run details are linked from the
-[qualification report](qualification-status.md). Independent review, maintained-
+Validation: 47 focused tests passed; the local core lane passed 493 tests with
+three Linux D-Bus skips, and SDK analysis was clean on Dart 3.13.3. The complete
+[CI matrix](https://github.com/danReynolds/keybay/actions/runs/34045994325) then
+passed at `e179370b…`, including the new cases on native Linux/macOS and minimum
+Dart. All nine SDK reports identify the exact clean commit. Retained run details
+are linked from the [qualification report](qualification-status.md).
+Independent review, maintained-
 device Argon2 acceptance budgets, remaining physical lifecycle procedures and
 final supported-configuration/release acceptance remain open. No physical device
 was operated during this source-review pass. The earlier immutable handoff
