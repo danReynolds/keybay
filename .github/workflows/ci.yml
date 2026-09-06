@@ -187,6 +187,7 @@ jobs:
           # shellcheck disable=SC2016
           KEYBAY_BENCHMARK_OUTPUT="$RUNNER_TEMP/cli-benchmark-linux.json" \
           dbus-run-session -- bash -c '
+            set -euo pipefail
             export XDG_RUNTIME_DIR="$(mktemp -d)"
             eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
             export GNOME_KEYRING_CONTROL
@@ -208,6 +209,8 @@ jobs:
           # The quoted variables expand inside the deliberately separate shell.
           # shellcheck disable=SC2016
           dbus-run-session -- bash -c '
+            set -euo pipefail
+            export XDG_RUNTIME_DIR="$(mktemp -d)"
             eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
             export GNOME_KEYRING_CONTROL
             KEYBAY_LOCKED_TEST=1 ./tool/test_cli_locked_storage.sh
