@@ -16,7 +16,7 @@ reviewing their results and source applicability. Times below are UTC.
 | **macOS Developer ID runtime/module** | **Pass**, Sep 6 13:37; current runtime, native host | Separately signed AOT builds 101/102 reopened the passphrase-protected store without initialization. Hardened runtime, empty entitlements, matching team/designated requirements and changed module hashes verified. Native exits passed; provider/store/stage/control absent; user Keychain settings preserved. An ad-hoc module was separately rejected. | Notarization, entitled-app distribution, runtime/toolchain upgrades and other native configurations. Both modules used the same SDK and signed runtime; no format or signing-team migration. |
 | **Ordinary Linux** | **Pass**, Sep 6 15:35; current runtime, native Ubuntu x64 CI; arm64 Docker also passed | Six tests: POSIX flags, clean-account directories, raw Secret Service root lifecycle, second-data-root rejection, public SDK persistence/passphrase/reset, and locked-provider fail-closed behavior. Private disposable provider state. | Additional supported provider configurations. Namespace isolation is not OS-enforced application isolation here. |
 | **Flatpak** | **Pass**, Sep 6 15:35; current runtime, native Ubuntu 24.04 x64 CI; nested arm64 Docker also passed | Two-app identity/secret/file isolation, concurrent first use, no fallback, lifecycle/reset and provider restart passed. Real GNOME prompts passed user cancellation, timeout and two overlapping cancellations; both stores reopened without provider restart. Fixed a pending blocking pipe read that previously kept cancelled processes alive. Native descriptor/process regression and cleanup passed. | Other provider configurations. Timeout recovery includes explicitly dismissing any remaining native dialog; it does not establish automatic dialog dismissal. This covers the recorded GNOME backend. |
-| **Android** | **Physical pass**, Sep 6 01:08 Profile/AOT upgrade; Sep 5 00:16 baseline and 20:56 process continuity; unchanged platform/common implementation, Pixel 6a / Android 16 / API 36. Native CI emulator baselines passed Sep 6 15:39 on API 31 and API 36. | Six substantive baseline tests plus source/nonce metadata: native hardware-key assertion, ciphertext/reopen/passphrase/reset, all 32 contended writes, tamper rejection, missing root and same-alias replacement. Process continuity passed separately. Upgrade from signed build 101 to distinct AOT build 102 preserved the app UID, signer and both records without initialization; missing/wrong passphrases rejected, correct passphrase accepted. Matching source/nonce/build receipts and two native self-exit/code-zero records verified. Control/store/stage removed; package absence verified across all profiles. | Abrupt termination, reboot/relock, backup/restore/transfer, peer-app procedures and other maintained devices. Upgrade covers a debug-signed Profile/AOT app with the same SDK and store format in both builds, using clean exits. Hardware baseline establishes TEE **or** StrongBox, not StrongBox specifically. |
+| **Android** | **Physical pass**, Sep 6 15:47 crash recovery and 01:08 Profile/AOT upgrade; Sep 5 00:16 baseline and 20:56 process continuity; unchanged platform/common implementation, Pixel 6a / Android 16 / API 36. Native CI emulator baselines passed Sep 6 15:39 on API 31 and API 36. | Six substantive baseline tests plus source/nonce metadata: native hardware-key assertion, ciphertext/reopen/passphrase/reset, all 32 contended writes, tamper rejection, missing root and same-alias replacement. Process continuity passed separately. Upgrade from signed build 101 to distinct AOT build 102 preserved the app UID, signer and both records without initialization; missing/wrong passphrases rejected, correct passphrase accepted. Matching source/nonce/build receipts and two native self-exit/code-zero records verified. Control/store/stage removed; package absence verified across all profiles. Crash qualification then passed two exact SIGKILLs, native PID/UID/user/package exit checks and recovery in a third process. Passphrase policy, acknowledged records, bounded sequence recovery, subsequent writes and reset/package cleanup passed. | Physical auth-change interruption, reboot/relock, backup/restore/transfer, peer-app procedures and other maintained devices. Upgrade covers a debug-signed Profile/AOT app with the same SDK and store format in both builds, using clean exits. Hardware baseline establishes TEE **or** StrongBox, not StrongBox specifically. |
 | **iOS** | **Physical pass**, Sep 6 14:38 upgrade and 14:39 crash recovery; Sep 5 baseline and process continuity; iPhone 16 / iOS 18.7.3. Simulator CI passed Sep 6 15:39. | Baseline ciphertext/private files/backup exclusion, passphrase/reset and all 32 contended writes. Signed Profile/AOT upgrade 101 to 102 preserved the passphrase store without initialization, with stable signing identity and distinct binaries. Crash qualification verified two exact native SIGKILLs after seed and during numbered writes; a third process preserved acknowledged records/auth policy, recovered the last acknowledged sequence or its successor, and wrote again. Native exits/process absence and control/store/stage/acknowledgment cleanup passed. | Lock/reboot, physical auth-change interruption, access-group transitions, actual backup/restore/transfer and other maintained devices. Both upgrade builds use the same SDK/format; crash signals are not placed within a specific syscall. |
 
 Windows and Snap are deferred and have no qualification claim. Hardware
@@ -28,7 +28,8 @@ credentials, rollback anchors and root rotation are also outside this scope.
   cancellation defect, native AOT identity correction and qualified macOS
   runtime/module form. External
   review awaits a selected reviewer. The [mobile failure procedures](mobile-failure-qualification.md)
-  now have compiled crash runners; physical iOS execution passed. Android crash execution and remaining lock/reboot/restore phases are pending.
+  now have physical crash passes on both Android and iOS. Remaining
+  lock/reboot/restore phases are pending.
 
 - Upgrade qualification passed physically on Android and iOS using signed
   builds 101/102, with host orchestration/receipt rejection tests also passing. The fixture now binds mode,
@@ -98,10 +99,11 @@ tests and documentation. It reused the shared mobile fixture unchanged.
 Android upgrade used snapshot `93633673…`, adding build/mode-bound receipts,
 passphrase checks and upgrade orchestration. Its Android/common implementation
 is unchanged. The current harness/runners additionally implement crash mode;
-host regressions preserve the earlier process and upgrade paths, but those
-new runners have now executed physically on iOS; the Android crash selection
-remains pending. Both upgrade builds used the
-same SDK and store format; no version migration is claimed.
+host regressions preserve the earlier process and upgrade paths. The new crash
+runners have now executed physically on both Android and iOS. Android crash
+qualification used `7c8a0527…`, whose only changes after the passing CI code
+revision are qualification documents. Both upgrade builds used the same SDK
+and store format; no version migration is claimed.
 
 The physical iOS upgrade/crash runs used published commit `387c0d97…`.
 The [SDK platform CI run](https://github.com/danReynolds/keybay/actions/runs/34041891569)
@@ -117,6 +119,9 @@ tooling and documentation changed. Failed runs remain retained as history.
 These links resolve to retained **local build artifacts**, which are not
 included in a fresh checkout:
 
+- [Physical Android crash qualification](../build/qualification/android-crash-20260906T154620Z/observation.json),
+  [native report](../build/qualification/android-crash-20260906T154620Z/crash/report.json),
+  and [reproduction instructions](../build/qualification/android-crash-20260906T154620Z/REPRODUCE.md).
 - [Physical iOS upgrade/crash follow-up](../build/qualification/ios-physical-followup-20260906/observation.json),
   [upgrade report](../build/qualification/ios-physical-followup-20260906/upgrade/report.json),
   [crash report](../build/qualification/ios-physical-followup-20260906/crash/report.json),

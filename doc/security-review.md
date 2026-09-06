@@ -19,6 +19,9 @@ upgrade/crash evidence and native CI reports are linked from the qualification
 report and retained in a [public evidence addendum](../build/qualification/signing-followup-20260906/security-review/keybay-sdk-review-20260906-addendum.tar.gz).
 Later changes affect test fixtures, CI and documentation;
 the reviewed SDK runtime, dependency locks and physical iOS harness are unchanged.
+A subsequent [physical Android crash report](../build/qualification/android-crash-20260906T154620Z/observation.json)
+adds native termination/recovery and cleanup evidence for the unchanged SDK and
+mobile fixture; it does not alter either immutable archive.
 
 The design has one common framed-snapshot engine, one immutable host binding,
 and one platform protector per supported profile. Review the actual boundary

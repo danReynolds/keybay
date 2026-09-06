@@ -1,10 +1,11 @@
 # Remaining physical mobile procedures
 
 These are the bounded procedures for the remaining device work. Physical
-execution passed on iOS for upgrade and crash recovery on Sep 6; Android
-crash execution and the other procedures below remain **pending**. The `--crash` selection is implemented for both
-Android and iOS using the existing lifecycle fixture and runners. It has passed
-host orchestration checks and compiled as Profile/AOT for both platforms. Existing
+upgrade and crash recovery passed on both Android and iOS on Sep 6. Lock/reboot,
+physical auth-change interruption and actual backup/restore/transfer remain
+**pending**. The `--crash` selection uses the existing lifecycle fixture and
+runners, with source-bound Profile/AOT and native process evidence for each
+platform. Existing
 `--lifecycle` and `--upgrade` runners deliberately verify clean exits and must
 not be relabelled as crash, lock or backup tests.
 
