@@ -13,19 +13,9 @@ Future<void> main(List<String> args) async {
     await stderr.flush();
   }
 
-  await phase('start');
   final accountHome = Platform.environment['KEYBAY_TEST_KEYCHAIN_HOME']!;
   final helper = Platform.environment['KEYBAY_TEST_KEYCHAIN_HELPER']!;
   final keychain = '$accountHome/Library/Keychains/login.keychain-db';
-  Future<void> fixture(String action) async {
-    await phase('fixture-$action');
-    final result = await Process.run(helper, [action, keychain]);
-    if (result.exitCode != 0) {
-      // The dedicated helper emits only its action and numeric OS status.
-      throw StateError('Fixture $action failed: ${result.stdout}');
-    }
-  }
-
   final platform = MacOSUnentitledHostPlatform.test(
     identity: ApplicationIdentity(
       stableValue: 'dev.keybay.locked-native.$pid',
@@ -36,45 +26,45 @@ Future<void> main(List<String> args) async {
     rootStore: AppleMacOSLoginKeychainRootStore(accountHome: accountHome),
   );
   await phase('open');
-  final session = await V2StoreEngine(platform).open();
+  final stale = await V2StoreEngine(platform).open();
   try {
-    await session.set('record', 'fixed test value');
-    await fixture('lock');
-    await phase('locked-record-operations');
-    if (await session.get('record') != 'fixed test value') {
-      throw StateError('Existing session read failed');
-    }
-    await session.set('record', 'updated test value');
-    await session.listKeys();
-    await session.auth.list();
-    await fixture('unlock');
-
-    await phase('open-peer');
-    final peer = await V2StoreEngine(platform).open();
+    await stale.set('record', 'fixed test value');
+    final current = await V2StoreEngine(platform).open();
     try {
+      // Prepare both session states before locking. Unlocking the provider
+      // is not needed to verify prompt-free current and stale record paths.
+      await phase('rotate');
       final phrase = Uint8List.fromList(utf8.encode('fixed test passphrase'));
       try {
-        await phase('rotate');
-        await peer.auth.add(PassphraseCredential(phrase: phrase));
+        await current.auth.add(PassphraseCredential(phrase: phrase));
       } finally {
         phrase.fillRange(0, phrase.length, 0);
       }
+      await phase('fixture-lock');
+      final lock = await Process.run(helper, ['lock', keychain]);
+      if (lock.exitCode != 0) {
+        throw StateError('Fixture lock failed: ${lock.stdout}');
+      }
+      await phase('locked-record-operations');
+      if (await current.get('record') != 'fixed test value') {
+        throw StateError('Existing session read failed');
+      }
+      await current.set('record', 'updated test value');
+      await current.listKeys();
+      await current.auth.list();
+      await phase('locked-stale-read');
+      try {
+        await stale.get('record');
+        throw StateError('Stale session unexpectedly read rotated data');
+      } on KeybayException catch (failure) {
+        if (failure.code != KeybayErrorCode.storeAuthenticationFailed) rethrow;
+      }
     } finally {
-      await peer.close();
-    }
-    await fixture('lock');
-    await phase('locked-stale-read');
-    try {
-      await session.get('record');
-      throw StateError('Stale session unexpectedly read rotated data');
-    } on KeybayException catch (failure) {
-      if (failure.code != KeybayErrorCode.storeAuthenticationFailed) rethrow;
+      await current.close();
     }
   } finally {
-    await phase('cleanup');
-    await fixture('unlock');
-    await session.close();
-    await V2StoreEngine(platform).reset();
+    await stale.close();
   }
+  // The host owns file cleanup and deletion of the disposable Keychain.
   stdout.writeln('locked-records-ok');
 }

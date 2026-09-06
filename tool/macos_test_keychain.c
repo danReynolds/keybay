@@ -51,7 +51,14 @@ int main(int argc, char **argv) {
   } else {
     s = SecKeychainOpen(argv[2], &kc);
     if (!s) {
-      if (strcmp(argv[1], "lock") == 0) s = SecKeychainLock(kc);
+      if (strcmp(argv[1], "lock") == 0) {
+        s = SecKeychainLock(kc);
+        if (!s) {
+          SecKeychainStatus status = 0;
+          s = SecKeychainGetStatus(kc, &status);
+          if (!s && (status & kSecUnlockStateStatus)) s = errSecNotAvailable;
+        }
+      }
       else if (strcmp(argv[1], "unlock") == 0) s = SecKeychainUnlock(kc, (UInt32)strlen(password), password, true);
       else if (strcmp(argv[1], "delete") == 0) s = SecKeychainDelete(kc);
       else s = -50;

@@ -49,9 +49,8 @@ void main() {
         expect(output, 'locked-records-ok\n');
       } finally {
         process?.kill();
-        // The worker verifies its required unlock/reset. The shell adapter
-        // deletes the disposable Keychain even when a failed worker left it
-        // locked; a redundant unlock here can mask the worker's result.
+        // The worker closes its sessions. The shell adapter deletes the
+        // disposable Keychain while locked; this parent owns its store files.
         files.deleteSync(recursive: true);
       }
     },
