@@ -940,11 +940,14 @@ void main() {
         ready.path,
         release.path,
       ], workingDirectory: packageRoot.path);
-      addTearDown(process.kill);
+      addTearDown(() async {
+        process.kill(ProcessSignal.sigkill);
+        await process.exitCode;
+      });
       final standardError = process.stderr
           .transform(const SystemEncoding().decoder)
           .join();
-      await _waitFor(ready);
+      await _waitFor(ready, process, standardError);
 
       await expectLater(
         files.withExclusiveTransaction((_) async {}),
@@ -955,7 +958,7 @@ void main() {
 
       await files.withExclusiveTransaction((_) async {});
     },
-    timeout: const Timeout(Duration(seconds: 15)),
+    timeout: const Timeout(Duration(seconds: 30)),
   );
 }
 
@@ -1052,10 +1055,26 @@ bool _hasExtendedAcl(String path) {
   return RegExp(r'^\s+\d+:', multiLine: true).hasMatch('${result.stdout}');
 }
 
-Future<void> _waitFor(File marker) async {
-  final deadline = DateTime.now().add(const Duration(seconds: 5));
+Future<void> _waitFor(
+  File marker,
+  Process process,
+  Future<String> standardError,
+) async {
+  // Cold compilation competes with the full core suite on shared runners.
+  // This startup allowance is separate from the SDK's lock timeout, which
+  // is exercised only after the worker confirms that it holds the lock.
+  final deadline = DateTime.now().add(const Duration(seconds: 20));
+  int? workerExit;
+  unawaited(process.exitCode.then((code) => workerExit = code));
   while (!marker.existsSync()) {
+    if (workerExit != null) {
+      throw StateError(
+        'POSIX store worker exited ($workerExit): ${await standardError}',
+      );
+    }
     if (DateTime.now().isAfter(deadline)) {
+      process.kill(ProcessSignal.sigkill);
+      await process.exitCode;
       throw TimeoutException('POSIX store worker did not acquire its lock');
     }
     await Future<void>.delayed(const Duration(milliseconds: 10));
