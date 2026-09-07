@@ -123,7 +123,9 @@ for exact sources and remaining lock/reboot/restore cases. The `core` lane also 
 replacement on macOS/Linux, using disposable provider state.
 Routine emulator/simulator results
 do not establish physical secure-hardware behavior, process/update continuity,
-maintained-device KDF budgets, or independent security review. Those remain
-explicit qualification gates, with their own evidence requirements.
+maintained-device KDF budgets, or independent security review. Those use their
+own evidence. The Claude review is now accepted; the scoped SDK 0.2.0 closeout
+defers remaining device procedures and Argon2 acceptance as recorded in the
+[qualification report](qualification-status.md#sdk-020-release-scope).
 The [remaining mobile procedures](mobile-failure-qualification.md) spell out
 the device-dependent failure cases and distinguish them from implemented lanes.

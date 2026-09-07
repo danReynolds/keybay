@@ -1398,8 +1398,9 @@ M6 serializes derivations within each Dart isolate to avoid accidental memory
 amplification inside one Keybay runtime. There is deliberately no process-wide
 arbiter: runtimes in other isolates cannot share session authority, and a host
 that creates several isolates can multiply the KDF's memory cost just as it can
-allocate memory directly. Each M7 profile must pass AOT latency and memory
-qualification on its maintained device classes before production activation.
+allocate memory directly. M7 tracks AOT latency and memory qualification on
+maintained device classes. The maintainer's explicit 0.2.0 scope decision below
+defers performance acceptance without changing the profile or claiming a budget.
 Optional Argon secret and associated-data inputs are empty in the shipping
 passphrase flow.
 
@@ -1977,7 +1978,8 @@ stable application principal.
 Milestones are ordered security gates, not release dates. Work on later fakes,
 terminal adapters, or provider bindings may proceed in parallel, but no platform
 profile may persist V2 user state until the common gates through M6 and that
-profile's M7 qualification gate have passed.
+profile's M7 qualification gate have passed, subject to the explicitly scoped
+pre-1.0 activation and release decisions recorded below.
 
 ### M0 — Contract freeze
 
@@ -2255,6 +2257,16 @@ public capability surface, additional hardware
 methods, rollback anchors, and platform-root rotation are not prerequisites.
 
 ### Current execution scope
+
+On 2026-09-07 the maintainer authorized SDK `0.2.0` release closeout while
+deferring the remaining physical lifecycle work until devices are available and
+descoping maintained-device Argon2 performance acceptance as lower priority.
+This supersedes those portions of the broader M7 gate for this pre-1.0
+candidate; neither is relabelled as passed. The fixed Argon2 profile, format and
+security invariants are unchanged. The [qualification report](../qualification-status.md#sdk-020-release-scope)
+defines the evidence-backed scope. No actual backup/transfer, unobserved
+lifecycle or accepted latency/memory-budget claim follows from this decision.
+CLI/TUI and executable distribution remain separate deferred work.
 
 The common engine, SDK, ordinary profiles, and Flatpak candidate implementation
 are authorized. Flatpak follows the revised lifecycle contract above. CLI/TUI

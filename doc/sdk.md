@@ -9,6 +9,11 @@ API has no application-ID, path, provider, or alternate-store selector.
 Requires Dart 3.11 or later, including when used through Flutter. CI tests the
 SDK at that floor with the reviewed dependency lockfile.
 
+Version 0.2.0 is a breaking API and storage-format change from 0.1.x. V2 neither
+reads nor migrates or removes V1 stores; do not expect an upgrade to carry old
+secrets into the new store. See the [scoped release evidence](qualification-status.md#sdk-020-release-scope),
+including deferred physical lifecycle work and Argon2 performance acceptance.
+
 <a id="sdk-quickstart"></a>
 
 ## Open, use, close

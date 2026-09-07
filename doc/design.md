@@ -198,5 +198,8 @@ physical hardware. A platform/API name alone is not evidence of secure hardware
 mediation.
 
 The current physical and lifecycle qualification inventory is in
-[device-security-suite.md](device-security-suite.md). No independent security
-review has been completed yet.
+[device-security-suite.md](device-security-suite.md). The separate Claude review
+and remediation follow-up have been accepted; see the
+[review record](security-review.md). This is an AI model review, not a human
+external audit. The [qualification report](qualification-status.md) records the
+current SDK release scope and deferred evidence.

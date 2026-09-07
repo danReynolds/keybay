@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased — V2
+## 0.2.0
+
+Prepared V2 release; not yet published. This is a breaking API and storage-format
+change from 0.1.x. Existing stores are not read, migrated, or removed by V2.
 
 - Correct Darwin descriptor metadata on macOS x64 and add Intel regression coverage.
 - Keep record operations and authentication listing entirely provider-free;
@@ -12,8 +15,8 @@
   `Keybay.open()`, closable sessions, and additive passphrase protection. V1
   stores are not migrated automatically.
 - Use one shared authenticated framed-file engine with fixed platform identity,
-  file storage, and key-protection profiles. Flatpak remains a qualification
-  candidate; release evidence is tracked in the repository's security suite.
+  file storage, and key-protection profiles, including Flatpak's Secret Portal
+  profile. Platform claims are limited to the recorded configurations.
 - Reject interaction-forbidden classic macOS Keychain acquisitions before
   native access, preserving prompt-free record operations.
 - Bind iOS stores to their signed identity and fixed container-relative location
@@ -23,6 +26,11 @@
   retained provider descriptor cannot keep the application process alive.
 - Resolve embedded declared identity for separate native AOT modules, and add
   `keybay_compile --aot-snapshot` for compiling that distribution form.
+- Retain accepted independent AI review and native/platform CI evidence. Further
+  physical lifecycle qualification is deferred until devices are available;
+  maintained-device Argon2 latency/memory acceptance is lower-priority follow-up.
+  Neither deferral changes the fixed KDF parameters or establishes a passing
+  result for an unmeasured property.
 
 ## 0.1.1
 

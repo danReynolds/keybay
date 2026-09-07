@@ -400,6 +400,11 @@ latency/memory acceptance budgets are recorded. One desktop result cannot close
 the mobile or sandbox-profile qualification gate. Flutter debug/JIT test timing
 does not establish the AOT profile's cost.
 
+For the scoped SDK 0.2.0 closeout, the maintainer deferred remaining physical
+lifecycle work and descoped Argon2 acceptance as lower priority on Sep 7. These
+remain unqualified observations, not current release-preparation blockers; see
+the [release scope](qualification-status.md#sdk-020-release-scope).
+
 ## Result and evidence contract
 
 Scenario status is `pass`, `fail`, `blocked`, `skipped`, or `inconclusive`.

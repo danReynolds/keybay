@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
+
+Unreleased. Version and exact SDK dependency advance with the workspace's V2
+cutover; CLI/TUI qualification and publication remain separate deferred work.
+
+- Adapt existing commands to the single-application V2 SDK and session API.
+  Existing V1 stores are not migrated automatically.
 
 - Add `keybay get KEY` as an explicit human reveal path. It requires stdin and
   stdout to be the foreground interactive TTY and refuses redirected, piped,

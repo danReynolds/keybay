@@ -46,6 +46,11 @@ OS-authenticated application identity where the platform provides one; ordinary
 Dart executables declare their namespace in the owning `pubspec.yaml`. See the
 [SDK guide](doc/sdk.md).
 
+SDK 0.2.0 replaces the 0.1.x API and encrypted format; V1 stores are not read,
+migrated or removed. The [release scope](doc/qualification-status.md#sdk-020-release-scope)
+records deferred physical lifecycle qualification and lower-priority Argon2
+performance acceptance. They are not passing qualification claims.
+
 A retained platform root without its complete encrypted file returns
 `storeStateConflict`, including after some interrupted initializations or Apple
 reinstalls/restores. Follow the [deliberate recovery guidance](doc/sdk.md#errors-and-limits);

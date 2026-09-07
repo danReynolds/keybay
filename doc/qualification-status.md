@@ -62,7 +62,14 @@ procedures. The original Claude review pack remains unchanged and verifies.
 Both reviewer reports and the available receipts now have a separate
 [acceptance evidence record](../build/qualification/claude-review-acceptance-20260907/README.md).
 
-## Remaining SDK closeout
+## SDK 0.2.0 release scope
+
+On Sep 7 the maintainer deferred the remaining physical lifecycle procedures
+until devices are available and removed maintained-device Argon2 acceptance
+from the current closeout as lower-priority work. These are deferred,
+**not passed**. SDK release preparation proceeds with the recorded evidence
+and the limits below; the earlier RFC's broader M7 performance gate does not
+block this explicitly scoped pre-1.0 candidate. KDF parameters are unchanged.
 
 The shared engine, public SDK, five host profiles (Android, iOS, entitled and
 unentitled macOS, ordinary Linux) and Flatpak implementation are complete for
@@ -71,11 +78,25 @@ current CI passes, physical Android/iOS baseline, process continuity, app
 upgrade and crash recovery have passed, and the independent AI review is closed.
 There is no open finding requiring an architectural rewrite or new feature.
 
-| Remaining work | Concrete finish condition | Device or scope dependency |
+| Work | Status and concrete finish condition | Device or scope dependency |
 | --- | --- | --- |
-| Physical lifecycle gaps | Record lock/reboot/first-unlock/relock, interruption during auth change, reference-app backup/restore/transfer and Apple retained-root reinstall recovery. Use the existing fixture/receipt conventions and the [bounded procedures](mobile-failure-qualification.md). | Android and iPhone availability; actual backup/transfer may need a dedicated test account/device or second device. Observe each platform's real policy; Android does not promise user presence. |
-| Argon2 acceptance | Define maintained device classes and latency/peak-memory budgets, then accept production Profile/AOT measurements against them. Existing desktop and Pixel results are feasibility observations. | Physical mobile measurements and representative supported desktop/Flatpak environments; no new benchmark framework or parameter change is presumed. |
-| SDK release closeout | Reconcile final source, supported configurations and security claims with this evidence; integrate the reviewed source and finish version/changelog, analysis, tests and publish dry-run checks for the chosen release. | Existing development-signed macOS and Developer ID runtime/module continuity passed. Additional signing, entitlement transitions or notarization need evidence only if that distribution/configuration is included in the release claim. |
+| Physical lifecycle gaps | **Deferred until devices are available.** Record lock/reboot/first-unlock/relock, interruption during auth change, reference-app backup/restore/transfer and Apple retained-root reinstall recovery using the [bounded procedures](mobile-failure-qualification.md). | Android and iPhone availability; actual backup/transfer may need a dedicated test account/device or second device. Android does not promise user presence. |
+| Argon2 acceptance | **Descoped for now; lower priority.** Define maintained device classes and latency/peak-memory budgets, then accept production Profile/AOT measurements against them. Existing results establish no accepted latency or memory budget. | Future physical mobile and representative desktop/Flatpak measurements. No parameter change or new benchmark framework is presumed. |
+| SDK release closeout | **Active.** Prepare breaking version `0.2.0`, integrate reviewed source, align supported-configuration and security claims, and finish analysis, tests and publish dry-run checks. Package publication is a separate action. | SDK only. The repository's existing shared version metadata remains synchronized; it does not qualify or publish the CLI. |
+
+The candidate covers iOS, Android 12+, entitled and unentitled macOS, ordinary
+Linux Secret Service and Flatpak Secret Portal profiles. Native macOS coverage
+includes ARM64 and Intel. Linux/Flatpak evidence covers the recorded GNOME
+provider configurations; other providers are not advertised as qualified.
+Physical Android/iOS baseline, process continuity, upgrade and crash results
+retain their recorded scope. Actual backup/transfer, the deferred lifecycle
+phases, an accepted Argon2 performance budget, StrongBox specifically and
+`iosX64` simulator execution are not qualified claims.
+
+Existing development-signed macOS and hardened Developer ID runtime/module
+continuity are evidence for those forms. This SDK package closeout includes no
+new notarized executable, signing-team or entitlement migration, or single-file
+hardened CLI distribution. Those are separate configuration/product decisions.
 
 These are qualification and release tasks, not another implementation milestone.
 No completed baseline is rerun merely because documentation changed. CLI/TUI,

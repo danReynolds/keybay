@@ -9,6 +9,10 @@ platform. Existing
 `--lifecycle` and `--upgrade` runners deliberately verify clean exits and must
 not be relabelled as crash, lock or backup tests.
 
+The maintainer deferred the remaining physical work until devices are available
+on Sep 7. It does not block the scoped SDK 0.2.0 release closeout, and none of
+these missing results becomes a passing qualification claim.
+
 ```sh
 ./tool/device_security.sh run android --device SERIAL --crash
 KEYBAY_APPLE_TEAM_ID=TEAMID ./tool/device_security.sh run ios --device UDID --crash

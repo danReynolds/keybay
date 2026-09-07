@@ -102,6 +102,14 @@ closed. Findings, retained evidence and remaining qualification gates are
 recorded in the [review record](doc/security-review.md).
 It is an AI model review, not a human external audit; Keybay has one maintainer.
 
+For SDK 0.2.0, remaining physical lock/reboot, auth-change interruption and
+actual backup/restore/transfer work is deferred until devices are available.
+Maintained-device Argon2 latency/memory acceptance is lower-priority follow-up.
+These are unqualified properties, not release claims; the
+[scoped qualification record](doc/qualification-status.md#sdk-020-release-scope)
+names the observed configurations. The release adds no performance guarantee
+or broader device/provider coverage through those deferrals.
+
 ## Reporting
 
 Use GitHub [private vulnerability reporting](https://github.com/danReynolds/keybay/security/advisories/new)

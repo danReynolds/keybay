@@ -5,6 +5,11 @@ application. No Flutter plugin, account, daemon, or network service.
 
 Requires Dart 3.11 or later, including when used through Flutter.
 
+Version 0.2.0 replaces the 0.1.x API and encrypted format. It does not read,
+migrate or delete existing V1 stores. An upgrade does not carry those secrets
+into a V2 store; applications needing the old data must handle that transition
+before adopting this version.
+
 ```dart
 import 'package:keybay/keybay.dart';
 
@@ -27,7 +32,7 @@ coordination locks; the next successful open generates a fresh store key.
 
 A retained platform root without its complete encrypted file returns
 `storeStateConflict`, including after some interrupted initializations or Apple
-reinstalls/restores. Follow the [deliberate recovery guidance](../../doc/sdk.md#errors-and-limits);
+reinstalls/restores. Follow the [deliberate recovery guidance](https://github.com/danReynolds/keybay/blob/main/doc/sdk.md#errors-and-limits);
 do not automatically reset on error.
 
 Opening, changing authentication, and resetting may invoke trusted OS/provider
@@ -72,14 +77,22 @@ After enrollment, `Keybay.open()` returns `authRequired`; reopen with a
 `PassphraseCredential`. Closing the session clears Keybay's in-memory store-key
 buffer. The encrypted file never becomes plaintext.
 
-See the [SDK guide](../../doc/sdk.md), [security policy](../../SECURITY.md), and
-[V2 RFC](../../doc/rfcs/0001-per-application-stores.md).
+See the [SDK guide](https://github.com/danReynolds/keybay/blob/main/doc/sdk.md),
+[security policy](https://github.com/danReynolds/keybay/blob/main/SECURITY.md), and
+[V2 RFC](https://github.com/danReynolds/keybay/blob/main/doc/rfcs/0001-per-application-stores.md).
 
 Supported production profiles are iOS, Android 12+, macOS, and ordinary Linux
 desktop. The Flatpak candidate uses sandbox identity, private ciphertext, and
 XDG Secret Portal protection. Two-app isolation has passed for recorded native
-Linux and nested Docker configurations; see the [qualification report](../../doc/qualification-status.md)
+Linux and nested Docker configurations; see the [qualification report](https://github.com/danReynolds/keybay/blob/main/doc/qualification-status.md)
 for source applicability and remaining gates. Reset retains the portal-owned application
 secret, so an older complete encrypted backup can restore access. Flatpak never
 falls back to ordinary Secret Service. Windows, Snap, and unsupported provider
 configurations fail closed. MIT licensed.
+
+The scoped pre-1.0 release retains platform CI and recorded physical baseline,
+upgrade and crash evidence. Remaining lock/reboot, auth-interruption and actual
+backup/restore/transfer qualification is deferred. Maintained-device Argon2
+latency/memory acceptance is lower priority; no accepted performance budget is
+claimed. These limits and the recorded provider/device configurations are part
+of the release scope, not passing results for unobserved behavior.
