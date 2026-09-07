@@ -8,8 +8,7 @@ const _userAgent = 'keybay-security-watchers/1';
 Future<String> fetchText(
   Uri uri, {
   Map<String, String> headers = const <String, String>{},
-}) =>
-    _request(uri, headers: headers);
+}) => _request(uri, headers: headers);
 
 Future<Object?> fetchJson(
   Uri uri, {
@@ -40,8 +39,9 @@ Future<String> _request(
   final client = HttpClient()..connectionTimeout = _timeout;
   try {
     final request =
-        await (body == null ? client.getUrl(uri) : client.postUrl(uri))
-            .timeout(_timeout);
+        await (body == null ? client.getUrl(uri) : client.postUrl(uri)).timeout(
+          _timeout,
+        );
     request.headers.set(HttpHeaders.userAgentHeader, _userAgent);
     for (final entry in headers.entries) {
       request.headers.set(entry.key, entry.value);

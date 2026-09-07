@@ -10,8 +10,10 @@ import 'package:test/test.dart';
 /// `packages/keybay_cli` sibling is absent, there is nothing to cross-check.
 /// The regexes mirror `versionPatterns` in `tool/release.dart`.
 final RegExp _version = RegExp(r'^version:[ \t]*(\S+)', multiLine: true);
-final RegExp _keybayPin =
-    RegExp(r'^[ \t]+keybay:[ \t]*(\d+\.\d+\.\d+\S*)', multiLine: true);
+final RegExp _keybayPin = RegExp(
+  r'^[ \t]+keybay:[ \t]*(\d+\.\d+\.\d+\S*)',
+  multiLine: true,
+);
 final RegExp _cliConst = RegExp("cliVersion[ \\t]*=[ \\t]*'([^']+)'");
 
 String? _match(RegExp pattern, String path) =>
@@ -31,8 +33,10 @@ void main() {
       'core pubspec version': _match(_version, 'pubspec.yaml'),
       'cli pubspec version': _match(_version, '../keybay_cli/pubspec.yaml'),
       'cli keybay pin': _match(_keybayPin, '../keybay_cli/pubspec.yaml'),
-      'cliVersion constant':
-          _match(_cliConst, '../keybay_cli/lib/src/command.dart'),
+      'cliVersion constant': _match(
+        _cliConst,
+        '../keybay_cli/lib/src/command.dart',
+      ),
     };
 
     for (final entry in references.entries) {
@@ -41,7 +45,8 @@ void main() {
     expect(
       references.values.toSet(),
       hasLength(1),
-      reason: 'version references drifted: $references — run '
+      reason:
+          'version references drifted: $references — run '
           '`dart run tool/release.dart set <x.y.z>` to synchronize',
     );
   });

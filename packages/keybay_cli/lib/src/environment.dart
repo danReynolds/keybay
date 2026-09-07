@@ -44,9 +44,6 @@ final class EnvironmentResolution {
   bool get isComplete => missingKeys.isEmpty;
 }
 
-bool manifestHasReferences(Manifest manifest) =>
-    manifest.values.values.any((value) => value is SecretManifestValue);
-
 /// Overlays the manifest onto [parentEnvironment] without mutating it.
 ///
 /// Only referenced stored values are decoded. Unreferenced entries may be
@@ -77,7 +74,7 @@ EnvironmentResolution resolveEnvironment({
           if (seenMissingKeys.add(key)) missingKeys.add(key);
           continue;
         }
-        final decoded = _decodeStoredValue(key, bytes);
+        final decoded = decodeStoredValue(key, bytes);
         environment[entry.key] = decoded;
         overlay[entry.key] = decoded;
     }
@@ -92,7 +89,7 @@ EnvironmentResolution resolveEnvironment({
   );
 }
 
-String _decodeStoredValue(String key, Uint8List bytes) {
+String decodeStoredValue(String key, Uint8List bytes) {
   late final String value;
   try {
     value = utf8.decode(bytes, allowMalformed: false);

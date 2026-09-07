@@ -18,6 +18,9 @@ import time
 KEY = "acme-example/openai-api-key"
 PROMPT = f"Value for {KEY} (input hidden): ".encode()
 TIMEOUT = 10.0
+PLATFORM_WARNING = (
+    "warning: platform protection only; no additional credential is configured.\n"
+)
 
 
 def wait_for(fd: int, needle: bytes) -> bytes:
@@ -73,7 +76,7 @@ def interactive_set(executable: str, cwd: str, secret: bytes) -> bytes:
     if termios.tcgetattr(master)[3] & termios.ECHO:
         raise AssertionError("terminal echo remained enabled at the real set prompt")
     os.write(master, secret + b"\n")
-    output += wait_for(master, b"Stored.")
+    output += wait_for(master, f"Stored {KEY}".encode())
     _, status = os.waitpid(pid, 0)
     output += read_remaining(master)
     os.close(master)
@@ -114,10 +117,11 @@ def main() -> int:
         )
 
         missing = run_checked([executable, "run", "--", "./app.sh"], repo)
-        if missing.returncode != 78:
+        if missing.returncode != 3:
             raise AssertionError(f"initial run exited {missing.returncode}: {missing.stderr}")
         expected_missing = (
-            "error: 1 of 1 reference in ./.secrets.env is not set on this machine:\n"
+            PLATFORM_WARNING
+            + "error: 1 of 1 reference in ./.secrets.env is not set on this machine:\n"
             "\n"
             f"  keybay set {KEY}\n"
             "\n"
@@ -139,24 +143,36 @@ def main() -> int:
             "  API_URL: https://staging.example.com\n"
             "  OPENAI_API_KEY: available (value not printed)\n"
         )
-        if success.stdout != expected_success or success.stderr:
+        if success.stdout != expected_success or success.stderr != PLATFORM_WARNING:
             raise AssertionError(
                 f"unexpected quickstart output: {success.stdout!r} {success.stderr!r}"
             )
 
         listed = run_checked([executable, "list"], repo)
-        if listed.returncode != 0 or listed.stdout != f"{KEY}\n" or listed.stderr:
+        if (
+            listed.returncode != 0
+            or listed.stdout != f"{KEY}\n"
+            or listed.stderr != PLATFORM_WARNING
+        ):
             raise AssertionError(f"stored key not listed: {listed.stdout!r} {listed.stderr!r}")
 
         removed = run_checked([executable, "rm", KEY], repo)
-        if removed.returncode != 0 or removed.stdout or removed.stderr:
-            raise AssertionError(f"rm was not silent/idempotent: {removed!r}")
+        if (
+            removed.returncode != 0
+            or removed.stdout
+            or removed.stderr != PLATFORM_WARNING
+        ):
+            raise AssertionError(f"unexpected rm output: {removed!r}")
         removed_again = run_checked([executable, "rm", KEY], repo)
-        if removed_again.returncode != 0 or removed_again.stdout or removed_again.stderr:
-            raise AssertionError(f"second rm was not silent/idempotent: {removed_again!r}")
+        if (
+            removed_again.returncode != 0
+            or removed_again.stdout
+            or removed_again.stderr != PLATFORM_WARNING
+        ):
+            raise AssertionError(f"unexpected second rm output: {removed_again!r}")
 
         missing_again = run_checked([executable, "run", "--", "./app.sh"], repo)
-        if missing_again.returncode != 78:
+        if missing_again.returncode != 3:
             raise AssertionError(
                 f"post-cleanup run exited {missing_again.returncode}: "
                 f"{missing_again.stderr}"

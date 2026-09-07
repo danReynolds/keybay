@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0
+
+Unreleased. Version and exact SDK dependency advance with the workspace's V2
+cutover; CLI/TUI qualification and publication remain separate deferred work.
+
+- Adapt existing commands to the single-application V2 SDK and session API.
+  Existing V1 stores are not migrated automatically.
+
+- Add `keybay get KEY` as an explicit human reveal path. It requires stdin and
+  stdout to be the foreground interactive TTY and refuses redirected, piped,
+  captured, or background output before opening the store or decrypting a
+  value.
+
 ## 0.1.1
 
 - Require Dart 3.11 or newer so the Dart-native install path uses the patched

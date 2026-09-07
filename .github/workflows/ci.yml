@@ -87,8 +87,7 @@ jobs:
       # backend logic over fakes, and the dependency-closure firewall. Each
       # package's tests run from its own directory (they read cwd-relative
       # package files).
-      - run: dart test -x integration
-        working-directory: packages/keybay
+      - run: ./tool/test_e2e.sh core
       - run: dart test -x integration
         working-directory: packages/keybay_cli
       - run: ./tool/test_cli.sh
@@ -105,10 +104,17 @@ jobs:
       # minimum lane is reserved for runtime/AOT compatibility at the floor.
       - if: runner.os == 'Linux'
         run: |
-          ./tool/validate_publish.sh packages/keybay cryptography ffi
+          ./tool/validate_publish.sh packages/keybay cryptography dbus ffi
           ./tool/validate_publish.sh packages/keybay_cli ffi keybay
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sdk-regression-core-${{ matrix.os }}
+          path: build/regression/*/report.json
+          if-no-files-found: warn
+          retention-days: 14
 
-  cli-minimum-sdk:
+  minimum-sdk:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
@@ -119,28 +125,62 @@ jobs:
       # The reviewed lock is satisfiable on the supported floor, so the floor
       # lane gets the same content-hash enforcement as every other lane.
       - run: dart pub get --enforce-lockfile
+      - run: dart analyze --fatal-infos
+      - run: ./tool/test_e2e.sh core
+      - run: bash tool/test_sdk_standalone.sh
       # The CLI's documented SDK floor is a tested product channel, including
       # AOT/exec/PTY behavior, not only a pubspec constraint.
       - run: dart test -x integration
         working-directory: packages/keybay_cli
       - run: KEYBAY_SKIP_DART_INSTALL=1 ./tool/test_cli.sh
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sdk-regression-minimum-sdk
+          path: build/regression/*/report.json
+          if-no-files-found: warn
+          retention-days: 14
 
   integration-macos:
     needs: provider-impact
     if: needs.provider-impact.outputs.macos == 'true'
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            architecture: arm64
+            artifact: sdk-regression-macos
+          - os: macos-15-intel
+            architecture: x64
+            artifact: sdk-regression-macos-x64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dart-lang/setup-dart@7654d458321ee25acccccfdb86cd48bd95768ff1 # v1.8.0
+        with:
+          architecture: ${{ matrix.architecture }}
       - run: dart pub get --enforce-lockfile
-      # Real login Keychain round-trip.
-      - run: KEYBAY_INTEGRATION=1 dart test test/keychain_integration_test.dart
+      # Exercise the actual x64 SDK/FFI boundary, including descriptor metadata.
+      - if: matrix.architecture == 'x64'
+        run: ./tool/test_e2e.sh core
+      # A disposable Keychain also exercises locked record operations. The
+      # public facade separately resolves the runner's genuine account home.
+      - run: ./tool/test_e2e.sh macos
+      - run: KEYBAY_INTEGRATION=1 dart test test/v2_macos_unentitled_integration_test.dart --name 'public Keybay facade'
         working-directory: packages/keybay
       - run: ./tool/test_cli_storage.sh
       # Package, verify, extract, and execute the exact README onboarding loop
       # against the fixed-appId product. GitHub-hosted runners are disposable
       # and start without a Keybay store.
       - run: KEYBAY_QUICKSTART=1 ./tool/test_cli_quickstart.sh
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.artifact }}
+          path: build/regression/*/report.json
+          if-no-files-found: warn
+          retention-days: 14
 
   integration-linux:
     needs: provider-impact
@@ -149,8 +189,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dart-lang/setup-dart@7654d458321ee25acccccfdb86cd48bd95768ff1 # v1.8.0
-      - run: sudo apt-get update && sudo apt-get install -y libsecret-tools gnome-keyring dbus
+      - run: sudo apt-get update && sudo apt-get install -y libsecret-tools gnome-keyring dbus libglib2.0-bin
       - run: dart pub get --enforce-lockfile
+      - run: ./tool/test_e2e.sh linux
       # Real Secret Service round-trip: a throwaway D-Bus session with a fresh
       # gnome-keyring unlocked by a known password (secrets component only).
       # Recipe verified locally against real gnome-keyring in a Docker container.
@@ -161,9 +202,10 @@ jobs:
           # shellcheck disable=SC2016
           KEYBAY_BENCHMARK_OUTPUT="$RUNNER_TEMP/cli-benchmark-linux.json" \
           dbus-run-session -- bash -c '
+            set -euo pipefail
+            export XDG_RUNTIME_DIR="$(mktemp -d)"
             eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
             export GNOME_KEYRING_CONTROL
-            (cd packages/keybay && KEYBAY_INTEGRATION=1 dart test test/secret_service_integration_test.dart)
             ./tool/test_cli_storage.sh
             KEYBAY_QUICKSTART=1 ./tool/test_cli_quickstart.sh
             KEYBAY_BENCHMARK=1 KEYBAY_BENCHMARK_ITERATIONS=100 \
@@ -175,34 +217,57 @@ jobs:
           path: ${{ runner.temp }}/cli-benchmark-linux.json
           if-no-files-found: warn
           retention-days: 30
-      # The locked-collection behavior, in its OWN D-Bus session: this test
-      # locks the login collection (which a headless box can't unlock again), so
-      # isolating it keeps it from stranding the unlocked tier above. It pins
-      # that a locked keyring degrades to "not found" on reads and that delete()
-      # fails CLOSED (KeystoreLocked) rather than reporting a removal that
-      # didn't happen. KEYBAY_LOCKED_TEST is the second opt-in that keeps
-      # `-t integration` on a real desktop from locking the developer's own
-      # login keyring — only throwaway sessions (here, tool/test_linux.sh) set
-      # it.
-      - run: |
-          # The quoted variables expand inside the deliberately separate shell.
-          # shellcheck disable=SC2016
-          dbus-run-session -- bash -c '
-            eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
-            export GNOME_KEYRING_CONTROL
-            (cd packages/keybay && KEYBAY_INTEGRATION=1 KEYBAY_LOCKED_TEST=1 dart test test/secret_service_locked_integration_test.dart)
-          '
       # The CLI has its own locked-store contract: exit 69, actionable text,
-      # and no secret in diagnostics. Keep it in a third disposable session
+      # and no secret in diagnostics. Keep it in a separate disposable session
       # because this test also leaves the login collection locked.
       - run: |
           # The quoted variables expand inside the deliberately separate shell.
           # shellcheck disable=SC2016
           dbus-run-session -- bash -c '
+            set -euo pipefail
+            export XDG_RUNTIME_DIR="$(mktemp -d)"
             eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
             export GNOME_KEYRING_CONTROL
             KEYBAY_LOCKED_TEST=1 ./tool/test_cli_locked_storage.sh
           '
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sdk-regression-linux
+          path: build/regression/*/report.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  integration-flatpak:
+    needs: provider-impact
+    if: needs.provider-impact.outputs.linux == 'true'
+    # Exercise real Flatpak confinement and portal caller identity. The
+    # ordinary Secret Service lane does not establish these properties.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dart-lang/setup-dart@7654d458321ee25acccccfdb86cd48bd95768ff1 # v1.8.0
+      - run: sudo apt-get update && sudo apt-get install -y flatpak xdg-desktop-portal gnome-keyring dbus libglib2.0-bin python3 gcr xvfb xdotool
+      - run: dart pub get --enforce-lockfile
+      - name: qualify two installed Flatpak application IDs
+        env:
+          KEYBAY_FLATPAK_REPORT: ${{ runner.temp }}/flatpak-qualification.json
+        run: ./tool/test_e2e.sh flatpak
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: flatpak-qualification-linux-x64
+          path: ${{ runner.temp }}/flatpak-qualification.json
+          if-no-files-found: error
+          retention-days: 30
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sdk-regression-flatpak
+          path: build/regression/*/report.json
+          if-no-files-found: warn
+          retention-days: 14
 
   # Genuine mobile platform APIs on disposable virtual devices. These are
   # Continuous integration checks, not physical-device qualification and do
@@ -241,7 +306,14 @@ jobs:
           target: default
           disable-animations: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics
-          script: ./tool/test_mobile_ci.sh android
+          script: ./tool/test_e2e.sh android
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sdk-regression-android-${{ matrix.api-level }}
+          path: build/regression/*/report.json
+          if-no-files-found: warn
+          retention-days: 14
 
   integration-ios:
     needs: provider-impact
@@ -269,7 +341,7 @@ jobs:
           echo "$flutter_root/bin" >> "$GITHUB_PATH"
       - run: flutter pub get --enforce-lockfile
         working-directory: example_flutter
-      - run: ./tool/test_mobile_ci.sh ios
+      - run: ./tool/test_e2e.sh ios
       - if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -279,6 +351,13 @@ jobs:
             ${{ runner.temp }}/keybay-ios-*.log
           if-no-files-found: error
           retention-days: 7
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sdk-regression-ios
+          path: build/regression/*/report.json
+          if-no-files-found: warn
+          retention-days: 14
 
   # One stable branch-protection context for the conditional provider matrix.
   # GitHub skips a matrix before expansion when its job-level `if` is false,
@@ -292,6 +371,7 @@ jobs:
       - provider-impact
       - integration-macos
       - integration-linux
+      - integration-flatpak
       - integration-android
       - integration-ios
     runs-on: ubuntu-latest
@@ -302,6 +382,7 @@ jobs:
       MACOS_RESULT: ${{ needs.integration-macos.result }}
       LINUX_REQUIRED: ${{ needs.provider-impact.outputs.linux }}
       LINUX_RESULT: ${{ needs.integration-linux.result }}
+      FLATPAK_RESULT: ${{ needs.integration-flatpak.result }}
       ANDROID_REQUIRED: ${{ needs.provider-impact.outputs.android }}
       ANDROID_RESULT: ${{ needs.integration-android.result }}
       IOS_REQUIRED: ${{ needs.provider-impact.outputs.ios }}
@@ -333,6 +414,7 @@ jobs:
           echo "provider-impact: $IMPACT_REASON"
           check_provider macos "$MACOS_REQUIRED" "$MACOS_RESULT"
           check_provider linux "$LINUX_REQUIRED" "$LINUX_RESULT"
+          check_provider flatpak "$LINUX_REQUIRED" "$FLATPAK_RESULT"
           check_provider android "$ANDROID_REQUIRED" "$ANDROID_RESULT"
           check_provider ios "$IOS_REQUIRED" "$IOS_RESULT"
 
@@ -349,11 +431,10 @@ jobs:
           bundler-cache: true
       - run: bundle exec ruby tool/build_site.rb
 
-  # Structure-aware container fuzz at canary depth. Every PR already runs the
-  # same test at its small deterministic default inside the package test tier;
-  # the weekly canary explores with a fresh seed and three orders more cases.
-  # A failure prints the seed and case index — pin the reproduction into the
-  # deterministic corpus in container_test.dart before fixing.
+  # Bounded V2 reader mutations, including independent frame authentication.
+  # Every PR runs 200 deterministic cases; this weekly lane runs 20,000 with
+  # a fresh seed. Failures report the seed, case index and mutation class.
+  # Preserve regressions in the V2 adversarial tests before fixing them.
   fuzz-canary:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
@@ -361,10 +442,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dart-lang/setup-dart@7654d458321ee25acccccfdb86cd48bd95768ff1 # v1.8.0
       - run: dart pub get --enforce-lockfile
-      - name: structural container fuzz (fresh seed)
+      - name: authenticated V2 reader canary (fresh seed)
         working-directory: packages/keybay
         run: |
           seed="$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')"
           echo "KEYBAY_FUZZ_SEED=$seed"
-          KEYBAY_FUZZ_ITERATIONS=200000 KEYBAY_FUZZ_SEED="$seed" \
-            dart test test/container_fuzz_test.dart
+          KEYBAY_FUZZ_ITERATIONS=20000 KEYBAY_FUZZ_SEED="$seed" \
+            dart test test/v2_fuzz_canary_test.dart

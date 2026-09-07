@@ -5,15 +5,11 @@ import '../finding.dart';
 import '../http.dart';
 import '../osv.dart';
 
-typedef AdvisoryLookup = Future<Set<String>> Function(
-  String ecosystem,
-  String name,
-);
+typedef AdvisoryLookup =
+    Future<Set<String>> Function(String ecosystem, String name);
 
-typedef ActivityLookup = Future<List<PeerActivity>> Function(
-  String repository,
-  DateTime since,
-);
+typedef ActivityLookup =
+    Future<List<PeerActivity>> Function(String repository, DateTime since);
 
 const peers = <({String ecosystem, String name, String repository})>[
   (
@@ -21,21 +17,13 @@ const peers = <({String ecosystem, String name, String repository})>[
     name: 'flutter_secure_storage',
     repository: 'juliansteenbakker/flutter_secure_storage',
   ),
-  (
-    ecosystem: 'PyPI',
-    name: 'keyring',
-    repository: 'jaraco/keyring',
-  ),
+  (ecosystem: 'PyPI', name: 'keyring', repository: 'jaraco/keyring'),
   (
     ecosystem: 'npm',
     name: 'react-native-keychain',
     repository: 'oblador/react-native-keychain',
   ),
-  (
-    ecosystem: 'npm',
-    name: 'keytar',
-    repository: 'atom/node-keytar',
-  ),
+  (ecosystem: 'npm', name: 'keytar', repository: 'atom/node-keytar'),
   (
     ecosystem: 'Go',
     name: 'github.com/zalando/go-keyring',
@@ -65,9 +53,9 @@ final class PeerActivity {
 }
 
 Future<Set<String>> advisories(String ecosystem, String name) async => {
-      for (final record in await queryPackage(ecosystem, name))
-        record['id']! as String,
-    };
+  for (final record in await queryPackage(ecosystem, name))
+    record['id']! as String,
+};
 
 Set<String> peerBaseline(Map<String, Object?> config) {
   final rawBaseline = config['baseline'];
@@ -123,17 +111,13 @@ Future<List<PeerActivity>> githubActivity(
   final found = <PeerActivity>[];
   await _readPages(
     repository,
-    Uri.https(
-      'api.github.com',
-      '/repos/$repository/issues',
-      <String, String>{
-        'state': 'all',
-        'sort': 'updated',
-        'direction': 'desc',
-        'since': since.toUtc().toIso8601String(),
-        'per_page': '100',
-      },
-    ),
+    Uri.https('api.github.com', '/repos/$repository/issues', <String, String>{
+      'state': 'all',
+      'sort': 'updated',
+      'direction': 'desc',
+      'since': since.toUtc().toIso8601String(),
+      'per_page': '100',
+    }),
     headers,
     (item) {
       final updatedAt = _githubDate(item['updated_at'], repository);
@@ -157,11 +141,9 @@ Future<List<PeerActivity>> githubActivity(
   );
   await _readPages(
     repository,
-    Uri.https(
-      'api.github.com',
-      '/repos/$repository/releases',
-      <String, String>{'per_page': '100'},
-    ),
+    Uri.https('api.github.com', '/repos/$repository/releases', <String, String>{
+      'per_page': '100',
+    }),
     headers,
     (item) {
       final updatedAt = _githubDate(
@@ -211,17 +193,14 @@ Future<List<WatcherFinding>> peerFindings(
         title: 'Peer advisory triage: ${entry.key}',
         subjects: entry.value,
         references: <({String label, String url})>[
-          (
-            label: entry.key,
-            url: 'https://osv.dev/vulnerability/${entry.key}',
-          ),
+          (label: entry.key, url: 'https://osv.dev/vulnerability/${entry.key}'),
         ],
       ),
   ];
   final findActivity = activityLookup ?? githubActivity;
-  final since = (now ?? DateTime.now().toUtc())
-      .toUtc()
-      .subtract(Duration(days: activityLookbackDays));
+  final since = (now ?? DateTime.now().toUtc()).toUtc().subtract(
+    Duration(days: activityLookbackDays),
+  );
   for (final peer in peers) {
     final activity = await findActivity(peer.repository, since);
     for (final item in activity) {

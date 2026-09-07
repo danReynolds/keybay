@@ -8,10 +8,13 @@ import 'package:test/test.dart';
 void main() {
   group('stdin secret decoding', () {
     test('strips exactly one LF or CRLF and keeps a lone CR', () {
-      expect(decodeSecretBytes(utf8.encode('value\n')), 'value');
-      expect(decodeSecretBytes(utf8.encode('value\r\n')), 'value');
-      expect(decodeSecretBytes(utf8.encode('value\n\n')), 'value\n');
-      expect(decodeSecretBytes(utf8.encode('value\r')), 'value\r');
+      expect(utf8.decode(decodeSecretBytes(utf8.encode('value\n'))), 'value');
+      expect(utf8.decode(decodeSecretBytes(utf8.encode('value\r\n'))), 'value');
+      expect(
+        utf8.decode(decodeSecretBytes(utf8.encode('value\n\n'))),
+        'value\n',
+      );
+      expect(utf8.decode(decodeSecretBytes(utf8.encode('value\r'))), 'value\r');
     });
 
     test('rejects empty input so a failed producer cannot store ""', () {
@@ -54,7 +57,7 @@ void main() {
       }
     });
 
-    test('rejects input beyond the core store envelope before decoding', () {
+    test('rejects input beyond the public record limit before decoding', () {
       final oversized = Uint8List(maxSecretInputBytes + 1);
       expect(
         () => decodeSecretBytes(oversized),
@@ -63,7 +66,7 @@ void main() {
             (error) => error.message,
             'message',
             allOf(
-              contains('16 MiB store envelope'),
+              contains('1 MiB record limit'),
               contains('credential rather than a blob'),
             ),
           ),
@@ -85,13 +88,13 @@ void main() {
       );
 
       expect(
-        await reader.read(key: 'acme/key', fromStdin: true),
+        utf8.decode(await reader.read(key: 'acme/key', fromStdin: true)),
         'multi-chunk',
       );
       expect(terminal.setCalls, isEmpty);
     });
 
-    test('--stdin bounds the stream at the core store envelope', () async {
+    test('--stdin bounds the stream at the public record limit', () async {
       const sentinel = 'tail-must-not-be-consumed-or-echoed';
       final reader = SecretInputReader(
         input: Stream<List<int>>.fromIterable(<List<int>>[
@@ -108,7 +111,7 @@ void main() {
           isA<SecretInputException>().having(
             (error) => error.message,
             'message',
-            contains('16 MiB store envelope'),
+            contains('1 MiB record limit'),
           ),
         ),
       );
@@ -203,7 +206,7 @@ void main() {
           );
 
           expect(
-            await reader.read(key: 'acme/key', fromStdin: false),
+            utf8.decode(await reader.read(key: 'acme/key', fromStdin: false)),
             sentinel,
           );
           expect(terminal.echoMode, previousMode);
@@ -271,7 +274,7 @@ void main() {
       );
 
       expect(
-        await reader.read(key: 'acme/key', fromStdin: false),
+        utf8.decode(await reader.read(key: 'acme/key', fromStdin: false)),
         'chunked-value',
       );
       expect(terminal.echoMode, isTrue);
@@ -292,12 +295,39 @@ void main() {
           isA<SecretInputException>().having(
             (error) => error.message,
             'message',
-            contains('16 MiB store envelope'),
+            contains('1 MiB record limit'),
           ),
         ),
       );
       expect(terminal.echoMode, isTrue);
       expect(terminal.setCalls, <bool>[false, true]);
+    });
+  });
+
+  group('passphrase byte contract', () {
+    test('excludes one line ending without trimming or normalization', () {
+      expect(
+        utf8.decode(decodePassphraseBytes(utf8.encode('  pass phrase  \n'))),
+        '  pass phrase  ',
+      );
+      expect(
+        decodePassphraseBytes(utf8.encode('\u00e9\n')),
+        utf8.encode('\u00e9'),
+      );
+    });
+
+    test('requires valid UTF-8 containing 1 to 1024 bytes', () {
+      for (final value in <List<int>>[
+        const <int>[],
+        const <int>[0x0a],
+        const <int>[0xff, 0x0a],
+        Uint8List(maxPassphraseInputBytes + 2),
+      ]) {
+        expect(
+          () => decodePassphraseBytes(value),
+          throwsA(isA<SecretInputException>()),
+        );
+      }
     });
   });
 }

@@ -1,0 +1,258 @@
+@Tags(['unit'])
+library;
+
+import 'dart:async';
+import 'dart:typed_data';
+
+import 'package:cryptography/dart.dart';
+import 'package:keybay/src/v2/format/store_format.dart';
+import 'package:keybay/src/v2/keybay_v2.dart';
+import 'package:test/test.dart';
+
+void main() {
+  group('V2 passphrase profile 1', () {
+    test('freezes the RFC 9106 second recommended tuple', () {
+      expect(v2PassphraseProfile1ArgonVersion, 19);
+      expect(v2PassphraseProfile1MemoryKiB, 64 * 1024);
+      expect(v2PassphraseProfile1Iterations, 3);
+      expect(v2PassphraseProfile1Parallelism, 4);
+      expect(
+        v2PassphraseProfile1MemoryKiB,
+        lessThanOrEqualTo(V2StoreLimits.argonMemoryKiB),
+      );
+      expect(
+        v2PassphraseProfile1Iterations,
+        lessThanOrEqualTo(V2StoreLimits.argonIterations),
+      );
+      expect(
+        v2PassphraseProfile1Parallelism,
+        lessThanOrEqualTo(V2StoreLimits.argonParallelism),
+      );
+    });
+
+    test(
+      'matches an independent Go x/crypto vector and snapshots inputs',
+      () async {
+        final passphrase = Uint8List.fromList(
+          'correct horse battery staple'.codeUnits,
+        );
+        final salt = _hex('000102030405060708090a0b0c0d0e0f');
+        final derivation = const Argon2idV2PassphraseDeriver().derive(
+          passphrase: passphrase,
+          profileId: v2FirstPassphraseProfile,
+          salt: salt,
+        );
+
+        passphrase.fillRange(0, passphrase.length, 0);
+        salt.fillRange(0, salt.length, 0);
+        final derived = await derivation;
+        try {
+          expect(
+            derived,
+            _hex(
+              '853b272a44db1421c02962669a55eb09'
+              '94f3cab385ed1c4c79253eee19bab49e',
+            ),
+          );
+        } finally {
+          derived.fillRange(0, derived.length, 0);
+        }
+      },
+      // Allow cold JIT compilation on shared CI hosts. Device latency and
+      // memory acceptance are qualified separately from this vector check.
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
+
+    test(
+      'rejects unknown profiles and invalid inputs through futures',
+      () async {
+        final deriver = const Argon2idV2PassphraseDeriver();
+        final phrase = Uint8List.fromList(<int>[1]);
+        final salt = Uint8List(V2StoreLimits.argonSaltBytes);
+
+        late Future<Uint8List> unknown;
+        expect(
+          () => unknown = deriver.derive(
+            passphrase: phrase,
+            profileId: v2FirstPassphraseProfile + 1,
+            salt: salt,
+          ),
+          returnsNormally,
+        );
+        await expectLater(
+          unknown,
+          throwsA(
+            isA<V2FormatFailure>().having(
+              (failure) => failure.code,
+              'code',
+              V2FormatFailureCode.unsupportedKdfProfile,
+            ),
+          ),
+        );
+
+        for (final invalid in <Future<Uint8List>>[
+          deriver.derive(
+            passphrase: Uint8List(0),
+            profileId: v2FirstPassphraseProfile,
+            salt: salt,
+          ),
+          deriver.derive(
+            passphrase: Uint8List(1025),
+            profileId: v2FirstPassphraseProfile,
+            salt: salt,
+          ),
+          deriver.derive(
+            passphrase: phrase,
+            profileId: v2FirstPassphraseProfile,
+            salt: Uint8List(V2StoreLimits.argonSaltBytes - 1),
+          ),
+        ]) {
+          await expectLater(
+            invalid,
+            throwsA(
+              isA<V2PassphraseDerivationFailure>().having(
+                (failure) => failure.code,
+                'code',
+                V2PassphraseDerivationFailureCode.invalidInput,
+              ),
+            ),
+          );
+        }
+      },
+    );
+
+    test('derivation failures render only their stable code', () {
+      const failure = V2PassphraseDerivationFailure(
+        V2PassphraseDerivationFailureCode.operationFailed,
+      );
+      expect(
+        failure.toString(),
+        'V2PassphraseDerivationFailure(operationFailed)',
+      );
+    });
+
+    for (final fault in [
+      '',
+      'allocation',
+      'derivation',
+      'release',
+      'derived-clear',
+      'derivation+release',
+    ]) {
+      test('workspace clears before release with fault=$fault', () async {
+        final state = _CleanupState(fault);
+        final phrase = Uint8List.fromList([1, 2, 3]);
+        final deriving =
+            Argon2idV2PassphraseDeriver.test(stateFactory: () => state).derive(
+              passphrase: phrase,
+              profileId: v2FirstPassphraseProfile,
+              salt: Uint8List(16),
+            );
+        if (fault.isEmpty) {
+          final result = await deriving;
+          expect(result, everyElement(7));
+          result.fillRange(0, result.length, 0);
+        } else {
+          await expectLater(
+            deriving,
+            throwsA(
+              fault.startsWith('derivation')
+                  ? same(state.primaryFailure)
+                  : isA<V2PassphraseDerivationFailure>(),
+            ),
+          );
+        }
+        expect(
+          state.allocations,
+          1,
+          reason: 'cleanup never retries allocation',
+        );
+        expect(state.releases, 1);
+        expect(state.clearAtRelease, isTrue);
+        if (state.password != null) expect(state.password, everyElement(0));
+        expect(phrase, [1, 2, 3], reason: 'caller input is borrowed');
+      });
+    }
+
+    test(
+      'the isolate queue serializes work and releases after failure',
+      () async {
+        final queue = V2PassphraseDerivationQueue();
+        final firstEntered = Completer<void>();
+        final releaseFirst = Completer<void>();
+        var secondEntered = false;
+
+        final first = queue.run<void>(() async {
+          firstEntered.complete();
+          await releaseFirst.future;
+          throw StateError('expected test failure');
+        });
+        final firstFailure = expectLater(first, throwsStateError);
+        final second = queue.run<int>(() {
+          secondEntered = true;
+          return 2;
+        });
+
+        await firstEntered.future;
+        await Future<void>.delayed(Duration.zero);
+        expect(secondEntered, isFalse);
+        releaseFirst.complete();
+
+        await firstFailure;
+        expect(await second, 2);
+        expect(secondEntered, isTrue);
+      },
+    );
+  });
+}
+
+Uint8List _hex(String value) => Uint8List.fromList(<int>[
+  for (var index = 0; index < value.length; index += 2)
+    int.parse(value.substring(index, index + 2), radix: 16),
+]);
+
+// Owned test memory stays live after the simulated release. Never inspect a
+// freed native dependency view; assert clearing at the release boundary.
+final class _CleanupState implements DartArgon2State {
+  _CleanupState(this.fault);
+  final String fault;
+  final workspace = Uint8List(64);
+  final primaryFailure = const V2PassphraseDerivationFailure(
+    V2PassphraseDerivationFailureCode.invalidInput,
+  );
+  int allocations = 0;
+  int releases = 0;
+  bool clearAtRelease = false;
+  List<int>? password;
+
+  @override
+  ByteBuffer getByteBuffer() {
+    allocations++;
+    if (fault == 'allocation') throw StateError('allocation failure');
+    return workspace.buffer;
+  }
+
+  @override
+  Future<List<int>> deriveKeyBytes({
+    required List<int> password,
+    List<int> nonce = const [],
+    List<int> optionalSecret = const [],
+    List<int> associatedData = const [],
+  }) async {
+    this.password = password;
+    workspace.fillRange(0, workspace.length, 19);
+    if (fault.startsWith('derivation')) throw primaryFailure;
+    final output = Uint8List(32)..fillRange(0, 32, 7);
+    return fault == 'derived-clear' ? output.asUnmodifiableView() : output;
+  }
+
+  @override
+  void tryReleaseMemory() {
+    releases++;
+    clearAtRelease = workspace.every((byte) => byte == 0);
+    if (fault.contains('release')) throw StateError('release failure');
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}

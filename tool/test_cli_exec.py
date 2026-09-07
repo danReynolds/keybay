@@ -113,51 +113,18 @@ def main() -> int:
         if argv_sentinel in bad_set.stderr:
             raise AssertionError("usage error echoed an unexpected value argument")
 
-        redirected = subprocess.run(
-            [cli, "set", "acme/key"],
-            input="value",
+        captured_get = subprocess.run(
+            [cli, "get", "acme/key"],
             text=True,
             capture_output=True,
             check=False,
         )
-        assert_result(redirected, 2, stderr_contains="--stdin")
+        assert_result(captured_get, 4, stderr_contains="captured output is refused")
 
-        malformed_input = subprocess.run(
-            [cli, "set", "--stdin", "acme/key"],
-            input=b"sentinel-before\x00sentinel-after",
-            capture_output=True,
-            check=False,
-        )
-        if malformed_input.returncode != 2:
-            raise AssertionError(f"NUL input status was {malformed_input.returncode}")
-        if b"sentinel" in malformed_input.stderr:
-            raise AssertionError("stdin diagnostic echoed secret input")
-
-        # An empty pipe (a silently failed producer) must not store "".
-        empty_input = subprocess.run(
-            [cli, "set", "--stdin", "acme/key"],
-            input=b"",
-            capture_output=True,
-            check=False,
-        )
-        if empty_input.returncode != 2:
-            raise AssertionError(f"empty input status was {empty_input.returncode}")
-        if b"empty" not in empty_input.stderr:
-            raise AssertionError(f"empty input diagnostic: {empty_input.stderr!r}")
-
-        # --stdin at a terminal would echo the typed secret into scrollback;
-        # it must refuse before reading anything.
-        stdin_tty_pid, stdin_tty_master = pty.fork()
-        if stdin_tty_pid == 0:
-            os.execl(cli, cli, "set", "--stdin", "acme/key")
-        stdin_tty_output = read_pty(stdin_tty_master, b"drop --stdin")
-        _, stdin_tty_status = os.waitpid(stdin_tty_pid, 0)
-        if os.waitstatus_to_exitcode(stdin_tty_status) != 2:
-            raise AssertionError(
-                f"--stdin at a TTY exited {os.waitstatus_to_exitcode(stdin_tty_status)}: "
-                f"{stdin_tty_output!r}"
-            )
-        os.close(stdin_tty_master)
+        # V2 deliberately authenticates and emits any platform-only warning
+        # before `set` accepts a value. Its input-byte and TTY contracts are
+        # therefore covered by the dedicated prompt harness and unit tests;
+        # this provider-independent exec suite does not open the real store.
 
         inherited = dict(os.environ)
         inherited["KEYBAY_LITERAL"] = "from-parent"
@@ -232,7 +199,7 @@ def main() -> int:
             f"INVALID NAME={manifest_sentinel}\n", encoding="utf-8"
         )
         result = run(cli, invalid_manifest, "/usr/bin/true")
-        assert_result(result, 78, stderr_contains="invalid manifest")
+        assert_result(result, 2, stderr_contains="invalid manifest")
         if manifest_sentinel in result.stderr:
             raise AssertionError("manifest diagnostic echoed source bytes")
 
@@ -246,7 +213,7 @@ def main() -> int:
             capture_output=True,
             check=False,
         )
-        assert_result(no_upward, 78, stderr_contains="could not be read")
+        assert_result(no_upward, 2, stderr_contains="could not be read")
 
         no_path = tmp / "no-path.env"
         no_path.write_text("PATH=\n", encoding="utf-8")
@@ -332,15 +299,6 @@ def main() -> int:
         if os.waitstatus_to_exitcode(tty_status) != 0:
             raise AssertionError(f"TTY child failed: {tty_output!r}")
         os.close(tty_master)
-
-        doctor = subprocess.run(
-            [cli, "doctor"],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if "runtime:  compiled executable (signature not inspected)" not in doctor.stdout:
-            raise AssertionError(f"compiled doctor report was wrong: {doctor.stdout!r}")
 
     print("CLI execve checks passed")
     return 0

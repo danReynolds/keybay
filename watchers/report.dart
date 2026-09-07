@@ -6,8 +6,9 @@ const _statuses = <String>{'quiet', 'findings', 'failed', 'not_run'};
 final _marker = RegExp(r'^[A-Za-z0-9._/-]{1,240}$');
 final _commit = RegExp(r'^[0-9a-f]{40,64}$');
 final _runId = RegExp(r'^[1-9][0-9]{0,19}$');
-final _reportDirectory =
-    RegExp(r'^\d{4}-\d{2}-\d{2}-[1-9][0-9]{0,19}-[1-9][0-9]{0,19}$');
+final _reportDirectory = RegExp(
+  r'^\d{4}-\d{2}-\d{2}-[1-9][0-9]{0,19}-[1-9][0-9]{0,19}$',
+);
 
 final class ReportInput {
   const ReportInput({
@@ -36,7 +37,8 @@ final class ReportInput {
     }
     if (rawFindings is! List || rawFindings.length > 1000) {
       throw FormatException(
-          '$expectedWatcher findings were invalid or too many');
+        '$expectedWatcher findings were invalid or too many',
+      );
     }
     final findings = <ReportFinding>[
       for (final finding in rawFindings)
@@ -59,8 +61,9 @@ final class ReportInput {
       watcher: expectedWatcher,
       status: status,
       findings: findings,
-      error:
-          error == null ? null : _plain(error as String, 1000, 'watcher error'),
+      error: error == null
+          ? null
+          : _plain(error as String, 1000, 'watcher error'),
     );
   }
 }
@@ -119,12 +122,10 @@ final class ReportFinding {
           url.length > 2048) {
         throw const FormatException('finding reference URL was unsafe');
       }
-      references.add(
-        (
-          label: _plain(label, 200, 'reference label'),
-          url: uri.toString(),
-        ),
-      );
+      references.add((
+        label: _plain(label, 200, 'reference label'),
+        url: uri.toString(),
+      ));
     }
     return ReportFinding(
       marker: marker,
@@ -207,7 +208,8 @@ Future<void> createReport({
   }
   if (await outputDirectory.exists()) {
     throw FormatException(
-        'report directory already exists: ${outputDirectory.path}');
+      'report directory already exists: ${outputDirectory.path}',
+    );
   }
   await outputDirectory.create(recursive: true);
   final reportId = 'github-$runId-$attempt';
@@ -224,9 +226,9 @@ Future<void> createReport({
       for (final watcher in watcherNames) watcher: parsed[watcher]!.status,
     },
   };
-  await File('${outputDirectory.path}/raw.md').writeAsString(
-    _rawMarkdown(metadata, parsed),
-  );
+  await File(
+    '${outputDirectory.path}/raw.md',
+  ).writeAsString(_rawMarkdown(metadata, parsed));
   final assessmentMetadata = <String, Object>{
     'schema': 1,
     'report_id': reportId,
@@ -272,8 +274,11 @@ Future<void> writeSummary(Directory reports, File output) async {
       final assessmentStatus = assessment['status'];
       final summary = assessment['summary'];
       final actions = assessment['actions'];
-      if (!const <String>{'pending', 'assessed', 'needs_attention'}
-              .contains(assessmentStatus) ||
+      if (!const <String>{
+            'pending',
+            'assessed',
+            'needs_attention',
+          }.contains(assessmentStatus) ||
           summary is! String ||
           actions is! List) {
         throw FormatException('${entity.path} had invalid assessment metadata');
@@ -288,8 +293,9 @@ Future<void> writeSummary(Directory reports, File output) async {
         }
         links.add((label: _plain(label, 100, 'action label'), url: url));
       }
-      final directory =
-          entity.uri.pathSegments.where((segment) => segment.isNotEmpty).last;
+      final directory = entity.uri.pathSegments
+          .where((segment) => segment.isNotEmpty)
+          .last;
       if (!_reportDirectory.hasMatch(directory)) {
         throw FormatException('${entity.path} had an invalid directory name');
       }
@@ -317,20 +323,22 @@ Future<void> writeSummary(Directory reports, File output) async {
     )
     ..writeln()
     ..writeln(
-        '| Run | Dependencies | Platforms | Peers | AI assessment | Actions |')
+      '| Run | Dependencies | Platforms | Peers | AI assessment | Actions |',
+    )
     ..writeln('| --- | --- | --- | --- | --- | --- |');
   if (rows.isEmpty) {
     buffer.writeln('| None yet | — | — | — | — | — |');
   } else {
     for (final row in rows) {
       final date = row.startedAt.toUtc().toIso8601String().split('T').first;
-      final assessment = '${_md(row.assessmentStatus)}: '
+      final assessment =
+          '${_md(row.assessmentStatus)}: '
           '[${_md(row.assessmentSummary)}](${row.directory}/assessment.md)';
       final actions = row.actions.isEmpty
           ? 'None'
           : row.actions
-              .map((action) => '[${_md(action.label)}](${action.url})')
-              .join(', ');
+                .map((action) => '[${_md(action.label)}](${action.url})')
+                .join(', ');
       buffer.writeln(
         '| [$date](${row.directory}/raw.md) | '
         '${_md(row.statuses['dependencies']!)} | '
@@ -401,21 +409,21 @@ String _rawMarkdown(
 }
 
 String _heading(String watcher) => switch (watcher) {
-      'dependencies' => 'Dependencies',
-      'platforms' => 'Platforms',
-      'peers' => 'Peers',
-      _ => watcher,
-    };
+  'dependencies' => 'Dependencies',
+  'platforms' => 'Platforms',
+  'peers' => 'Peers',
+  _ => watcher,
+};
 
 String _sourceDescription(String watcher) => switch (watcher) {
-      'dependencies' =>
-        'OSV against every committed lockfile, plus new releases of specifically reviewed dependencies.',
-      'platforms' =>
-        'Apple security releases, Android security bulletins, and narrow Linux credential-provider advisories.',
-      'peers' =>
-        'OSV advisories and recent GitHub issues, pull requests, and releases for the defined peer set.',
-      _ => watcher,
-    };
+  'dependencies' =>
+    'OSV against every committed lockfile, plus new releases of specifically reviewed dependencies.',
+  'platforms' =>
+    'Apple security releases, Android security bulletins, and narrow Linux credential-provider advisories.',
+  'peers' =>
+    'OSV advisories and recent GitHub issues, pull requests, and releases for the defined peer set.',
+  _ => watcher,
+};
 
 String _comment(String name, Map<String, Object> metadata) =>
     '<!-- $name: ${jsonEncode(metadata)} -->';
@@ -513,8 +521,9 @@ bool _keybayActionUrl(String value) {
       path[1] == 'keybay' &&
       path[2] == 'security' &&
       path[3] == 'advisories' &&
-      RegExp(r'^GHSA-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}$')
-          .hasMatch(path[4]);
+      RegExp(
+        r'^GHSA-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}$',
+      ).hasMatch(path[4]);
 }
 
 String _md(String value) => value

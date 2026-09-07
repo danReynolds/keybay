@@ -156,7 +156,7 @@ final class PosixCommandExecutor implements CommandExecutor {
     stderr.writeln(
       'error: execve returned unexpectedly for $executable; report this bug.',
     );
-    return exitSoftware;
+    return exitFailure;
   }
 }
 

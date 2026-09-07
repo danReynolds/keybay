@@ -40,8 +40,9 @@ void main() {
       raw,
       contains('https://github.com/danReynolds/keybay/actions/runs/123'),
     );
-    final assessment =
-        await File('${output.path}/assessment.md').readAsString();
+    final assessment = await File(
+      '${output.path}/assessment.md',
+    ).readAsString();
     expect(assessment, contains('"status":"pending"'));
   });
 
@@ -49,9 +50,7 @@ void main() {
     final inputs = await _inputs(temp);
     final peers = jsonDecode(await inputs['peers']!.readAsString()) as Map;
     peers['status'] = 'findings';
-    peers['findings'] = <Object?>[
-      _finding(title: 'Injected\n# Heading'),
-    ];
+    peers['findings'] = <Object?>[_finding(title: 'Injected\n# Heading')];
     await inputs['peers']!.writeAsString(jsonEncode(peers));
 
     expect(
@@ -85,17 +84,14 @@ void main() {
     await assessment.writeAsString(
       '<!-- keybay-watcher-assessment: '
       '${jsonEncode(<String, Object>{
-            'schema': 1,
-            'report_id': 'github-123-1',
-            'status': 'assessed',
-            'summary': 'No applicable Keybay issue found.',
-            'actions': <Object>[
-              <String, String>{
-                'label': 'Issue 99',
-                'url': 'https://github.com/danReynolds/keybay/issues/99',
-              },
-            ],
-          })} -->\n\n# Assessment\n',
+        'schema': 1,
+        'report_id': 'github-123-1',
+        'status': 'assessed',
+        'summary': 'No applicable Keybay issue found.',
+        'actions': <Object>[
+          <String, String>{'label': 'Issue 99', 'url': 'https://github.com/danReynolds/keybay/issues/99'},
+        ],
+      })} -->\n\n# Assessment\n',
     );
     final summary = File('${reports.path}/SUMMARY.md');
     await writeSummary(reports, summary);
@@ -104,9 +100,9 @@ void main() {
     expect(content, contains('[2026-08-22](2026-08-22-123-1/raw.md)'));
     expect(content, contains('No applicable Keybay issue found.'));
     expect(
-        content,
-        contains(
-            '[Issue 99](https://github.com/danReynolds/keybay/issues/99)'));
+      content,
+      contains('[Issue 99](https://github.com/danReynolds/keybay/issues/99)'),
+    );
   });
 }
 
@@ -116,8 +112,9 @@ Future<Map<String, File>> _inputs(
 }) async {
   final result = <String, File>{};
   for (final watcher in watcherNames) {
-    final findings =
-        watcher == 'peers' && peerFinding ? <Object?>[_finding()] : <Object?>[];
+    final findings = watcher == 'peers' && peerFinding
+        ? <Object?>[_finding()]
+        : <Object?>[];
     final file = File('${directory.path}/$watcher.json');
     await file.writeAsString(
       jsonEncode(<String, Object?>{

@@ -22,7 +22,7 @@ if [[ "$actual_version" != "$version" ]]; then
 fi
 
 help="$("$binary" --help)"
-for command in run set rm list doctor; do
+for command in run set get rm list; do
   if [[ "$help" != *"  $command"* ]]; then
     echo "release binary help omitted command '$command'" >&2
     exit 1

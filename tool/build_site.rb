@@ -20,15 +20,14 @@ PROJECT_PUBLIC_FILES = %w[assets/keybay-mark.svg].freeze
 
 DOCUMENTS = [
   {source: "packages/keybay_cli/README.md", route: "docs/cli/", label: "CLI", summary: "Commit a small manifest, store project-qualified values locally, and launch exactly one process with resolved environment variables."},
-  {source: "doc/sdk.md", route: "docs/guide/", label: "Dart & Flutter SDK", summary: "Install the SDK, open a store with one appId, and understand the supported runtime and threat-model boundaries."},
+  {source: "doc/sdk.md", route: "docs/guide/", label: "Dart & Flutter SDK", summary: "Install the SDK, open the current application's store, and understand the supported runtime and threat-model boundaries."},
   {source: "doc/platforms/ios.md", route: "docs/platforms/ios/", label: "iOS", summary: "Native Data Protection Keychain items with a fixed device-bound, non-synchronizing accessibility policy."},
   {source: "doc/platforms/android.md", route: "docs/platforms/android/", label: "Android", summary: "An authenticated app-private file whose store key is wrapped by Android Keystore on Android 12 and newer."},
   {source: "doc/platforms/macos.md", route: "docs/platforms/macos/", label: "macOS", summary: "Native Data Protection Keychain items for entitled apps; an authenticated file with a login-Keychain key otherwise."},
   {source: "doc/platforms/linux.md", route: "docs/platforms/linux/", label: "Linux", summary: "An authenticated local file whose store key is kept by an unlocked Secret Service provider."},
-  {source: "doc/architecture.md", route: "docs/architecture/", label: "Architecture", summary: "Two storage shapes, one automatic production resolver, and an explicit test-backend hatch."},
-  {source: "doc/design.md", route: "docs/design/", label: "Cryptography and design", summary: "The container format, FFI boundaries, threat model, concurrency, supply-chain controls, and design rationale."},
+  {source: "doc/architecture.md", route: "docs/architecture/", label: "Architecture", summary: "One per-application framed store, fixed platform protection, and no fallback providers."},
+  {source: "doc/design.md", route: "docs/design/", label: "Security design", summary: "The V2 threat model, cryptographic construction, platform boundaries, and evidence-linked guarantees."},
   {source: "SECURITY.md", route: "docs/security/", label: "Security", summary: "Where secrets live on each platform, how releases are verified, current evidence limits, and the private vulnerability-reporting route."},
-  {source: "doc/cli-recovery.md", route: "docs/recovery/", label: "CLI recovery", summary: "Preserve evidence, diagnose platform-store failures, and deliberately re-provision an unreadable local CLI store."},
   {source: "doc/ecosystem-comparison.md", route: "docs/comparison/", label: "Choosing Keybay", summary: "Choose the smallest tool that matches whether you need local storage, provider portability, team sharing, or encrypted files."},
 ].freeze
 
@@ -375,7 +374,7 @@ def documentation_index(metadata)
 
             <section class="doc-index-group">
               <h2>Reference</h2>
-              <ul>#{list.call(%w[docs/architecture/ docs/recovery/ docs/comparison/ docs/security/])}</ul>
+              <ul>#{list.call(%w[docs/architecture/ docs/comparison/ docs/security/])}</ul>
             </section>
 
             <p class="doc-index-provenance">Every page is generated from its repository source and links to the exact deployed commit.</p>
@@ -480,8 +479,8 @@ def validate_output(metadata)
     raise "Generated docs contain executable JavaScript: #{path}" if html.include?("<script")
   end
 
-  design = File.read(File.join(OUTPUT, "docs/design/index.html"), encoding: "UTF-8")
-  raise "Generated Markdown code was not highlighted" unless design.include?("highlighter-rouge")
+  guide = File.read(File.join(OUTPUT, "docs/guide/index.html"), encoding: "UTF-8")
+  raise "Generated Markdown code was not highlighted" unless guide.include?("highlighter-rouge")
   validate_internal_links
 end
 

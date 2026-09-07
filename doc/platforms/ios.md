@@ -1,50 +1,53 @@
-# keybay on iOS
+# Keybay on iOS
 
-Each secret is a **native item in the Data Protection Keychain**. There is no
-Keybay container or separate Keybay store key on this path; the operating
-system owns the item's at-rest protection and access policy.
+iOS uses the common V2 encrypted framed file in the application's private
+Application Support directory. Keybay sets and verifies backup exclusion. One
+stable random platform root lives in the Data Protection Keychain; records do
+not become individual Keychain items.
 
-Unlike macOS, there is **no probe**: the Data Protection keychain is the only
-keychain on iOS, and every app can use it (via the default
-[access group](https://developer.apple.com/documentation/security/ksecattraccessgroup)
-every signed app carries). Keybay derives the first group from the signed
-process and includes it explicitly on every add, read, update, enumerate, and
-delete. This
-prevents a colliding item in another entitled/shared group from being read,
-overwritten, listed, or removed. So the scheme is unconditional, but the item
-namespace is not ambiguous.
+The cryptographic storage domain binds the signed application identity and the
+fixed `Library/Application Support/keybay-v2` location relative to its container.
+It does not persist the container's absolute UUID path, which Apple may change
+on update while preserving Library data. Foundation still supplies the current
+physical root, and the usual canonical-path and private-file checks apply.
+See [Apple's update guidance](https://developer.apple.com/library/archive/technotes/tn2285/_index.html).
 
-**Item policy.** Items are created
-[`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`](https://developer.apple.com/documentation/security/ksecattraccessibleafterfirstunlockthisdeviceonly)
-— readable by background work after the first unlock following a boot, does
-not migrate to another device on restore, and is not synchronized through
-iCloud Keychain
-([`synchronizable = false`](https://developer.apple.com/documentation/security/ksecattrsynchronizable)).
-Updates reassert both attributes, so a matching pre-existing item cannot retain
-a weaker/migratory accessibility or synchronization policy.
+The processed `Info.plist` must contain:
 
-**What this policy means.** The item does not migrate to a different device and
-is not synchronized through iCloud. `AfterFirstUnlock` is intentionally
-compatible with background work: after the first unlock following a reboot, the
-item remains accessible when the device relocks. Keybay does not add biometric
-or current-unlock gating.
+```xml
+<key>KeybayApplicationIdentifier</key>
+<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+```
 
-**Note — uninstall.** Keychain items commonly persist after app uninstall, but
-Apple does not document that as a contract. Applications must tolerate either
-persistence or deletion across uninstall/reinstall rather than use Keychain
-state as an installation sentinel.
+This build-expanded value is checked against the exact bundle identifier and
+used as the Keychain access group on every root operation. It is not a runtime
+application selector. A pure Dart package cannot inject the host setting, so it
+belongs in the checked-in iOS application configuration.
 
-**Requirements.** Runs inside a Flutter iOS app. Being pure Dart + FFI, it
-pulls in **zero CocoaPods plugins**.
+The root item is non-synchronizing and
+`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. A peer application outside the
+signed group cannot read it. A developer may intentionally authorize another
+same-team app into an access group, so the exact claim is signed-group
+isolation—not absolute privacy and not Secure Enclave backing.
 
-**Level reporting.** `describe().scheme` reports `nativeItems`.
-`describe().level` is null: Keybay applies the documented Data Protection
-Keychain policy but does not infer or attest a hardware-backing level for the
-stored items.
+With no additional method, an app can open after the device is currently
+unlocked and the Keychain permits access. Adding a Keybay passphrase makes both
+the Data Protection Keychain root and that passphrase necessary to recover the
+store key. Keybay does not add biometric or per-operation presence gating in
+V2.
 
-**Validation.** The full round-trip (write/read/enumerate/delete, binary and
-unicode values, cross-instance reads) is validated on the iOS simulator by the
-`example_flutter/` integration suite. This proves the genuine keychain API path,
-not physical hardware mediation or lifecycle behavior. The repeatable physical
-qualification and its current gaps are tracked in the
-[device security suite](../device-security-suite.md#ios).
+Keychain state may outlive uninstall while the application container does not.
+If a reinstall sees retained root state without its complete encrypted store,
+Keybay fails closed until the application explicitly calls `Keybay.reset()`.
+The same root-only state can follow a same-device restore or interrupted first
+initialization. Follow the SDK's [deliberate recovery procedure](../sdk.md#errors-and-limits);
+do not reset automatically on conflict. Keychain retention after uninstall is
+an [implementation detail](https://developer.apple.com/forums/thread/36442),
+not a permanent OS guarantee. Keybay never treats retained or missing state as
+permission to initialize over an existing encrypted store. Physical reinstall
+and restore remain separate qualification cases.
+
+The iOS simulator lane exercises the genuine Keychain and file APIs, including
+open, persistence, passphrase protection, and reset. It does not prove physical
+hardware mediation. Stronger lifecycle evidence is tracked in the
+[device security suite](../device-security-suite.md).

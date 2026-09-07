@@ -38,23 +38,16 @@ Future<void> main(List<String> args) async {
     await output.create(exclusive: true);
     await output.writeAsString(
       '${const JsonEncoder.withIndent('  ').convert({
-            'schema': 'keybay.device-security-results',
-            'schema_version': 2,
-            'nonce': nonce,
-            'subject': subject,
-            'selection': selection,
-            'command_status': parsed.commandSucceeded ? 'pass' : 'fail',
-            'scenarios': [
-              for (final id in expected.toList()..sort())
-                {
-                  'id': id,
-                  'status': parsed.scenarios[id] ?? 'blocked',
-                  'reason': parsed.scenarios.containsKey(id)
-                      ? 'derived from Flutter JSON test reporter'
-                      : 'required scenario result was absent',
-                },
-            ],
-          })}\n',
+        'schema': 'keybay.device-security-results',
+        'schema_version': 2,
+        'nonce': nonce,
+        'subject': subject,
+        'selection': selection,
+        'command_status': parsed.commandSucceeded ? 'pass' : 'fail',
+        'scenarios': [
+          for (final id in expected.toList()..sort()) {'id': id, 'status': parsed.scenarios[id] ?? 'blocked', 'reason': parsed.scenarios.containsKey(id) ? 'derived from Flutter JSON test reporter' : 'required scenario result was absent'},
+        ],
+      })}\n',
       flush: true,
     );
     stdout.writeln(output.path);
@@ -105,10 +98,11 @@ Future<({Map<String, String> scenarios, bool commandSucceeded})> _parseReporter(
   final outcomes = <String, List<String>>{};
   var metadataPasses = 0;
   bool? commandSucceeded;
-  await for (final line in input
-      .openRead()
-      .transform(utf8.decoder)
-      .transform(const LineSplitter())) {
+  await for (final line
+      in input
+          .openRead()
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
     if (line.trim().isEmpty) continue;
     final Object? decoded;
     try {
@@ -120,7 +114,8 @@ Future<({Map<String, String> scenarios, bool commandSucceeded})> _parseReporter(
     if (decoded['type'] == 'done') {
       if (commandSucceeded != null || decoded['success'] is! bool) {
         throw ResultException(
-            'report contained a malformed duplicate done event');
+          'report contained a malformed duplicate done event',
+        );
       }
       commandSucceeded = decoded['success'] as bool;
       continue;
@@ -143,12 +138,13 @@ Future<({Map<String, String> scenarios, bool commandSucceeded})> _parseReporter(
     final status = skipped
         ? 'skipped'
         : result == 'success'
-            ? 'pass'
-            : result == 'failure' || result == 'error'
-                ? 'fail'
-                : 'inconclusive';
-    if (name
-        .contains('KEYBAY-SECURITY-METADATA nonce=$nonce subject=$subject')) {
+        ? 'pass'
+        : result == 'failure' || result == 'error'
+        ? 'fail'
+        : 'inconclusive';
+    if (name.contains(
+      'KEYBAY-SECURITY-METADATA nonce=$nonce subject=$subject',
+    )) {
       if (status == 'pass') metadataPasses++;
     }
     for (final scenario in expected) {
@@ -159,7 +155,8 @@ Future<({Map<String, String> scenarios, bool commandSucceeded})> _parseReporter(
   }
   if (metadataPasses != 1) {
     throw ResultException(
-        'report must contain one passing nonce/subject metadata test');
+      'report must contain one passing nonce/subject metadata test',
+    );
   }
   final derived = <String, String>{};
   for (final scenario in expected) {

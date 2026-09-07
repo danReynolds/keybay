@@ -1,10 +1,9 @@
 name: keybay
 description: >-
-  Cross-platform secret storage for Dart without Flutter: native Data
-  Protection Keychain items on Apple platforms where available, or an
-  authenticated encrypted file with an OS-protected key.
-version: 0.1.1
-repository: https://github.com/danReynolds/keybay
+  Cross-platform local secret storage for Dart without Flutter: one encrypted,
+  platform-protected application store with optional passphrase protection.
+version: 0.2.0
+repository: https://github.com/danReynolds/keybay/tree/main/packages/keybay
 homepage: https://danreynolds.github.io/keybay/
 issue_tracker: https://github.com/danReynolds/keybay/issues
 topics:
@@ -14,18 +13,26 @@ topics:
   - keystore
   - credentials
 
+# Identity used only by this package's runnable example. Applications declare
+# their own identity in their owning pubspec when the OS cannot supply one.
+keybay:
+  application_id: dev.keybay.package-example
+
 environment:
-  sdk: ^3.6.0
+  sdk: ^3.11.0
 
 resolution: workspace
 
-# Dependency policy (doc/design.md §10): exactly one third-party runtime dependency,
-# exact-pinned, its transitive closure entirely dart-lang official. A
-# dart pub deps snapshot test (test/dependency_closure_test.dart) fails CI if
-# this tree changes. Do not widen a pin or add a dependency without the RFC's
-# review bar.
+# Dependency policy (doc/design.md): reviewed direct dependencies are exact
+# constraints. CI also freezes this workspace's resolved closure by package,
+# version, hosted source, and committed lockfile hash. A consuming application
+# resolves transitive constraints under its own lockfile. Do not widen a pin or
+# add a dependency without the RFC's review bar.
 dependencies:
   cryptography: 2.9.0 # exact pin — vector-firewalled in test/
+  # Exact pin — ordinary Linux uses its typed D-Bus transport to inspect and
+  # refuse Secret Service prompt paths without invoking provider UI.
+  dbus: 0.7.15
   # dart-lang official; needed for the POSIX file shim (0600-from-birth + fsync,
   # which dart:io cannot express). Already in cryptography's transitive closure.
   ffi: 2.2.0

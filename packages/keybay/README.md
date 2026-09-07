@@ -1,46 +1,98 @@
 # keybay
 
-Cross-platform secret storage for Dart and Flutter — no platform channels, no
-plugin registration. On iOS, Android 12+, macOS, and Linux desktop,
-`SecretStorage(appId:)` applies one documented, OS-backed storage policy for the
-current runtime and fails closed when it cannot.
+One encrypted, platform-protected local store for each Dart or Flutter host
+application. No Flutter plugin, account, daemon, or network service.
 
-**[Documentation & security design →](https://danreynolds.github.io/keybay/)**
+Requires Dart 3.11 or later, including when used through Flutter.
+
+Version 0.2.0 replaces the 0.1.x API and encrypted format. It does not read,
+migrate or delete existing V1 stores. An upgrade does not carry those secrets
+into a V2 store; applications needing the old data must handle that transition
+before adopting this version.
 
 ```dart
 import 'package:keybay/keybay.dart';
 
-final store = SecretStorage(appId: 'com.example.myapp');
-
-await store.writeString('api_token', 's3cr3t');
-final token = await store.readString('api_token');   // 's3cr3t'
-await store.delete('api_token');
+final session = await Keybay.open();
+try {
+  await session.set('api-token', 's3cr3t');
+  final token = await session.get('api-token');
+  await session.delete('api-token');
+} finally {
+  await session.close();
+}
 ```
 
-`appId` names the store; the runtime selects the fixed platform scheme. Values
-are bytes (`Uint8List`) at the core, with `readString`/`writeString` for
-convenience. `SecretStorage.withBackend` is the test/custom hatch.
+Strings are the default. `getBytes`, `setBytes`, and `getManyBytes` support
+binary or bounded batch access. `listKeys` returns authenticated names without
+decrypting record values. `clearAll` removes records while preserving store
+protection; selector-free `Keybay.reset()` removes the current application's
+encrypted store, staging, and deletable provider state. It retains nonsecret
+coordination locks; the next successful open generates a fresh store key.
 
-## How secrets are stored
+A retained platform root without its complete encrypted file returns
+`storeStateConflict`, including after some interrupted initializations or Apple
+reinstalls/restores. Follow the [deliberate recovery guidance](https://github.com/danReynolds/keybay/blob/main/doc/sdk.md#errors-and-limits);
+do not automatically reset on error.
 
-| Platform | Secrets live in | Protected by |
-|---|---|---|
-| iOS / entitled macOS | Data Protection Keychain items | fixed device-bound, non-synchronizing item policy |
-| macOS CLI / unentitled | authenticated encrypted file | 32-byte store key in the login Keychain |
-| Android 12+ | authenticated encrypted file | store key wrapped by Android Keystore |
-| Linux desktop | authenticated encrypted file | 32-byte store key in the Secret Service |
+Opening, changing authentication, and resetting may invoke trusted OS/provider
+UI. Record operations and `auth.list()` never prompt. There is no public
+interaction option.
 
-The container is XChaCha20-Poly1305 with an HKDF-SHA256 key-commitment header, so
-a wrong key or tampering fails closed before plaintext is returned. Windows is
-unsupported and fails closed; headless deployment has no supported backend. Full
-per-platform detail and the threat model:
-[the security design](https://danreynolds.github.io/keybay/docs/design/).
+## Application identity
 
-## Companion CLI
+The production API accepts no application ID, path, provider, or store name.
+iOS, Android, and entitled macOS builds use OS-authenticated application facts.
+An ordinary Dart executable on Linux or unentitled macOS declares a stable
+namespace in its owning `pubspec.yaml`:
 
-[`keybay_cli`](https://pub.dev/packages/keybay_cli) injects secrets into a child
-process from a committed manifest — no library dependency in your app.
+```yaml
+keybay:
+  application_id: com.example.my_app
+```
 
-## License
+For AOT output, use `dart run keybay:keybay_compile bin/app.dart -o app` so the
+declaration is embedded. A declared desktop namespace prevents accidental
+collisions but is not an OS-enforced authorization boundary.
+Add `--aot-snapshot` before the entrypoint when building a separate native AOT
+module. Hardened macOS distribution requires signing the module and its
+dedicated Dart AOT runtime with the same Developer ID team. The single-file
+Dart executable has a separately recorded hardened-runtime startup limitation.
 
-MIT.
+## Additional passphrase protection
+
+```dart
+import 'dart:convert';
+import 'dart:typed_data';
+
+final phrase = Uint8List.fromList(utf8.encode(userPassphrase));
+try {
+  await session.auth.add(PassphraseCredential(phrase: phrase));
+} finally {
+  phrase.fillRange(0, phrase.length, 0);
+}
+```
+
+After enrollment, `Keybay.open()` returns `authRequired`; reopen with a
+`PassphraseCredential`. Closing the session clears Keybay's in-memory store-key
+buffer. The encrypted file never becomes plaintext.
+
+See the [SDK guide](https://github.com/danReynolds/keybay/blob/main/doc/sdk.md),
+[security policy](https://github.com/danReynolds/keybay/blob/main/SECURITY.md), and
+[V2 RFC](https://github.com/danReynolds/keybay/blob/main/doc/rfcs/0001-per-application-stores.md).
+
+Supported production profiles are iOS, Android 12+, macOS, and ordinary Linux
+desktop. The Flatpak candidate uses sandbox identity, private ciphertext, and
+XDG Secret Portal protection. Two-app isolation has passed for recorded native
+Linux and nested Docker configurations; see the [qualification report](https://github.com/danReynolds/keybay/blob/main/doc/qualification-status.md)
+for source applicability and remaining gates. Reset retains the portal-owned application
+secret, so an older complete encrypted backup can restore access. Flatpak never
+falls back to ordinary Secret Service. Windows, Snap, and unsupported provider
+configurations fail closed. MIT licensed.
+
+The scoped pre-1.0 release retains platform CI and recorded physical baseline,
+upgrade and crash evidence. Remaining lock/reboot, auth-interruption and actual
+backup/restore/transfer qualification is deferred. Maintained-device Argon2
+latency/memory acceptance is lower priority; no accepted performance budget is
+claimed. These limits and the recorded provider/device configurations are part
+of the release scope, not passing results for unobserved behavior.

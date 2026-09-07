@@ -1,169 +1,234 @@
 # Dart and Flutter SDK
 
-[Documentation](https://danreynolds.github.io/keybay/docs/) ·
-[Architecture](architecture.md) ·
-[Security policy](../SECURITY.md) ·
-[![CI](https://github.com/danReynolds/keybay/actions/workflows/ci.yml/badge.svg)](https://github.com/danReynolds/keybay/actions/workflows/ci.yml)
+[Architecture](architecture.md) · [Security policy](../SECURITY.md) ·
+[Accepted V2 RFC](rfcs/0001-per-application-stores.md)
 
-Cross-platform secret storage for Dart and Flutter. On iOS, Android 12+, macOS,
-and Linux desktop, `SecretStorage(appId:)` automatically applies one documented,
-OS-backed storage policy for the current runtime. No Flutter dependency,
-account, Keybay server, resident process, or network path is required.
+Keybay gives each host application one encrypted local store. The production
+API has no application-ID, path, provider, or alternate-store selector.
 
-> The SDK is available on pub.dev; add it with `dart pub add keybay`. The legacy
-> 0.1.0 GitHub/Homebrew release predates immutable-release verification, and its
-> macOS binary is not a current channel on macOS 26. Require Keybay CLI 0.1.1 or
-> newer; see the [CLI install warning](../packages/keybay_cli/README.md#install).
+Requires Dart 3.11 or later, including when used through Flutter. CI tests the
+SDK at that floor with the reviewed dependency lockfile.
 
-<span id="cli-quickstart"></span>
-The CLI now has a dedicated [guide](../packages/keybay_cli/README.md).
+Version 0.2.0 is a breaking API and storage-format change from 0.1.x. V2 neither
+reads nor migrates or removes V1 stores; do not expect an upgrade to carry old
+secrets into the new store. See the [scoped release evidence](qualification-status.md#sdk-020-release-scope),
+including deferred physical lifecycle work and Argon2 performance acceptance.
 
-## SDK quickstart
+<a id="sdk-quickstart"></a>
 
-Add Keybay to your project:
-
-```sh
-dart pub add keybay
-```
+## Open, use, close
 
 ```dart
 import 'package:keybay/keybay.dart';
 
-final store = SecretStorage(appId: 'com.example.myapp');
+final session = await Keybay.open();
+try {
+  await session.set('service/api-token', 's3cr3t');
 
-await store.writeString('api_token', 's3cr3t');
-final token = await store.readString('api_token');   // 's3cr3t'
-await store.delete('api_token');
+  final token = await session.get('service/api-token');
+  final present = await session.contains('service/api-token');
+  final names = await session.listKeys();
+
+  await session.delete('service/api-token');
+} finally {
+  await session.close();
+}
 ```
 
-`SecretStorage(appId:)` has one production knob: `appId` names the logical
-store and derives its path or service identity; the runtime selects the fixed
-platform scheme. `SecretStorage.withBackend` is the explicit test/custom
-integration hatch for callers that construct a backend themselves, not a
-weaker mode selected by configuration. Values are bytes (`Uint8List`) at the
-core, with `readString`/`writeString` for convenience.
+`open` initializes fully absent state. A retained platform root without its
+complete encrypted file returns `storeStateConflict`; see [recovery](#errors-and-limits)
+before integrating the quickstart. There is no separate create/configure step.
+The session retains the recovered store key, not every record name or value.
+`close` rejects new work, lets accepted work settle, and clears Keybay's
+in-memory store-key buffer. Process exit also releases memory, but explicit
+closure keeps the exposure window bounded in long-lived applications.
 
-## How your secrets are protected
+`Keybay.open()`, `session.auth.add/update/remove`, and `Keybay.reset()` may
+invoke trusted OS or provider UI. Applications should call them from a context
+that can accommodate that interaction. Record operations and `auth.list()`
+never prompt or acquire the platform provider, including when an operation fails.
+There is no public interaction option. Keybay does not collect a passphrase
+through provider UI; the application supplies `PassphraseCredential` explicitly.
 
-`SecretStorage(appId:)` picks the scheme for you and is **fail-closed**: when
-the required platform store is unavailable, it throws rather than substituting
-plaintext storage or a plaintext store key beside the encrypted container.
-Apple native-item paths delegate protection to the Data Protection Keychain.
-File paths use an authenticated container, so a wrong key or tampering fails
-before plaintext is returned. Each platform link has the full breakdown.
+Strings are the default API. Binary callers use `getBytes` and `setBytes`.
+`getManyBytes` authenticates one store generation and returns only the exact
+requested records. `listKeys` decrypts the authenticated manifest but no record
+values. Returned byte arrays belong to the caller.
 
-| Platform | Secrets live in | Protected by |
-|---|---|---|
-| [iOS](platforms/ios.md) | native Data Protection Keychain items | fixed device-bound, non-synchronizing item policy; hardware backing is not attested |
-| [macOS — entitled app](platforms/macos.md#signed-apps-entitled) | native Data Protection Keychain items | the same fixed item policy; hardware backing is not attested |
-| [macOS — CLI / unentitled app](platforms/macos.md#command-line-and-unentitled) | an authenticated encrypted file | 32-byte store key in the login Keychain; login-bound |
-| [Android 12+](platforms/android.md) | an authenticated encrypted file | store key wrapped by Android Keystore; StrongBox requested and actual level inspected |
-| [Linux desktop](platforms/linux.md) | an authenticated encrypted file | 32-byte store key in an unlocked Secret Service provider; login-bound |
+`clearAll` removes all records but keeps the store and its protection policy.
+Selector-free `Keybay.reset()` removes the current application's encrypted store,
+staging, and deletable provider state, retaining nonsecret coordination locks.
+Reset does not open or initialize a replacement store;
+the next successful open generates a fresh store key. Flatpak retains the
+portal-owned application secret, so restoring an older complete encrypted store
+can restore access with the protection that applied to that snapshot.
 
-Every row is exercised through its genuine platform API or service, with the
-evidence class and stronger qualification kept explicit (see
-[Testing](#testing)). Windows is not implemented and fails closed:
+## Application identity
 
-| Platform | Planned scheme |
-|---|---|
-| Windows | encrypted file; key in DPAPI / Credential Manager |
+iOS, Android, and entitled macOS applications use signed/package identity
+facts established by the host platform. The Flatpak candidate uses the running
+sandbox's `/.flatpak-info`, independently of a Dart namespace declaration.
+Ordinary Dart programs on Linux and
+unentitled macOS declare a stable namespace in the pubspec that owns their
+entrypoint:
 
-Headless deployments have no supported Keybay backend or availability
-contract. A desktop resolver may still reach a configured credential service;
-an absent or locked service fails typed. Deployments should use their
-platform's own secret system. The boundary and rationale are normative in
-[the security design](design.md#8-threat-model).
+```yaml
+keybay:
+  application_id: com.example.my_app
+```
 
-## Threat model
+The declaration is build metadata, not a runtime selector. It prevents
+accidental collisions, but on an ordinary unsandboxed desktop it is not an
+authorization boundary: another same-user program can declare the same value.
+A passphrase is strongly recommended there for passwords and other high-value
+credentials.
 
-**Protects against** direct plaintext disclosure from the Keybay container,
-backup, or dotfile sync; other local users; casual disclosure (scrollback,
-`ps` argv); and a wrong or swapped store key (the key-committing container
-fails closed before decryption). On macOS and Linux file paths, offline
-confidentiality is bounded by the strength of the login or keyring password.
-
-**Does not protect against** same-user malware while the keystore is unlocked;
-process-memory disclosure, including swap and core dumps (the package scrubs its
-own native staging buffers, which it can, but key material also transits
-GC-managed heaps — the Dart heap, and on Android the intermediate Java arrays —
-which can't be reliably zeroed and are not claimed to be); rollback to an older
-genuine container (AEAD is not anti-rollback); timing side-channels in pure-Dart
-crypto; root. Concurrent writes are **coordinated**: same-isolate handles
-serialize on a per-path FIFO mutex, and every mutating operation additionally
-takes an exclusive advisory `flock` that excludes other isolates *and* other processes
-(so a lost update, or two first-writers minting rival store keys, cannot happen
-on a filesystem that honors `flock` — local app-data storage does). There is
-**no key escrow**: on the encrypted-file path, losing its store-key item makes
-that container unreadable.
-
-The bar is ssh-agent / aws-vault, not an HSM. Full derivation and the crypto/FFI
-engineering practices are in [design.md](design.md).
-
-## Encrypted-file cryptography
-
-An XChaCha20-Poly1305 (AEAD) container with an HKDF-SHA256-derived
-**key-commitment** header — a wrong key fails closed *before* decryption, and
-multi-key ciphertext games are ruled out. `Random.secure()` only. Everything
-runs through `package:cryptography`, exact-pinned and constructed as concrete
-`Dart*` implementations (so the global crypto locator can't swap them), and is
-exercised against RFC 8439 / RFC 5869 / draft-arciszewski test vectors plus
-edge cases in this package's own suite, so incompatible primitive behavior is
-caught before the exact dependency pin moves. A CI canary fails when a newer
-`cryptography` release appears, so the pin moves only by reviewed decision.
-These checks make dependency and behavior changes visible; they do not prove
-that a dependency is uncompromised.
-
-## Testing
-
-The bar is **every supported platform path exercised through its genuine API or
-service**, repeatably, from the suite — not mocks.
+`dart run` can resolve the owning pubspec. Raw AOT executables cannot, so build
+them through:
 
 ```sh
-./tool/test.sh          # format + analyze + unit + this-machine keystore integration
-./tool/test_linux.sh    # Linux Secret Service, against real gnome-keyring in Docker
-./tool/test_e2e.sh      # the full real-platform matrix (--entitled adds the macOS DP path)
+dart run keybay:keybay_compile bin/app.dart -o build/app
 ```
 
-In CI, every push to main and every pull request runs the unit tier (crypto
-vectors, container mutation, real POSIX permissions, and the
-dependency-closure firewall). Version changes and shared-core changes run the
-full real-provider matrix; provider-specific implementation and harness changes
-run the affected macOS Keychain, Linux Secret Service, iOS-simulator, and
-Android-emulator lanes. The same provider matrix can be started manually. The
-entitled-macOS leg needs a signing identity and runs locally via
-`tool/test_e2e.sh --entitled`. One honest limit: simulator/emulator secure
-hardware is *emulated*, so those legs prove the genuine API **code path**, not
-that physical silicon mediated it. Stronger native/device evidence is scoped by the
-[security suite](device-security-suite.md).
+This validates the owning declaration and embeds it in the executable. Add
+`--aot-snapshot` before the entrypoint to produce a separate native AOT module.
+On macOS, the qualified hardened Developer ID form signs that module and its
+dedicated `dartaotruntime` with the same team; see [macOS packaging](platforms/macos.md#hardened-aot-packaging).
+Recognized `dart install` bundles retain their owning declaration, which Keybay
+checks against any embedded declaration.
 
-## Requirements
+The desktop `package:test` runner uses a generated temporary entrypoint whose
+owning application identity cannot be established. `Keybay.open()` there fails
+closed with `applicationIdentityUnavailable`. Test your application's store
+integration through a small declared `dart run` program or the appropriate
+Flutter native integration runner. The SDK does not expose an identity override
+for tests.
 
-- Dart SDK ≥ 3.6.
-- **Desktop:** macOS or Linux (Windows is unsupported). Linux needs
-  `secret-tool` and a Secret Service provider — see [the Linux
-  notes](platforms/linux.md).
-- **Mobile (inside a Flutter app):** iOS, or Android 12 (API 31)+.
-- One exact-pinned third-party runtime dependency, `cryptography`; the rest of
-  the closure is dart-lang official, and a test fails CI if the tree changes.
-  Because that pin is exact, an app depending — directly or transitively — on a
-  different `cryptography` version won't resolve until the versions align; the
-  pin is a deliberate supply-chain control ([design.md](design.md) §10),
-  not an oversight.
+Flutter hosts also need the checked-in integration described by their platform
+page, notably `KeybayApplicationIdentifier` in the processed iOS Info.plist.
 
-## Status
+## Add passphrase protection
 
-Keybay is published on pub.dev. The API and on-disk container format may still
-change; a future `0.2.0` may carry breaking changes under pub's pre-1.0
-semantics. The macOS, Linux, iOS, and Android 12+ paths are implemented and
-maintained through genuine platform integration; stronger qualification is
-limited to the exact configurations and evidence named by the
-[security suite](device-security-suite.md). Windows is unsupported and fails
-typed.
-Headless operation has no supported backend or availability contract.
-Report vulnerabilities per [SECURITY.md](../SECURITY.md); design rationale is in
-[design.md](design.md) and [architecture.md](architecture.md), with the current
-product comparison in [ecosystem-comparison.md](ecosystem-comparison.md).
+Passphrases are additional to mandatory platform protection, never a
+replacement for it. A store supports zero or one passphrase method.
 
-## License
+```dart
+import 'dart:convert';
+import 'dart:typed_data';
 
-MIT.
+final session = await Keybay.open();
+try {
+  final phrase = Uint8List.fromList(utf8.encode(userPassphrase));
+  try {
+    final method = await session.auth.add(
+      PassphraseCredential(phrase: phrase),
+    );
+    print(method.id); // opaque identifier used for later removal
+  } finally {
+    phrase.fillRange(0, phrase.length, 0);
+  }
+} finally {
+  await session.close();
+}
+```
+
+The credential borrows caller-owned mutable bytes. Keybay snapshots them when
+the operation is called and clears its copy when that operation settles; the
+caller clears its original as soon as practical. Dart cannot guarantee that all
+copies made by the VM, strings, or operating system are zeroed, so avoid
+constructing passphrases as immutable Dart strings when the input layer can
+produce bytes directly.
+
+Once protected, a credential-free open fails with `authRequired`:
+
+```dart
+final phrase = await readPassphraseBytes();
+final opening = Keybay.open(
+  credential: PassphraseCredential(phrase: phrase),
+);
+phrase.fillRange(0, phrase.length, 0);
+
+final session = await opening;
+try {
+  final token = await session.get('service/api-token');
+} finally {
+  await session.close();
+}
+```
+
+Passphrase management occurs only through an authenticated session:
+
+```dart
+final methods = await session.auth.list();
+
+await session.auth.update(
+  PassphraseCredential(phrase: replacementPhraseBytes),
+);
+
+await session.auth.remove(methods.single.id);
+```
+
+`update` replaces the singleton passphrase method while retaining its opaque
+method ID. `remove` takes an ID returned by `list`; this also scales to future
+hardware methods that may have more than one configured instance.
+
+## Errors and limits
+
+Catch `KeybayException` and branch on `code`, not human-readable text. Important
+codes include `authRequired`, `unlockFailed`, `platformProtectorUnavailable`,
+`platformProtectorLocked`, `storeAuthenticationFailed`, `storeStateConflict`,
+`storeBusy`, `staleSession`, and `sessionClosed`. Error strings never contain
+record values, passphrases, provider state, or unrestricted paths.
+
+`storeStateConflict` means the observed files/provider state cannot safely be
+opened or initialized. A retained root without a complete file can occur after
+an interrupted first initialization, or on iOS/entitled macOS if a reinstall or
+same-device restore retains Keychain state while the excluded store file is
+absent. It is not proof that reinstall occurred. When the application has
+established that starting over is appropriate and accepts loss of any previous
+local store, explicitly call `Keybay.reset()`, then reopen. Never automatically
+reset every conflict or authentication failure. Physical reinstall/restore
+qualification remains tracked in the [mobile procedures](mobile-failure-qualification.md).
+
+A known local invalidation reports `staleSession`. Rotation in another process
+or isolate may instead report `storeAuthenticationFailed`, as can damaged or
+replaced data. An operation already running during a same-runtime rotation can
+also report `storeAuthenticationFailed`; subsequent operations observe the local
+invalidation and report `staleSession`. Close the old session and attempt an
+authenticated reopen; keep a failed reopen as an error, not permission to erase
+state.
+
+Mutations use a one-second lock-acquisition deadline. Another operation may
+hold the lock longer while provider UI or Argon2 completes. Retry `storeBusy`
+with bounded backoff within your application's deadline; do not spin or treat
+it as data loss.
+
+Record keys use 1–120 ASCII characters in slash-separated segments matching
+`[A-Za-z0-9][A-Za-z0-9._-]*`. Empty, `.` and `..` segments are invalid. A slash
+organizes names; it does not create another store or protection domain.
+
+## Platform summary
+
+All supported profiles store one encrypted framed file and one small
+platform-protected root per application:
+
+| Host | Application boundary | File | Platform root |
+|---|---|---|---|
+| iOS | signed application group | app-private Application Support, excluded from backup | Data Protection Keychain, `WhenUnlockedThisDeviceOnly`, non-syncing |
+| Android 12+ | package/UID sandbox | app-private `noBackupFilesDir` | one non-exportable Android Keystore AES-GCM key |
+| entitled macOS | signed application group; file isolation depends on App Sandbox | app container or derived Application Support | Data Protection Keychain, exact signed group |
+| unentitled macOS / CLI | declared namespace only | derived Application Support directory | one item in the explicit login Keychain |
+| ordinary Linux desktop | declared namespace only | derived XDG data directory | one item in unlocked Secret Service |
+
+The Flatpak candidate binds `/.flatpak-info` identity and its fixed private data
+directory to the XDG Secret Portal. Its reusable secret is domain-separated into
+Keybay's wrapping root. Native Linux evidence with two installed application IDs
+has passed for the recorded GNOME configuration, as has the bounded nested
+Docker lane. See the [qualification report](qualification-status.md) for source
+applicability; these runs do not qualify every provider or permission set. A detected Flatpak never falls back to
+ordinary Secret Service. Snap, Windows, and unsupported provider configurations
+fail closed.
+
+See the individual [iOS](platforms/ios.md), [Android](platforms/android.md),
+[macOS](platforms/macos.md), and [Linux](platforms/linux.md) pages for the exact
+guarantees and limitations.

@@ -10,9 +10,7 @@ import '../osv.dart';
 
 typedef TextFetcher = Future<String> Function(Uri uri);
 
-final _androidPath = RegExp(
-  r'^/docs/security/bulletin/(\d{4}-\d{2}-\d{2})$',
-);
+final _androidPath = RegExp(r'^/docs/security/bulletin/(\d{4}-\d{2}-\d{2})$');
 final _appleUrl = RegExp(r'^https://support\.apple\.com/en-us/(\d{5,9})$');
 final _cve = RegExp(r'^CVE-\d{4}-\d{4,}$');
 final _safeSubject = RegExp(r'^[^\r\n@`]{1,200}$');
@@ -54,8 +52,9 @@ List<WatcherFinding> appleFindings(
   final grouped = SplayTreeMap<String, Set<({String name, String url})>>();
   var sawSupportedProductRow = false;
   for (final row in document.querySelectorAll('tr')) {
-    final cells =
-        row.children.where((element) => element.localName == 'td').toList();
+    final cells = row.children
+        .where((element) => element.localName == 'td')
+        .toList();
     if (cells.length != 3) {
       continue;
     }
@@ -88,7 +87,9 @@ List<WatcherFinding> appleFindings(
     }
     grouped
         .putIfAbsent(
-            _dateOnly(releaseDate), () => <({String name, String url})>{})
+          _dateOnly(releaseDate),
+          () => <({String name, String url})>{},
+        )
         .add((name: name, url: official));
   }
   if (!sawSupportedProductRow) {
@@ -380,7 +381,8 @@ DateTime _parseIsoDate(String value) {
 DateTime _date(DateTime value) =>
     DateTime.utc(value.year, value.month, value.day);
 
-String _dateOnly(DateTime value) => '${value.year.toString().padLeft(4, '0')}-'
+String _dateOnly(DateTime value) =>
+    '${value.year.toString().padLeft(4, '0')}-'
     '${value.month.toString().padLeft(2, '0')}-'
     '${value.day.toString().padLeft(2, '0')}';
 

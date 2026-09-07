@@ -10,20 +10,15 @@ fi
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/keybay-cli-bench.XXXXXX")"
 app_id="${KEYBAY_BENCHMARK_APP_ID:-keybay-cli-benchmark-${GITHUB_RUN_ID:-$$}}"
 cleanup() {
-  rm -rf "$tmp"
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    rm -rf "$HOME/Library/Application Support/$app_id"
-    security delete-generic-password -s "$app_id" -a store-key \
-      >/dev/null 2>&1 || true
-  else
-    rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/$app_id"
-    secret-tool clear -- service "$app_id" account store-key \
-      >/dev/null 2>&1 || true
+  if [[ -x "$tmp/keybay-benchmark" ]]; then
+    "$tmp/keybay-benchmark" --test-reset >/dev/null 2>&1 || true
   fi
+  rm -rf "$tmp"
 }
 trap cleanup EXIT
 
-dart compile exe packages/keybay_cli/tool/integration_harness.dart \
+dart compile exe -Dkeybay.application_id="$app_id" \
+  packages/keybay_cli/tool/integration_harness.dart \
   -o "$tmp/keybay-benchmark"
 
 iterations="${KEYBAY_BENCHMARK_ITERATIONS:-50}"
@@ -37,7 +32,7 @@ fi
 for index in $(seq 1 10); do
   key="benchmark/key-$index"
   printf 'benchmark-value-%s' "$index" | \
-    "$tmp/keybay-benchmark" "$app_id" set --stdin "$key"
+    "$tmp/keybay-benchmark" set --stdin "$key"
   printf 'KEY_%s=kb://%s\n' "$index" "$key" >>"$ten"
   if [[ $index -eq 1 ]]; then
     printf 'KEY_1=kb://%s\n' "$key" >"$one"
@@ -45,9 +40,9 @@ for index in $(seq 1 10); do
 done
 
 one_result="$("$python" tool/benchmark_cli.py \
-  "$tmp/keybay-benchmark" "$app_id" "$one" "$iterations")"
+  "$tmp/keybay-benchmark" "$one" "$iterations")"
 ten_result="$("$python" tool/benchmark_cli.py \
-  "$tmp/keybay-benchmark" "$app_id" "$ten" "$iterations")"
+  "$tmp/keybay-benchmark" "$ten" "$iterations")"
 printf 'one reference: %s\n' "$one_result"
 printf 'ten references: %s\n' "$ten_result"
 
@@ -59,5 +54,5 @@ if [[ -n "${KEYBAY_BENCHMARK_OUTPUT:-}" ]]; then
 fi
 
 for index in $(seq 1 10); do
-  "$tmp/keybay-benchmark" "$app_id" rm "benchmark/key-$index"
+  "$tmp/keybay-benchmark" rm "benchmark/key-$index"
 done

@@ -44,12 +44,16 @@ void main() {
       closure,
       unorderedEquals(<String>{
         'keybay',
-        'cryptography',
-        'ffi',
+        'args',
         'collection',
         'crypto',
+        'cryptography',
+        'dbus',
+        'ffi',
         'meta',
+        'petitparser',
         'typed_data',
+        'xml',
       }),
       reason:
           'runtime dependency closure changed; review the supply chain '
@@ -116,7 +120,7 @@ void main() {
         Directory('${packageDirectory.path}/bin'),
       ];
       final forbidden = RegExp(
-        r'(?:\b(?:Socket|RawSocket|HttpClient|WebSocket|InternetAddress|NetworkInterface|Directory|RandomAccessFile|IOSink|Link)\b|Process\.(?:run|runSync|start)\b|FileMode\.(?:write|append|writeOnly|writeOnlyAppend)\b|\.(?:writeAsBytes|writeAsString|openWrite)(?:Sync)?\s*\()',
+        r'(?:\b(?:Socket|RawSocket|HttpClient|WebSocket|InternetAddress|NetworkInterface|Directory|IOSink|Link)\b|Process\.(?:run|runSync|start)\b|FileMode\.(?:write|append|writeOnly|writeOnlyAppend)\b|\.(?:writeAsBytes|writeAsString|openWrite)(?:Sync)?\s*\()',
       );
       final fileConstructor = RegExp(
         r'\bFile(?:\.(?:fromRawPath|fromUri))?\s*\(',
@@ -143,12 +147,18 @@ void main() {
       }
       expect(
         fileConstructorCount,
-        1,
+        2,
         reason:
-            'the only CLI File construction must remain the selected manifest '
-            'opened by the bounded readManifest path',
+            'CLI File construction is limited to the selected manifest and '
+            'the controlling-terminal passphrase stream',
       );
       expect(manifestReaderFound, isTrue);
+      expect(
+        File(
+          '${packageDirectory.path}/lib/src/secret_input.dart',
+        ).readAsStringSync(),
+        contains("File('/dev/tty').open()"),
+      );
     },
   );
 }

@@ -1,7 +1,7 @@
 import 'key.dart';
 
 const String defaultManifestPath = './.secrets.env';
-const String cliVersion = '0.1.1';
+const String cliVersion = '0.2.0';
 
 const String cliHelp = '''
 Usage: keybay <command>
@@ -9,9 +9,9 @@ Usage: keybay <command>
 Commands:
   run [-f FILE] -- COMMAND [ARGS...]  Inject a manifest and run a command
   set [--stdin] KEY                   Store a secret
+  get KEY                             Reveal a secret to the foreground TTY
   rm KEY                              Remove a secret
   list                                List qualified keys
-  doctor                              Report backend health
 
 Global flags:
   --help                              Show this help
@@ -49,6 +49,12 @@ final class SetCommand extends CliCommand {
   final bool readFromStdin;
 }
 
+final class GetCommand extends CliCommand {
+  const GetCommand(this.key);
+
+  final String key;
+}
+
 final class RemoveCommand extends CliCommand {
   const RemoveCommand(this.key);
 
@@ -57,10 +63,6 @@ final class RemoveCommand extends CliCommand {
 
 final class ListCommand extends CliCommand {
   const ListCommand();
-}
-
-final class DoctorCommand extends CliCommand {
-  const DoctorCommand();
 }
 
 final class CliUsageException implements Exception {
@@ -86,11 +88,10 @@ CliCommand parseCommand(List<String> arguments) {
   return switch (arguments.first) {
     'run' => _parseRun(arguments),
     'set' => _parseSet(arguments),
+    'get' => _parseGet(arguments),
     'rm' => _parseRemove(arguments),
     'list' when arguments.length == 1 => const ListCommand(),
-    'doctor' when arguments.length == 1 => const DoctorCommand(),
-    'list' ||
-    'doctor' => throw const CliUsageException('command takes no arguments'),
+    'list' => throw const CliUsageException('command takes no arguments'),
     _ => throw const CliUsageException('unknown command'),
   };
 }
@@ -131,6 +132,15 @@ SetCommand _parseSet(List<String> arguments) {
   final key = readFromStdin ? arguments[2] : arguments[1];
   _requireQualifiedKey(key);
   return SetCommand(key: key, readFromStdin: readFromStdin);
+}
+
+GetCommand _parseGet(List<String> arguments) {
+  if (arguments.length != 2) {
+    throw const CliUsageException('usage: keybay get KEY');
+  }
+  final key = arguments[1];
+  _requireQualifiedKey(key);
+  return GetCommand(key);
 }
 
 RemoveCommand _parseRemove(List<String> arguments) {

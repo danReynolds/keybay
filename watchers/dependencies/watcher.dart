@@ -59,9 +59,7 @@ Future<List<WatcherFinding>> dependencyReleaseFindings(
         watcher: 'dependencies',
         marker: 'keybay-dependency-release-pub-$name-$markerVersion',
         title: 'Reviewed dependency release: $name $latest',
-        subjects: <String>[
-          'Pub/$name: reviewed $reviewed; published $latest',
-        ],
+        subjects: <String>['Pub/$name: reviewed $reviewed; published $latest'],
         references: <({String label, String url})>[
           (label: 'Pub/$name', url: url as String),
         ],

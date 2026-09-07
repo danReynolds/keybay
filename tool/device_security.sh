@@ -15,20 +15,25 @@ usage() {
   cat <<'USAGE'
 Usage:
   ./tool/device_security.sh doctor <android|ios|macos|linux> [options]
-  ./tool/device_security.sh run    <android|ios|macos|linux> [options]
+  ./tool/device_security.sh run    <android|ios> [options]
 
 Examples:
   ./tool/device_security.sh doctor android
   ./tool/device_security.sh run android --device SERIAL
+  ./tool/device_security.sh run android --device SERIAL --lifecycle
+  ./tool/device_security.sh run android --device SERIAL --upgrade
+  ./tool/device_security.sh run android --device SERIAL --crash
   ./tool/device_security.sh run android --device SERIAL --tamper \
     --allow-package-reset
   ./tool/device_security.sh doctor ios
   ./tool/device_security.sh run ios --device UDID
-  ./tool/device_security.sh run macos
-  ./tool/device_security.sh run macos --tamper
+  KEYBAY_APPLE_TEAM_ID=TEAMID ./tool/device_security.sh run ios --device UDID --lifecycle
+  KEYBAY_APPLE_TEAM_ID=TEAMID ./tool/device_security.sh run ios --device UDID --upgrade
+  KEYBAY_APPLE_TEAM_ID=TEAMID ./tool/device_security.sh run ios --device UDID --crash
+  ./tool/device_security.sh doctor macos
 
 Baseline qualification changes only the dedicated Keybay security-harness app
-and test namespaces. `--tamper` adds self-restoring artifact corruption and a
+and its one V2 store. `--tamper` adds self-restoring artifact corruption and a
 missing-KEK challenge that deletes only a dedicated harness key. Reboot,
 credential changes, or real backup/transfer require separate procedures and
 are never implied here.

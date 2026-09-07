@@ -52,7 +52,7 @@
             <h1>Keep secrets<br>out of Git.</h1>
             <p class="lede">Commit your non-secret config and <code>kb://</code> references. Keybay keeps the values in an OS-protected local store, then gives your app the environment it already expects. No Keybay account or hosted service. No Keybay daemon, network path, or shell hook.</p>
 
-            <p class="release-note"><strong>The Keybay SDK is available.</strong> Add it with <code>dart pub add keybay</code>. The legacy 0.1.0 GitHub/Homebrew release predates immutable verification, and its macOS CLI fails current code-signature checks; require Keybay CLI 0.1.1 or newer.</p>
+            <p class="release-note"><strong>Keybay V2 is pre-1.0.</strong> The API and encrypted format may still change while the cross-platform provider matrix is qualified.</p>
           </div>
 
           <div class="hero-example" id="cli" aria-label="Keybay CLI workflow">
@@ -79,7 +79,7 @@ Keybay example app started.
   API_URL: https://staging.example.com
   OPENAI_API_KEY: available (value not printed)</code></pre>
             </div>
-            <p class="terminal-note">Keybay keeps one store per OS user. Namespaces organize keys; they do not isolate them. When you use <code>run</code>, resolved values are passed to the child process as environment variables.</p>
+            <p class="terminal-note">The CLI is one application with one encrypted store. Slash-separated names organize records; they do not isolate them. When you use <code>run</code>, only referenced values are passed to the child process as environment variables.</p>
             <a class="text-link" href="./docs/cli/">Full CLI guide →</a>
           </div>
         </div>
@@ -90,16 +90,20 @@ Keybay example app started.
           <div class="sdk-copy">
             <p class="eyebrow">Dart / Flutter SDK</p>
             <h2 id="sdk-title">Use Keybay inside your app.</h2>
-            <p>Name a store with <code>appId</code>, then read and write values directly. Keybay handles the storage details on iOS, Android 12+, macOS, and Linux desktop.</p>
+            <p>Open the host application's one store, then read and write values directly. Keybay derives identity and handles storage on iOS, Android 12+, macOS, and ordinary Linux desktop.</p>
             <a class="text-link" href="./docs/guide/#sdk-quickstart">SDK quickstart →</a>
           </div>
           <div class="sdk-example" aria-label="Keybay Dart SDK example">
             <p class="code-label">Dart</p>
             <pre><code class="language-dart" data-language="dart">import 'package:keybay/keybay.dart';
 
-final store = SecretStorage(appId: 'com.example.app');
-await store.writeString('api-token', tokenFromOAuth);
-final stored = await store.readString('api-token');</code></pre>
+final session = await Keybay.open();
+try {
+  await session.set('api-token', tokenFromOAuth);
+  final stored = await session.get('api-token');
+} finally {
+  await session.close();
+}</code></pre>
           </div>
         </div>
       </section>
@@ -117,17 +121,17 @@ final stored = await store.readString('api-token');</code></pre>
                 <tr><th>Context</th><th>Stored as</th><th>Protected by</th></tr>
               </thead>
               <tbody>
-                <tr><th scope="row"><a href="./docs/platforms/ios/">SDK · iOS</a></th><td data-label="Stored as">Data Protection Keychain items</td><td data-label="Protected by">Device-only, non-synchronizing, after first unlock</td></tr>
-                <tr><th scope="row"><a href="./docs/platforms/android/">SDK · Android 12+</a></th><td data-label="Stored as">Authenticated encrypted file</td><td data-label="Protected by">Store key wrapped by Android Keystore; actual level inspected</td></tr>
-                <tr><th scope="row"><a href="./docs/platforms/macos/#signed-apps-entitled">SDK · entitled macOS</a></th><td data-label="Stored as">Data Protection Keychain items</td><td data-label="Protected by">The same fixed item policy as iOS</td></tr>
-                <tr><th scope="row"><a href="./docs/platforms/macos/#command-line-and-unentitled">SDK/CLI · unentitled macOS</a></th><td data-label="Stored as">Authenticated encrypted file</td><td data-label="Protected by">32-byte store key in the login Keychain</td></tr>
-                <tr><th scope="row"><a href="./docs/platforms/linux/">SDK/CLI · Linux desktop</a></th><td data-label="Stored as">Authenticated encrypted file</td><td data-label="Protected by">32-byte store key in an unlocked Secret Service provider</td></tr>
+                <tr><th scope="row"><a href="./docs/platforms/ios/">SDK · iOS</a></th><td data-label="Stored as">Encrypted framed file</td><td data-label="Protected by">Root in the exact signed Data Protection Keychain group</td></tr>
+                <tr><th scope="row"><a href="./docs/platforms/android/">SDK · Android 12+</a></th><td data-label="Stored as">Encrypted framed file</td><td data-label="Protected by">One non-exportable Android Keystore key</td></tr>
+                <tr><th scope="row"><a href="./docs/platforms/macos/#signed-and-entitled-application">SDK · entitled macOS</a></th><td data-label="Stored as">Encrypted framed file</td><td data-label="Protected by">Root in the exact signed Data Protection Keychain group</td></tr>
+                <tr><th scope="row"><a href="./docs/platforms/macos/#cli-and-unentitled-application">SDK/CLI · unentitled macOS</a></th><td data-label="Stored as">Encrypted framed file</td><td data-label="Protected by">One root item in the login Keychain</td></tr>
+                <tr><th scope="row"><a href="./docs/platforms/linux/">SDK/CLI · Linux desktop</a></th><td data-label="Stored as">Encrypted framed file</td><td data-label="Protected by">One root item in an unlocked Secret Service provider</td></tr>
               </tbody>
             </table>
           </div>
           <div class="platform-notes">
             <p>Desktop credential stores must be available and unlocked. Keybay does not attest Apple hardware backing; on Android it reports the wrapping-key security level it actually observes.</p>
-            <p>Windows and headless deployments are unsupported.</p>
+            <p>Windows, Flatpak, Snap, and unsupported/headless configurations currently fail closed.</p>
           </div>
         </div>
       </section>
@@ -146,11 +150,11 @@ final stored = await store.readString('api-token');</code></pre>
             </div>
             <div>
               <dt>Encrypted, coordinated writes</dt>
-              <dd>On file-backed platforms, Keybay uses XChaCha20-Poly1305 with key commitment. Writes are atomic, mode <code>0600</code>, fsynced, and locked across processes.</dd>
+              <dd>Each record is independently XChaCha20-Poly1305 encrypted. Writes authenticate the source and atomically replace one complete framed file.</dd>
             </div>
             <div>
               <dt>Only claims it can verify</dt>
-              <dd>Android reports its wrapping key's observed security level. Keybay makes no hardware-backing claim for Apple native items.</dd>
+              <dd>Provider and device qualification reports only measured properties. Keybay makes no Secure Enclave claim for generic Apple Keychain items.</dd>
             </div>
             <div>
               <dt>Protection has a boundary</dt>
@@ -164,11 +168,11 @@ final stored = await store.readString('api-token');</code></pre>
         <div class="shell source-grid">
           <div>
             <h2 id="scope-title">Local by design.</h2>
-            <p>Keybay is for secrets that belong on one device. The CLI keeps one store per OS user; the SDK keeps a local store for each <code>appId</code>. It does not sync secrets, distribute them to a team, or provision production systems.</p>
+            <p>Keybay is for secrets that belong on one device. Every host application, including the CLI, has one local store derived from its application identity. Keybay does not sync secrets, distribute them to a team, or provision production systems.</p>
             <a class="text-link" href="./docs/comparison/">See where Keybay fits →</a>
           </div>
           <div>
-            <p class="source-note">Built to stay auditable: one exact-pinned third-party runtime dependency, with the architecture and cryptographic design documented in the repository.</p>
+            <p class="source-note">Built to stay auditable: exact-pinned runtime dependencies, one framed format, and platform boundaries documented in the repository.</p>
             <div class="source-links">
               <a href="./docs/"><strong>Get started →</strong><span>CLI and SDK quickstarts.</span></a>
               <a href="./docs/architecture/"><strong>How it works →</strong><span>Storage choices and reference resolution.</span></a>

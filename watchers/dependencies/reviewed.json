@@ -5,6 +5,12 @@
       "name": "cryptography",
       "reviewed_version": "2.9.0",
       "url": "https://pub.dev/packages/cryptography"
+    },
+    {
+      "ecosystem": "Pub",
+      "name": "dbus",
+      "reviewed_version": "0.7.15",
+      "url": "https://pub.dev/packages/dbus"
     }
   ]
 }

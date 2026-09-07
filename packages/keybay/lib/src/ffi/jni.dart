@@ -1,6 +1,6 @@
 /// Android JNI over pure `dart:ffi` — no Java shipped, no plugin, no
-/// `package:jni` (see doc/design.md §12 for the decision record and the
-/// probe that proved it).
+/// `package:jni`; see the Android platform document for the maintained
+/// boundary and the probe that established its API-31 floor.
 ///
 /// Mechanism: Android officially exports `JNI_GetCreatedJavaVMs` from
 /// `libnativehelper` to apps at **API 31+** (android/ndk#1320), so a library
@@ -18,10 +18,10 @@
 /// same austerity class as the CoreFoundation binding. All `Call*` uses are
 /// the `A` (jvalue-array) variants — variadics can't cross FFI. Byte-array
 /// staging buffers are zeroed after use (key material passes through them).
-/// Java exceptions surface as [JavaThrown] with the class name and message
-/// captured eagerly; one escaping a [Jni.withFrame] is converted to a typed
-/// [KeystoreOperationFailed]. Off-ramp: when package:jni ships Flutter-free
-/// (dart-lang/native#2997), this shim can be re-evaluated behind its seam.
+/// Java exceptions surface as frame-local [JavaThrown] values for typed
+/// classification without copying provider messages into Dart. One escaping
+/// [Jni.withFrame] becomes [KeystoreOperationFailed]. When package:jni ships
+/// Flutter-free (dart-lang/native#2997), this shim can be re-evaluated.
 library;
 
 import 'dart:ffi';
@@ -49,13 +49,13 @@ const int _envExceptionClear = 17;
 const int _envPushLocalFrame = 19;
 const int _envPopLocalFrame = 20;
 const int _envNewObjectA = 30;
-const int _envGetObjectClass = 31;
 const int _envIsInstanceOf = 32;
 const int _envGetMethodId = 33;
 const int _envCallObjectMethodA = 36;
 const int _envCallBooleanMethodA = 39;
-const int _envCallIntMethodA = 51;
 const int _envCallVoidMethodA = 63;
+const int _envGetFieldId = 94;
+const int _envGetIntField = 100;
 const int _envGetStaticMethodId = 113;
 const int _envCallStaticObjectMethodA = 116;
 const int _envNewStringUtf = 167;
@@ -76,17 +76,17 @@ const int _envExceptionCheck = 228;
 
 typedef _PFn = Pointer<Void>;
 
-typedef _GetCreatedVMsC = Int32 Function(
-    Pointer<Pointer<Void>>, Int32, Pointer<Int32>);
-typedef _GetCreatedVMsD = int Function(
-    Pointer<Pointer<Void>>, int, Pointer<Int32>);
+typedef _GetCreatedVMsC =
+    Int32 Function(Pointer<Pointer<Void>>, Int32, Pointer<Int32>);
+typedef _GetCreatedVMsD =
+    int Function(Pointer<Pointer<Void>>, int, Pointer<Int32>);
 
-typedef _VmAttachC = Int32 Function(
-    Pointer<Void>, Pointer<Pointer<Void>>, Pointer<Void>);
-typedef _VmAttachD = int Function(
-    Pointer<Void>, Pointer<Pointer<Void>>, Pointer<Void>);
-typedef _VmGetEnvC = Int32 Function(
-    Pointer<Void>, Pointer<Pointer<Void>>, Int32);
+typedef _VmAttachC =
+    Int32 Function(Pointer<Void>, Pointer<Pointer<Void>>, Pointer<Void>);
+typedef _VmAttachD =
+    int Function(Pointer<Void>, Pointer<Pointer<Void>>, Pointer<Void>);
+typedef _VmGetEnvC =
+    Int32 Function(Pointer<Void>, Pointer<Pointer<Void>>, Int32);
 typedef _VmGetEnvD = int Function(Pointer<Void>, Pointer<Pointer<Void>>, int);
 typedef _VmDetachC = Int32 Function(Pointer<Void>);
 typedef _VmDetachD = int Function(Pointer<Void>);
@@ -99,61 +99,58 @@ typedef _ExceptionCheckD = int Function(Pointer<Void>);
 typedef _VoidOfEnvC = Void Function(Pointer<Void>);
 typedef _VoidOfEnvD = void Function(Pointer<Void>);
 typedef _ObjOfEnvC = _PFn Function(Pointer<Void>);
-typedef _ObjOfObjC = _PFn Function(Pointer<Void>, _PFn);
 typedef _IsInstanceOfC = Uint8 Function(Pointer<Void>, _PFn, _PFn);
 typedef _IsInstanceOfD = int Function(Pointer<Void>, _PFn, _PFn);
 typedef _FindClassC = _PFn Function(Pointer<Void>, Pointer<Utf8>);
-typedef _MethodIdC = _PFn Function(
-    Pointer<Void>, _PFn, Pointer<Utf8>, Pointer<Utf8>);
+typedef _MethodIdC =
+    _PFn Function(Pointer<Void>, _PFn, Pointer<Utf8>, Pointer<Utf8>);
 typedef _CallObjAC = _PFn Function(Pointer<Void>, _PFn, _PFn, Pointer<Uint64>);
-typedef _CallBoolAC = Uint8 Function(
-    Pointer<Void>, _PFn, _PFn, Pointer<Uint64>);
+typedef _CallBoolAC =
+    Uint8 Function(Pointer<Void>, _PFn, _PFn, Pointer<Uint64>);
 typedef _CallBoolAD = int Function(Pointer<Void>, _PFn, _PFn, Pointer<Uint64>);
-typedef _CallIntAC = Int32 Function(Pointer<Void>, _PFn, _PFn, Pointer<Uint64>);
-typedef _CallIntAD = int Function(Pointer<Void>, _PFn, _PFn, Pointer<Uint64>);
 typedef _CallVoidAC = Void Function(Pointer<Void>, _PFn, _PFn, Pointer<Uint64>);
 typedef _CallVoidAD = void Function(Pointer<Void>, _PFn, _PFn, Pointer<Uint64>);
+typedef _GetFieldIdC =
+    _PFn Function(Pointer<Void>, _PFn, Pointer<Utf8>, Pointer<Utf8>);
+typedef _GetIntFieldC = Int32 Function(Pointer<Void>, _PFn, _PFn);
+typedef _GetIntFieldD = int Function(Pointer<Void>, _PFn, _PFn);
 typedef _NewStringUtfC = _PFn Function(Pointer<Void>, Pointer<Utf8>);
-typedef _GetStringUtfCharsC = Pointer<Utf8> Function(
-    Pointer<Void>, _PFn, Pointer<Uint8>);
-typedef _ReleaseStringUtfCharsC = Void Function(
-    Pointer<Void>, _PFn, Pointer<Utf8>);
-typedef _ReleaseStringUtfCharsD = void Function(
-    Pointer<Void>, _PFn, Pointer<Utf8>);
+typedef _GetStringUtfCharsC =
+    Pointer<Utf8> Function(Pointer<Void>, _PFn, Pointer<Uint8>);
+typedef _ReleaseStringUtfCharsC =
+    Void Function(Pointer<Void>, _PFn, Pointer<Utf8>);
+typedef _ReleaseStringUtfCharsD =
+    void Function(Pointer<Void>, _PFn, Pointer<Utf8>);
 typedef _GetArrayLengthC = Int32 Function(Pointer<Void>, _PFn);
 typedef _GetArrayLengthD = int Function(Pointer<Void>, _PFn);
 typedef _NewObjectArrayC = _PFn Function(Pointer<Void>, Int32, _PFn, _PFn);
 typedef _NewObjectArrayD = _PFn Function(Pointer<Void>, int, _PFn, _PFn);
-typedef _SetObjectArrayElementC = Void Function(
-    Pointer<Void>, _PFn, Int32, _PFn);
+typedef _SetObjectArrayElementC =
+    Void Function(Pointer<Void>, _PFn, Int32, _PFn);
 typedef _SetObjectArrayElementD = void Function(Pointer<Void>, _PFn, int, _PFn);
 typedef _NewByteArrayC = _PFn Function(Pointer<Void>, Int32);
 typedef _NewByteArrayD = _PFn Function(Pointer<Void>, int);
-typedef _ByteArrayRegionC = Void Function(
-    Pointer<Void>, _PFn, Int32, Int32, Pointer<Int8>);
-typedef _ByteArrayRegionD = void Function(
-    Pointer<Void>, _PFn, int, int, Pointer<Int8>);
+typedef _ByteArrayRegionC =
+    Void Function(Pointer<Void>, _PFn, Int32, Int32, Pointer<Int8>);
+typedef _ByteArrayRegionD =
+    void Function(Pointer<Void>, _PFn, int, int, Pointer<Int8>);
 
 /// A pending Java exception, captured and cleared at the JNI boundary.
 ///
-/// [className] and [message] are extracted eagerly (they stay valid anywhere);
 /// [throwable] is a **local reference valid only inside the [Jni.withFrame]
 /// scope that threw** — use it there (e.g. [JniFrame.isThrowableA]) and never
-/// store it. One escaping `withFrame` is converted to
-/// [KeystoreOperationFailed] built from the eager strings.
+/// store it. One escaping `withFrame` becomes [KeystoreOperationFailed]
+/// without reading the provider's exception message.
 final class JavaThrown implements Exception {
-  JavaThrown(this.throwable, this.className, this.message, this.op);
+  JavaThrown(this.throwable, this.op);
 
   final Pointer<Void> throwable;
-  final String className;
-  final String? message;
 
   /// The operation that raised it (diagnostics; never secret material).
   final String op;
 
   @override
-  String toString() =>
-      'JavaThrown($op: $className${message == null ? '' : ': $message'})';
+  String toString() => 'JavaThrown($op)';
 }
 
 /// Process-wide JNI access. [instance] fails closed (typed) below API 31 or
@@ -179,12 +176,14 @@ final class Jni {
     try {
       lib = DynamicLibrary.open('libnativehelper.so');
       getCreatedVMs = lib.lookupFunction<_GetCreatedVMsC, _GetCreatedVMsD>(
-          'JNI_GetCreatedJavaVMs');
+        'JNI_GetCreatedJavaVMs',
+      );
     } on ArgumentError catch (e) {
       throw KeystoreUnreachable(
-          'Android Keystore support needs JNI_GetCreatedJavaVMs from '
-          'libnativehelper, which Android exports to apps on Android 12 '
-          '(API 31) and newer ($e)');
+        'Android Keystore support needs JNI_GetCreatedJavaVMs from '
+        'libnativehelper, which Android exports to apps on Android 12 '
+        '(API 31) and newer ($e)',
+      );
     }
 
     final vmOut = calloc<Pointer<Void>>();
@@ -193,8 +192,9 @@ final class Jni {
       final rc = getCreatedVMs(vmOut, 1, count);
       if (rc != _jniOk || count.value < 1 || vmOut.value == nullptr) {
         throw KeystoreUnreachable(
-            'JNI_GetCreatedJavaVMs found no JavaVM (rc=$rc, '
-            'count=${count.value})');
+          'JNI_GetCreatedJavaVMs found no JavaVM (rc=$rc, '
+          'count=${count.value})',
+        );
       }
       final vm = vmOut.value;
       final table = vm.cast<Pointer<Pointer<Void>>>().value;
@@ -232,11 +232,15 @@ final class Jni {
         if (rc == _jniOk && envOut.value != nullptr) {
           return (env: envOut.value, attached: true);
         }
-        throw KeystoreOperationFailed('could not attach to the JavaVM',
-            status: rc);
+        throw KeystoreOperationFailed(
+          'could not attach to the JavaVM',
+          status: rc,
+        );
       }
-      throw KeystoreOperationFailed('could not obtain a JNIEnv',
-          status: existing);
+      throw KeystoreOperationFailed(
+        'could not obtain a JNIEnv',
+        status: existing,
+      );
     } finally {
       calloc.free(envOut);
     }
@@ -244,8 +248,8 @@ final class Jni {
 
   /// Runs [body] with a [JniFrame] under a JNI local-reference frame
   /// ([capacity] refs), popping the frame afterwards. A [JavaThrown] escaping
-  /// [body] is converted to [KeystoreOperationFailed] here (its local
-  /// reference dies with the frame; the eager strings carry the diagnosis).
+  /// [body] is converted to a redacted [KeystoreOperationFailed] here before
+  /// its local reference dies with the frame.
   /// If this call attached the current thread, it is detached at the end so a
   /// spawned-isolate thread never exits still-attached.
   R withFrame<R>(R Function(JniFrame f) body, {int capacity = 64}) {
@@ -266,12 +270,12 @@ final class Jni {
         // the finally below — an async body would resume on dead refs
         // (use-after-free). Enforce the synchronous contract loudly.
         throw ArgumentError(
-            'withFrame body must be synchronous (returned a Future)');
+          'withFrame body must be synchronous (returned a Future)',
+        );
       }
       return result;
     } on JavaThrown catch (e) {
-      throw KeystoreOperationFailed('${e.op}: ${e.className}'
-          '${e.message == null ? '' : ': ${e.message}'}');
+      throw KeystoreOperationFailed('${e.op}: Java operation failed');
     } finally {
       frame._popFrame(env, nullptr);
       frame._arena.releaseAll();
@@ -281,16 +285,70 @@ final class Jni {
 
   /// `System.getProperty(name)` — throws [KeystoreUnreachable] when unset.
   String systemProperty(String name) => withFrame((f) {
-        final system = f.findClass('java/lang/System');
-        final getProperty = f.staticMethodId(
-            system, 'getProperty', '(Ljava/lang/String;)Ljava/lang/String;');
-        final value = f.callStaticObjectA(
-            system, getProperty, [f.str(name)], 'System.getProperty');
-        if (value == nullptr) {
-          throw KeystoreUnreachable('System.getProperty($name) is not set');
-        }
-        return f.dartString(value);
-      });
+    final system = f.findClass('java/lang/System');
+    final getProperty = f.staticMethodId(
+      system,
+      'getProperty',
+      '(Ljava/lang/String;)Ljava/lang/String;',
+    );
+    final value = f.callStaticObjectA(system, getProperty, [
+      f.str(name),
+    ], 'System.getProperty');
+    if (value == nullptr) {
+      throw KeystoreUnreachable('System.getProperty($name) is not set');
+    }
+    return f.dartString(value);
+  });
+
+  /// The current Android process name reported by the framework (API 28+).
+  ///
+  /// This deliberately does not discover an application `Context`: callers
+  /// use the process name only as one narrow host fact and retain ownership of
+  /// the policy that interprets it.
+  String androidProcessName() => withFrame((f) {
+    final application = f.findClass('android/app/Application');
+    final getProcessName = f.staticMethodId(
+      application,
+      'getProcessName',
+      '()Ljava/lang/String;',
+    );
+    final value = f.callStaticObjectA(
+      application,
+      getProcessName,
+      const [],
+      'Application.getProcessName',
+    );
+    if (value == nullptr) {
+      throw const KeystoreUnreachable(
+        'Android framework did not return a process name',
+      );
+    }
+    return f.dartString(value);
+  });
+
+  /// Returns the owning UID and mode for [path] using Android's public `Os`.
+  ///
+  /// Only these two integer facts cross the JNI boundary; this is not a
+  /// general reflection or filesystem API.
+  ({int uid, int mode}) androidStat(String path) => withFrame((f) {
+    final os = f.findClass('android/system/Os');
+    final statMethod = f.staticMethodId(
+      os,
+      'stat',
+      '(Ljava/lang/String;)Landroid/system/StructStat;',
+    );
+    final stat = f.callStaticObjectA(os, statMethod, <Object?>[
+      f.str(path),
+    ], 'Os.stat');
+    if (stat == nullptr) {
+      throw const KeystoreOperationFailed('Os.stat returned null');
+    }
+    final statClass = f.findClass('android/system/StructStat');
+    return (
+      uid: f._intField(stat, statClass, 'st_uid'),
+      mode: f._intField(stat, statClass, 'st_mode'),
+    );
+  });
 }
 
 /// One attached-thread, one-local-frame view of JNI. Obtained via
@@ -302,8 +360,9 @@ final class JniFrame {
     _pushFrame = fns[_envPushLocalFrame]
         .cast<NativeFunction<_PushFrameC>>()
         .asFunction();
-    _popFrame =
-        fns[_envPopLocalFrame].cast<NativeFunction<_PopFrameC>>().asFunction();
+    _popFrame = fns[_envPopLocalFrame]
+        .cast<NativeFunction<_PopFrameC>>()
+        .asFunction();
     _exceptionCheck = fns[_envExceptionCheck]
         .cast<NativeFunction<_ExceptionCheckC>>()
         .asFunction<_ExceptionCheckD>();
@@ -313,20 +372,21 @@ final class JniFrame {
     _exceptionOccurred = fns[_envExceptionOccurred]
         .cast<NativeFunction<_ObjOfEnvC>>()
         .asFunction();
-    _getObjectClass =
-        fns[_envGetObjectClass].cast<NativeFunction<_ObjOfObjC>>().asFunction();
     _isInstanceOf = fns[_envIsInstanceOf]
         .cast<NativeFunction<_IsInstanceOfC>>()
         .asFunction<_IsInstanceOfD>();
-    _findClass =
-        fns[_envFindClass].cast<NativeFunction<_FindClassC>>().asFunction();
-    _getMethodId =
-        fns[_envGetMethodId].cast<NativeFunction<_MethodIdC>>().asFunction();
+    _findClass = fns[_envFindClass]
+        .cast<NativeFunction<_FindClassC>>()
+        .asFunction();
+    _getMethodId = fns[_envGetMethodId]
+        .cast<NativeFunction<_MethodIdC>>()
+        .asFunction();
     _getStaticMethodId = fns[_envGetStaticMethodId]
         .cast<NativeFunction<_MethodIdC>>()
         .asFunction();
-    _newObjectA =
-        fns[_envNewObjectA].cast<NativeFunction<_CallObjAC>>().asFunction();
+    _newObjectA = fns[_envNewObjectA]
+        .cast<NativeFunction<_CallObjAC>>()
+        .asFunction();
     _callObjectA = fns[_envCallObjectMethodA]
         .cast<NativeFunction<_CallObjAC>>()
         .asFunction();
@@ -336,12 +396,15 @@ final class JniFrame {
     _callBooleanA = fns[_envCallBooleanMethodA]
         .cast<NativeFunction<_CallBoolAC>>()
         .asFunction<_CallBoolAD>();
-    _callIntA = fns[_envCallIntMethodA]
-        .cast<NativeFunction<_CallIntAC>>()
-        .asFunction<_CallIntAD>();
     _callVoidA = fns[_envCallVoidMethodA]
         .cast<NativeFunction<_CallVoidAC>>()
         .asFunction<_CallVoidAD>();
+    _getFieldId = fns[_envGetFieldId]
+        .cast<NativeFunction<_GetFieldIdC>>()
+        .asFunction();
+    _getIntField = fns[_envGetIntField]
+        .cast<NativeFunction<_GetIntFieldC>>()
+        .asFunction<_GetIntFieldD>();
     _newStringUtf = fns[_envNewStringUtf]
         .cast<NativeFunction<_NewStringUtfC>>()
         .asFunction();
@@ -379,7 +442,6 @@ final class JniFrame {
   late final _ExceptionCheckD _exceptionCheck;
   late final _VoidOfEnvD _exceptionClear;
   late final _ObjOfEnvC _exceptionOccurred;
-  late final _ObjOfObjC _getObjectClass;
   late final _IsInstanceOfD _isInstanceOf;
   late final _FindClassC _findClass;
   late final _MethodIdC _getMethodId;
@@ -388,8 +450,9 @@ final class JniFrame {
   late final _CallObjAC _callObjectA;
   late final _CallObjAC _callStaticObjectA;
   late final _CallBoolAD _callBooleanA;
-  late final _CallIntAD _callIntA;
   late final _CallVoidAD _callVoidA;
+  late final _GetFieldIdC _getFieldId;
+  late final _GetIntFieldD _getIntField;
   late final _NewStringUtfC _newStringUtf;
   late final _GetStringUtfCharsC _getStringUtfChars;
   late final _ReleaseStringUtfCharsD _releaseStringUtfChars;
@@ -404,46 +467,13 @@ final class JniFrame {
 
   bool _pending() => _exceptionCheck(_env) != 0;
 
-  /// If a Java exception is pending: capture class name + message, clear it,
-  /// and throw [JavaThrown]. Called after every JNI call that can raise.
+  /// Captures and clears a pending Java exception for frame-local type checks.
+  /// Called after every JNI call that can raise; provider messages stay in Java.
   void _check(String op) {
     if (!_pending()) return;
     final occurred = _exceptionOccurred(_env); // local ref
     _exceptionClear(_env);
-    var className = 'unknown';
-    String? message;
-    // Best-effort extraction; never let diagnostics itself throw.
-    try {
-      final cls = _getObjectClass(_env, occurred); // the exception's Class
-      // getName() is a method of java.lang.Class, invoked on the Class object
-      // (cls) — not an instance method of the exception itself.
-      final classClass = _findClassOrNull('java/lang/Class');
-      final getName = classClass == nullptr
-          ? nullptr
-          : methodId(classClass, 'getName', '()Ljava/lang/String;',
-              quiet: true);
-      if (getName != nullptr) {
-        final nameObj = _callObjectA(_env, cls, getName, _jvalues(const []));
-        if (!_pending() && nameObj != nullptr) {
-          className = dartString(nameObj);
-        }
-        if (_pending()) _exceptionClear(_env);
-      }
-      // getMessage() is inherited from Throwable, invoked on the throwable.
-      final getMessage =
-          methodId(cls, 'getMessage', '()Ljava/lang/String;', quiet: true);
-      if (getMessage != nullptr) {
-        final msgObj =
-            _callObjectA(_env, occurred, getMessage, _jvalues(const []));
-        if (!_pending() && msgObj != nullptr) {
-          message = dartString(msgObj);
-        }
-        if (_pending()) _exceptionClear(_env);
-      }
-    } catch (_) {
-      // fall through with whatever was extracted
-    }
-    throw JavaThrown(occurred, className, message, op);
+    throw JavaThrown(occurred, op);
   }
 
   /// Whether [thrown]'s throwable (still frame-local) is an instance of
@@ -474,13 +504,15 @@ final class JniFrame {
     return cls;
   }
 
-  Pointer<Void> methodId(Pointer<Void> cls, String name, String sig,
-      {bool quiet = false}) {
-    final id = _getMethodId(_env, cls, name.toNativeUtf8(allocator: _arena),
-        sig.toNativeUtf8(allocator: _arena));
+  Pointer<Void> methodId(Pointer<Void> cls, String name, String sig) {
+    final id = _getMethodId(
+      _env,
+      cls,
+      name.toNativeUtf8(allocator: _arena),
+      sig.toNativeUtf8(allocator: _arena),
+    );
     if (_pending()) {
       _exceptionClear(_env);
-      if (quiet) return nullptr;
       throw KeystoreOperationFailed('Java method not found: $name$sig');
     }
     return id;
@@ -488,15 +520,32 @@ final class JniFrame {
 
   Pointer<Void> staticMethodId(Pointer<Void> cls, String name, String sig) {
     final id = _getStaticMethodId(
-        _env,
-        cls,
-        name.toNativeUtf8(allocator: _arena),
-        sig.toNativeUtf8(allocator: _arena));
+      _env,
+      cls,
+      name.toNativeUtf8(allocator: _arena),
+      sig.toNativeUtf8(allocator: _arena),
+    );
     if (_pending()) {
       _exceptionClear(_env);
       throw KeystoreOperationFailed('Java static method not found: $name$sig');
     }
     return id;
+  }
+
+  int _intField(Pointer<Void> object, Pointer<Void> cls, String name) {
+    final field = _getFieldId(
+      _env,
+      cls,
+      name.toNativeUtf8(allocator: _arena),
+      'I'.toNativeUtf8(allocator: _arena),
+    );
+    _check('GetFieldID');
+    if (field == nullptr) {
+      throw KeystoreOperationFailed('Java field not found: $name');
+    }
+    final value = _getIntField(_env, object, field);
+    _check('GetIntField');
+    return value;
   }
 
   // --- jvalue packing ---
@@ -515,7 +564,8 @@ final class JniFrame {
         final int v => v.toUnsigned(32),
         final bool b => b ? 1 : 0,
         _ => throw ArgumentError(
-            'unsupported JNI argument type: ${a.runtimeType}'),
+          'unsupported JNI argument type: ${a.runtimeType}',
+        ),
       };
     }
     return out;
@@ -525,42 +575,55 @@ final class JniFrame {
 
   /// Instance call returning an object (nullptr = Java null).
   Pointer<Void> callObjectA(
-      Pointer<Void> recv, Pointer<Void> mid, List<Object?> args, String op) {
+    Pointer<Void> recv,
+    Pointer<Void> mid,
+    List<Object?> args,
+    String op,
+  ) {
     final r = _callObjectA(_env, recv, mid, _jvalues(args));
     _check(op);
     return r;
   }
 
   Pointer<Void> callStaticObjectA(
-      Pointer<Void> cls, Pointer<Void> mid, List<Object?> args, String op) {
+    Pointer<Void> cls,
+    Pointer<Void> mid,
+    List<Object?> args,
+    String op,
+  ) {
     final r = _callStaticObjectA(_env, cls, mid, _jvalues(args));
     _check(op);
     return r;
   }
 
   bool callBooleanA(
-      Pointer<Void> recv, Pointer<Void> mid, List<Object?> args, String op) {
+    Pointer<Void> recv,
+    Pointer<Void> mid,
+    List<Object?> args,
+    String op,
+  ) {
     final r = _callBooleanA(_env, recv, mid, _jvalues(args));
     _check(op);
     return r != 0;
   }
 
-  int callIntA(
-      Pointer<Void> recv, Pointer<Void> mid, List<Object?> args, String op) {
-    final r = _callIntA(_env, recv, mid, _jvalues(args));
-    _check(op);
-    return r;
-  }
-
   void callVoidA(
-      Pointer<Void> recv, Pointer<Void> mid, List<Object?> args, String op) {
+    Pointer<Void> recv,
+    Pointer<Void> mid,
+    List<Object?> args,
+    String op,
+  ) {
     _callVoidA(_env, recv, mid, _jvalues(args));
     _check(op);
   }
 
   /// `new cls(...)` via the constructor with [ctorSig].
   Pointer<Void> newObject(
-      Pointer<Void> cls, String ctorSig, List<Object?> args, String op) {
+    Pointer<Void> cls,
+    String ctorSig,
+    List<Object?> args,
+    String op,
+  ) {
     final ctor = methodId(cls, '<init>', ctorSig);
     final r = _newObjectA(_env, cls, ctor, _jvalues(args));
     _check(op);
@@ -644,5 +707,22 @@ final class JniFrame {
     final out = Uint8List.fromList(view);
     view.fillRange(0, len, 0);
     return out;
+  }
+
+  /// Best-effort support for clearing a Java-owned byte array before its local
+  /// reference is released. Callers decide whether a clearing failure may
+  /// replace their primary operation result.
+  void clearByteArray(Pointer<Void> jarr, {int maxBytes = 1 << 16}) {
+    if (jarr == nullptr) return;
+    final len = _getArrayLength(_env, jarr);
+    _check('GetArrayLength(clear)');
+    if (len < 0 || len > maxBytes) {
+      throw KeystoreOperationFailed('unexpected Java byte[] length: $len');
+    }
+    if (len == 0) return;
+    final zeros = _arena<Int8>(len);
+    zeros.cast<Uint8>().asTypedList(len).fillRange(0, len, 0);
+    _setByteArrayRegion(_env, jarr, 0, len, zeros);
+    _check('SetByteArrayRegion(clear)');
   }
 }

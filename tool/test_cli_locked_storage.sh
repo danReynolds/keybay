@@ -29,12 +29,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
-dart compile exe packages/keybay_cli/tool/integration_harness.dart \
+dart compile exe -Dkeybay.application_id="$app_id" \
+  packages/keybay_cli/tool/integration_harness.dart \
   -o "$tmp/keybay-integration"
 
 sentinel="keybay-locked-value-${GITHUB_RUN_ID:-$$}"
 printf '%s' "$sentinel" | \
-  "$tmp/keybay-integration" "$app_id" set --stdin keybay-itest/token
+  "$tmp/keybay-integration" set --stdin keybay-itest/token
 
 dbus-send \
   --session \
@@ -45,17 +46,15 @@ dbus-send \
   array:objpath:/org/freedesktop/secrets/collection/login >/dev/null
 
 set +e
-output="$("$tmp/keybay-integration" "$app_id" list 2>&1)"
+output="$("$tmp/keybay-integration" list 2>&1)"
 rc=$?
 set -e
 
-[[ $rc -eq 69 ]] || fail "locked-store list exited $rc, expected 69"
-[[ "$output" == *"store key was not returned"* ]] || \
+[[ $rc -eq 1 ]] || fail "locked-store list exited $rc, expected 1"
+[[ "$output" == *"platform protection is locked"* ]] || \
   fail "locked-store output omitted the observed failure"
-[[ "$output" == *"Unlock or reconnect the OS keystore and retry first"* ]] || \
+[[ "$output" == *"Unlock the platform key store and retry"* ]] || \
   fail "locked-store output omitted unlock guidance"
-[[ "$output" == *"some locked Linux providers report this state"* ]] || \
-  fail "locked-store output omitted provider guidance"
 [[ "$output" != *"$sentinel"* ]] || \
   fail "locked-store output leaked the secret sentinel"
 

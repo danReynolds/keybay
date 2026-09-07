@@ -20,24 +20,15 @@ language-neutral quickstart keeps its terminal output redacted.
 
 ## Choose the executable first
 
-For a Dart-channel install, build the native executable and follow Dart's
-`PATH` notice if it prints one:
+Use an official V2 native release when available. Generic `dart install` is
+deferred because it does not yet embed Keybay's declared application identity.
 
-```sh
-dart install keybay_cli
-keybay --version
-```
-
-On macOS, `dart install` does not provide the promoted release's frozen
-Developer ID identity, so Keychain access can fail closed after an update if
-that install's identity changes. Use the signed Homebrew channel when stable
-cross-release Keychain identity matters.
-
-For the current source checkout, do not install a stale snapshot. Resolve the
-workspace and define the source runner once from the repository root:
+For the current source checkout, resolve the workspace and either compile the
+CLI or define the source runner from the repository root:
 
 ```sh
 dart pub get
+dart run keybay:keybay_compile packages/keybay_cli/bin/keybay.dart -o build/keybay
 alias keybay="$PWD/tool/keybay-dev"
 ```
 
@@ -53,18 +44,8 @@ preserving the example directory as the manifest directory. On macOS, the
 shared Dart VM is the Keychain trust unit for this source mode; only the
 promoted Developer ID-signed archive promises the frozen release identity. The
 runner is contributor tooling, not a sixth CLI command and not part of a
-release archive.
-
-Dart also supports global activation from the local package path:
-
-```sh
-dart pub global activate --source path packages/keybay_cli
-```
-
-That is convenient when global state and Pub's dependency-resolution output on
-each invocation are acceptable. It can shadow an installed release; remove it
-with `dart pub global deactivate keybay_cli`. The repository-local runner above
-is the quieter default for source development.
+release archive. Use `build/keybay` instead when testing the embedded AOT
+identity itself.
 
 Now follow the selected README. Run every command from that example directory;
 Keybay deliberately reads only its manifest and never searches parents.

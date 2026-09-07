@@ -2,29 +2,16 @@
 
 # Keybay
 
-Keep local secrets out of your repository and in an OS-protected store.
+Keep local secrets out of your repository and in one encrypted store belonging
+to the host application.
 
-**[See how Keybay works →](https://danreynolds.github.io/keybay/)**
-
-Installation, quickstarts, platform support, and the security design live on
-the Keybay site.
-
-Use the five-command CLI to run local processes with the secrets they need on
-macOS and Linux desktop, or store values directly with the Dart and Flutter SDK
-on macOS, Linux desktop, iOS, and Android 12+.
-
-No Keybay account or hosted service. No Keybay daemon, network path, or shell
-hook.
-
-> **Pre-1.0.** The `keybay` and `keybay_cli` packages are available on pub.dev.
-> The legacy 0.1.0 GitHub/Homebrew release predates immutable-release
-> verification, and its macOS binary does not pass strict code-signature
-> verification or launch on macOS 26. Do not use that macOS artifact. Require
-> Keybay CLI 0.1.1 or newer, or evaluate from a reviewed source checkout.
+Keybay is local-only: no account, hosted service, daemon, network path, or shell
+hook. The Dart SDK supports iOS, Android 12+, macOS, and ordinary Linux desktop.
+The CLI supports macOS and ordinary Linux desktop.
 
 ## CLI
 
-Commit the reference, not the value.
+Commit a reference, not its value:
 
 ```dotenv
 OPENAI_API_KEY=kb://my-app/openai-api-key
@@ -32,45 +19,72 @@ OPENAI_API_KEY=kb://my-app/openai-api-key
 
 ```sh
 keybay set my-app/openai-api-key
+keybay get my-app/openai-api-key
 keybay run -- ./app
 ```
 
-CLI values live in one per-user store. Namespaces prevent naming collisions;
-they are not access-control boundaries.
-
-**[Use the CLI →](https://danreynolds.github.io/keybay/docs/cli/)**
+The CLI is one application with one store. Slash-separated key names organize
+records; they are not separate security domains. See the
+[CLI guide](packages/keybay_cli/README.md).
 
 ## Dart and Flutter
 
 ```dart
 import 'package:keybay/keybay.dart';
 
-final store = SecretStorage(appId: 'com.example.app');
-await store.writeString('api-token', tokenFromOAuth);
-final token = await store.readString('api-token');
+final session = await Keybay.open();
+try {
+  await session.set('api-token', tokenFromOAuth);
+  final token = await session.get('api-token');
+} finally {
+  await session.close();
+}
 ```
 
-**[Use the SDK →](https://danreynolds.github.io/keybay/docs/guide/)**
+There is no runtime application-ID or store selector. Keybay derives an
+OS-authenticated application identity where the platform provides one; ordinary
+Dart executables declare their namespace in the owning `pubspec.yaml`. See the
+[SDK guide](doc/sdk.md).
+
+SDK 0.2.0 replaces the 0.1.x API and encrypted format; V1 stores are not read,
+migrated or removed. The [release scope](doc/qualification-status.md#sdk-020-release-scope)
+records deferred physical lifecycle qualification and lower-priority Argon2
+performance acceptance. They are not passing qualification claims.
+
+A retained platform root without its complete encrypted file returns
+`storeStateConflict`, including after some interrupted initializations or Apple
+reinstalls/restores. Follow the [deliberate recovery guidance](doc/sdk.md#errors-and-limits);
+do not automatically reset on error.
+
+Opening, changing authentication, and resetting may invoke trusted OS/provider
+UI. Record operations and authentication listing never prompt.
 
 ## Security
 
-Keybay's security model is two commitments:
+Every supported platform uses the same independently encrypted record frames
+and an encrypted manifest. One platform-protected root unlocks that
+application's store key. Applications can add a passphrase so platform access
+alone is insufficient.
 
-1. **Secure on every platform** — secrets live in each platform's own
-   credential storage, wired directly and exercised through hermetic tests,
-   genuine provider CI, and physical devices when a claim depends on them.
-2. **Secure over time** — every change runs the standard suite; releases and
-   provider-sensitive changes run the affected real providers; publication is
-   checked against signed source; and new security signals are triaged against
-   the model when they occur.
+Keybay fails closed when identity, platform protection, or authenticated store
+state cannot be established. It never falls back to plaintext, process memory,
+another provider, or pre-V2 storage. See [SECURITY.md](SECURITY.md) and the
+accepted [V2 architecture RFC](doc/rfcs/0001-per-application-stores.md).
 
-If the required platform store is unavailable, locked, invalidated, corrupt,
-tampered with, or unsupported, Keybay fails closed — never plaintext.
-Protection ends when a value is read or injected into a process. Same-user
-malware, rollback, and root remain outside the threat model. Windows and
-headless deployments are unsupported.
+The Flatpak candidate uses authenticated sandbox identity, private ciphertext,
+and XDG Secret Portal protection. The repeatable Linux regression exercises two
+installed application IDs, including inside the tested nested Docker setup.
+Remaining release evidence is tracked in the
+[security suite](doc/device-security-suite.md). It never falls back to raw
+Secret Service. Windows, Snap, and unsupported provider configurations fail
+closed. See the [Linux profile](doc/platforms/linux.md), including Flatpak's
+retained portal secret after reset.
 
-The full model, the threat model, and how to verify a release yourself:
-[SECURITY.md](SECURITY.md).
+## Development tests
 
-MIT licensed.
+Run `./tool/test_e2e.sh all` for the routine SDK regressions, or select a subset
+such as `./tool/test_e2e.sh linux flatpak`. See the
+[platform regression guide](doc/platform-regression.md) for prerequisites,
+reports, CI, and the separate physical-device qualification procedures.
+
+Pre-1.0 APIs and the file format may still change. MIT licensed.

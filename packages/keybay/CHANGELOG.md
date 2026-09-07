@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.2.0
+
+Prepared V2 release; not yet published. This is a breaking API and storage-format
+change from 0.1.x. Existing stores are not read, migrated, or removed by V2.
+
+- Correct Darwin descriptor metadata on macOS x64 and add Intel regression coverage.
+- Keep record operations and authentication listing entirely provider-free;
+  cross-runtime protection changes may report `storeAuthenticationFailed`.
+- Overwrite the Argon2 workspace before release and harden failure cleanup.
+- Clarify retained-root recovery, integration testing and qualification limits.
+
+- Replace the previous storage API with one application store opened through
+  `Keybay.open()`, closable sessions, and additive passphrase protection. V1
+  stores are not migrated automatically.
+- Use one shared authenticated framed-file engine with fixed platform identity,
+  file storage, and key-protection profiles, including Flatpak's Secret Portal
+  profile. Platform claims are limited to the recorded configurations.
+- Reject interaction-forbidden classic macOS Keychain acquisitions before
+  native access, preserving prompt-free record operations.
+- Bind iOS stores to their signed identity and fixed container-relative location
+  so an OS relocation of the preserved application container does not change
+  the cryptographic domain.
+- Close portal secret reads synchronously on cancellation or timeout so a
+  retained provider descriptor cannot keep the application process alive.
+- Resolve embedded declared identity for separate native AOT modules, and add
+  `keybay_compile --aot-snapshot` for compiling that distribution form.
+- Retain accepted independent AI review and native/platform CI evidence. Further
+  physical lifecycle qualification is deferred until devices are available;
+  maintained-device Argon2 latency/memory acceptance is lower-priority follow-up.
+  Neither deferral changes the fixed KDF parameters or establishes a passing
+  result for an unmeasured property.
+
 ## 0.1.1
 
 - Keep Android containers and wrapped-key sidecars beneath the app's no-backup
@@ -42,7 +74,8 @@ Ships as `keybay`: the package was developed under the working name
 `secret_store` and renamed before this first publish (nothing was ever
 released under the old name). The container's wire-format constants that
 happen to carry the old name — the HKDF info strings `secret_store:v1:*` —
-are frozen protocol constants, deliberately not rebranded (doc/design.md §7).
+are frozen protocol constants, deliberately not rebranded (see repository
+history for the pre-V2 format).
 
 ### API
 

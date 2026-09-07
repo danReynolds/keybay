@@ -17,7 +17,7 @@ void main() {
     expect(iosLeg, contains(r'tail -n 500 "$xcode_log"'));
     expect(
       iosLeg,
-      isNot(contains('flutter test integration_test/keybay_test.dart')),
+      isNot(contains('flutter test integration_test/keybay_v2_ios_test.dart')),
       reason: 'Flutter VM-service log discovery can wait indefinitely',
     );
 
@@ -28,19 +28,20 @@ void main() {
     expect(nativeRunner, contains('@"testResults"'));
 
     final dartSuite = File(
-      'example_flutter/integration_test/keybay_test.dart',
+      'example_flutter/integration_test/keybay_v2_ios_test.dart',
     ).readAsStringSync();
     expect(
       RegExp(r'^\s*test\(', multiLine: true).hasMatch(dartSuite),
       isFalse,
       reason: 'plain test() cases bypass IntegrationTestPlugin result capture',
     );
+    final support = File(
+      'example_flutter/integration_test/mobile_security_support.dart',
+    ).readAsStringSync();
     expect(
-      RegExp(
-        r'^\s*testWidgets\(',
-        multiLine: true,
-      ).allMatches(dartSuite).length,
-      8,
+      RegExp(r'^\s*test\(', multiLine: true).hasMatch(support),
+      isFalse,
+      reason: 'receipt metadata must also reach the in-process result bridge',
     );
   });
 }

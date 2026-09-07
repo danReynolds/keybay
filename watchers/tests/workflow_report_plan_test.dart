@@ -53,8 +53,9 @@ void main() {
 
 String _job(String workflow, String name, String? next) {
   final start = workflow.indexOf('  $name:');
-  final end =
-      next == null ? workflow.length : workflow.indexOf('\n  $next:', start);
+  final end = next == null
+      ? workflow.length
+      : workflow.indexOf('\n  $next:', start);
   if (start < 0 || end < 0) throw StateError('workflow job not found: $name');
   return workflow.substring(start, end);
 }

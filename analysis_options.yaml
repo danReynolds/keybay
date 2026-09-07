@@ -5,6 +5,7 @@ include: package:lints/recommended.yaml
 
 analyzer:
   exclude:
+    - build/**
     - example_flutter/**
     - packages/keybay_cli/example/flutter/**
   language:

@@ -29,7 +29,7 @@ distribution problems.
 
 | Tool | Best fit | Storage and distribution model | Added surface |
 |---|---|---|---|
-| **Keybay** | Per-developer local values; Dart/Flutter access; austere macOS/Linux launch injection | Per-app SDK stores; one per-user CLI store with qualified key names; fixed OS-backed runtime policy; no sync | One SDK constructor, or five CLI commands and one small manifest |
+| **Keybay** | Per-developer local values; Dart/Flutter access; austere macOS/Linux launch injection | Per-app SDK stores; one per-user CLI store with qualified key names; fixed OS-backed runtime policy; no sync | One SDK constructor, or six CLI commands and one small manifest |
 | [SecretSpec](https://secretspec.dev/) | One declaration across development, CI, and production | Pluggable keyrings, password managers, and cloud providers; profiles and fallback chains | Provider configuration, profiles, generation, migration, auditing, and language SDKs |
 | [1Password CLI](https://www.1password.dev/cli/secrets-environment-variables) | Shared vaults, managed access, and team or service-account workflows | Values live in 1Password and are referenced by vault/item/field or an Environment | Account, authentication, vault policy, and the broader 1Password system |
 | [dotenvx](https://dotenvx.com/) | Encrypted environment files that travel with a project or deployment | Encrypted values live in files and are decrypted with the corresponding key | File/key distribution and dotenv-compatible workflow |

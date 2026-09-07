@@ -50,10 +50,9 @@ void main() {
       indexUri: Uri.parse('https://source.android.com/docs/security/bulletin'),
       startedAt: start,
     );
-    expect(
-      found.map((item) => item.marker),
-      <String>['keybay-platform-android-2026-09-01'],
-    );
+    expect(found.map((item) => item.marker), <String>[
+      'keybay-platform-android-2026-09-01',
+    ]);
   });
 
   test('Android rejects normalized invalid bulletin dates', () {
@@ -89,9 +88,7 @@ void main() {
         if (package != 'gnome-keyring') {
           return <Map<String, Object?>>[];
         }
-        return <Map<String, Object?>>[
-          ecosystem == 'Ubuntu' ? ubuntu : debian,
-        ];
+        return <Map<String, Object?>>[ecosystem == 'Ubuntu' ? ubuntu : debian];
       },
     );
     expect(found, hasLength(1));

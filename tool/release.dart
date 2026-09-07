@@ -52,12 +52,14 @@ final class Version implements Comparable<Version> {
   /// Returns the version with [part] (`major`/`minor`/`patch`) incremented and
   /// the lesser parts reset.
   Version bump(String part) => switch (part) {
-        'major' => Version(major + 1, 0, 0),
-        'minor' => Version(major, minor + 1, 0),
-        'patch' => Version(major, minor, patch + 1),
-        _ => throw FormatException(
-            'version part must be major, minor, or patch', part),
-      };
+    'major' => Version(major + 1, 0, 0),
+    'minor' => Version(major, minor + 1, 0),
+    'patch' => Version(major, minor, patch + 1),
+    _ => throw FormatException(
+      'version part must be major, minor, or patch',
+      part,
+    ),
+  };
 
   @override
   String toString() => '$major.$minor.$patch';
@@ -93,12 +95,18 @@ enum VersionField {
 /// pin pattern requires a version-shaped value, so it never matches the
 /// `keybay: keybay` executable mapping in the same pubspec.
 final Map<VersionField, RegExp> versionPatterns = <VersionField, RegExp>{
-  VersionField.corePubspecVersion:
-      RegExp(r'(^version:[ \t]*)(\S+)', multiLine: true),
-  VersionField.cliPubspecVersion:
-      RegExp(r'(^version:[ \t]*)(\S+)', multiLine: true),
-  VersionField.cliKeybayPin:
-      RegExp(r'(^[ \t]+keybay:[ \t]*)(\d+\.\d+\.\d+\S*)', multiLine: true),
+  VersionField.corePubspecVersion: RegExp(
+    r'(^version:[ \t]*)(\S+)',
+    multiLine: true,
+  ),
+  VersionField.cliPubspecVersion: RegExp(
+    r'(^version:[ \t]*)(\S+)',
+    multiLine: true,
+  ),
+  VersionField.cliKeybayPin: RegExp(
+    r'(^[ \t]+keybay:[ \t]*)(\d+\.\d+\.\d+\S*)',
+    multiLine: true,
+  ),
   VersionField.cliVersionConst: RegExp("(cliVersion[ \\t]*=[ \\t]*')([^']+)"),
 };
 
@@ -119,16 +127,20 @@ String setVersionField(String content, VersionField field, String version) {
   final pattern = versionPatterns[field]!;
   if (!pattern.hasMatch(content)) {
     throw FormatException(
-        'could not find the ${versionFieldLabels[field]} to update');
+      'could not find the ${versionFieldLabels[field]} to update',
+    );
   }
   return content.replaceFirstMapped(
-      pattern, (match) => '${match.group(1)}$version');
+    pattern,
+    (match) => '${match.group(1)}$version',
+  );
 }
 
 /// Whether a Markdown changelog [content] has a `## <version>` section heading.
-bool changelogHasEntry(String content, String version) =>
-    RegExp('^##[ \\t]+${RegExp.escape(version)}[ \\t]*\$', multiLine: true)
-        .hasMatch(content);
+bool changelogHasEntry(String content, String version) => RegExp(
+  '^##[ \\t]+${RegExp.escape(version)}[ \\t]*\$',
+  multiLine: true,
+).hasMatch(content);
 
 /// Inserts a `## <version>` stub before the first existing `## ` heading (or
 /// after a leading `# ` title), so a fresh release PR carries a slot to fill.
@@ -161,8 +173,9 @@ const Map<VersionField, String> _fieldFiles = <VersionField, String>{
 const String _coreChangelog = 'packages/keybay/CHANGELOG.md';
 const String _cliChangelog = 'packages/keybay_cli/CHANGELOG.md';
 String _repoRoot() {
-  final fromScript =
-      File(Platform.script.toFilePath()).parent.parent.path; // tool/ -> root
+  final fromScript = File(
+    Platform.script.toFilePath(),
+  ).parent.parent.path; // tool/ -> root
   if (File('$fromScript/pubspec.yaml').existsSync()) return fromScript;
   if (File('pubspec.yaml').existsSync()) return Directory.current.path;
   _fail('cannot locate the workspace root; run from the repository');
@@ -172,8 +185,10 @@ Map<VersionField, String> _readAll(String root) {
   final values = <VersionField, String>{};
   for (final field in VersionField.values) {
     final relative = _fieldFiles[field]!;
-    final value =
-        readVersionField(File('$root/$relative').readAsStringSync(), field);
+    final value = readVersionField(
+      File('$root/$relative').readAsStringSync(),
+      field,
+    );
     if (value == null) {
       _fail('could not read the ${versionFieldLabels[field]} from $relative');
     }
@@ -189,7 +204,8 @@ Version _agreedVersion(Map<VersionField, String> values) {
     stderr.writeln('release: version references disagree:');
     for (final entry in values.entries) {
       stderr.writeln(
-          '  ${versionFieldLabels[entry.key]!.padRight(26)} ${entry.value}');
+        '  ${versionFieldLabels[entry.key]!.padRight(26)} ${entry.value}',
+      );
     }
     _fail('synchronize them with `set <x.y.z>` or `bump <part>` first');
   }
@@ -198,8 +214,8 @@ Version _agreedVersion(Map<VersionField, String> values) {
 
 String _changelogState(String root, String relative, String version) =>
     changelogHasEntry(File('$root/$relative').readAsStringSync(), version)
-        ? 'present'
-        : 'MISSING';
+    ? 'present'
+    : 'MISSING';
 
 // ---------------------------------------------------------------------------
 // Commands.
@@ -210,19 +226,24 @@ void _status(String root) {
   stdout.writeln('Keybay version references:');
   for (final entry in values.entries) {
     stdout.writeln(
-        '  ${versionFieldLabels[entry.key]!.padRight(26)} ${entry.value}');
+      '  ${versionFieldLabels[entry.key]!.padRight(26)} ${entry.value}',
+    );
   }
   final distinct = values.values.toSet();
   if (distinct.length == 1) {
     final version = distinct.first;
     stdout.writeln('\nall four agree at $version');
     stdout.writeln(
-        '  CHANGELOG.md ## $version:                    ${_changelogState(root, _coreChangelog, version)}');
+      '  CHANGELOG.md ## $version:                    ${_changelogState(root, _coreChangelog, version)}',
+    );
     stdout.writeln(
-        '  packages/keybay_cli/CHANGELOG.md ## $version: ${_changelogState(root, _cliChangelog, version)}');
+      '  packages/keybay_cli/CHANGELOG.md ## $version: ${_changelogState(root, _cliChangelog, version)}',
+    );
   } else {
-    stdout.writeln('\nreferences DISAGREE (${distinct.length} distinct values) '
-        '— run `set` or `bump` to synchronize');
+    stdout.writeln(
+      '\nreferences DISAGREE (${distinct.length} distinct values) '
+      '— run `set` or `bump` to synchronize',
+    );
   }
 }
 
@@ -245,7 +266,8 @@ void _set(String root, String versionArg, {required bool dryRun}) {
     }
   }
   stdout.writeln(
-      '${dryRun ? '(dry-run) would set' : 'set'} all references to $version:');
+    '${dryRun ? '(dry-run) would set' : 'set'} all references to $version:',
+  );
   if (changed.isEmpty) {
     stdout.writeln('  (already at $version — nothing to change)');
   }
@@ -255,8 +277,9 @@ void _set(String root, String versionArg, {required bool dryRun}) {
   for (final relative in <String>[_coreChangelog, _cliChangelog]) {
     if (_changelogState(root, relative, version) == 'MISSING') {
       stdout.writeln(
-          'note: $relative has no "## $version" section — add release notes '
-          'before publishing');
+        'note: $relative has no "## $version" section — add release notes '
+        'before publishing',
+      );
     }
   }
 }
