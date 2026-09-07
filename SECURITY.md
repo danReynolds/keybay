@@ -27,8 +27,10 @@ another same-user process may claim the same declared namespace and reach
 login-bound storage.
 
 The Flatpak candidate uses authenticated sandbox identity and XDG Secret Portal
-protection. Its isolation claim requires native Linux evidence with two
-installed application IDs; neither hermetic tests nor Docker establish it.
+protection. Two installed application IDs passed isolation checks in the
+recorded native Linux and nested Docker configurations. The [qualification
+report](doc/qualification-status.md) names their sources, providers and limits;
+hermetic transport tests alone do not establish sandbox identity.
 Flatpak never falls back to raw Secret Service. Snap, Windows, and unsupported
 provider configurations fail closed.
 
@@ -36,10 +38,11 @@ Opening, changing authentication, and resetting may invoke trusted OS/provider
 UI. Record operations and authentication listing never prompt. The public API
 has no interaction option.
 
-Classic macOS file Keychains cannot suppress UI per call. Their provider is
-never called when interaction is forbidden, including optional record-failure
-diagnostics. This can leave a changed store classified as
-`storeAuthenticationFailed` instead of a confirmed peer authentication change.
+Record operations do not acquire any platform provider, including on failure.
+Cross-process rotation can therefore report `storeAuthenticationFailed` rather
+than `staleSession`. Classic macOS Keychain and Linux Secret Service acquisitions
+also reject forbidden interaction before provider calls; neither offers a
+portable guarantee against provider-specific access-control UI per call.
 
 ## What Keybay protects
 
@@ -75,6 +78,9 @@ the lifetime of Keybay-owned mutable buffers but cannot prove erasure of every
 Dart VM, cryptographic dependency, or operating-system copy. In particular,
 the pinned HKDF implementation returns an immutable key wrapper whose destruction
 discards its reference without overwriting the dependency's backing bytes.
+The Argon2 production workspace is native memory; Keybay overwrites its retained
+workspace view before releasing it. This narrows one specific lifetime without
+claiming erasure of dependency-internal hash state or every process copy.
 
 For the CLI, `get` is a disclosure guard rather than an authorization boundary:
 it refuses redirected/captured output before decrypting, but a foreground
@@ -90,8 +96,9 @@ not physical secure-hardware mediation. Hardware claims are made only from
 measured platform metadata and retained qualification.
 
 The current device, lifecycle, and provider evidence is tracked in
-[doc/device-security-suite.md](doc/device-security-suite.md). No independent
-security review has been performed yet; Keybay currently has one maintainer.
+[doc/device-security-suite.md](doc/device-security-suite.md). A separate Claude review has been received; its findings, remediation and
+remaining acceptance gates are recorded in the [review record](doc/security-review.md).
+It is an AI model review, not a human external audit; Keybay has one maintainer.
 
 ## Reporting
 

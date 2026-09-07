@@ -126,8 +126,10 @@ final class PassphraseMethod extends AuthMethod {
 
 /// An authenticated, explicitly closable handle to the application store.
 ///
-/// Record operations never present provider UI, including when diagnosing a
-/// stale or damaged store. Only unlock-method changes may request provider UI.
+/// Record operations never acquire a provider, including on failure. A peer
+/// process's protection change may report [KeybayErrorCode.storeAuthenticationFailed]
+/// rather than [KeybayErrorCode.staleSession]; close and authenticate again.
+/// Only unlock-method changes may request provider UI.
 abstract interface class KeybaySession {
   /// Whether this open call initialized previously absent state.
   bool get wasInitialized;

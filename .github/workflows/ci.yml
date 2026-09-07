@@ -144,11 +144,26 @@ jobs:
   integration-macos:
     needs: provider-impact
     if: needs.provider-impact.outputs.macos == 'true'
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            architecture: arm64
+            artifact: sdk-regression-macos
+          - os: macos-15-intel
+            architecture: x64
+            artifact: sdk-regression-macos-x64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dart-lang/setup-dart@7654d458321ee25acccccfdb86cd48bd95768ff1 # v1.8.0
+        with:
+          architecture: ${{ matrix.architecture }}
       - run: dart pub get --enforce-lockfile
+      # Exercise the actual x64 SDK/FFI boundary, including descriptor metadata.
+      - if: matrix.architecture == 'x64'
+        run: ./tool/test_e2e.sh core
       # A disposable Keychain also exercises locked record operations. The
       # public facade separately resolves the runner's genuine account home.
       - run: ./tool/test_e2e.sh macos
@@ -162,7 +177,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: sdk-regression-macos
+          name: ${{ matrix.artifact }}
           path: build/regression/*/report.json
           if-no-files-found: warn
           retention-days: 14

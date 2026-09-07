@@ -12,6 +12,29 @@ import 'package:keybay/src/v2/platform_protector.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('forbidden acquisitions never enter Secret Service', () async {
+    final roots = _MemoryRootStore();
+    final protector = LinuxSecretServiceProtector(
+      binding: _binding(root: '/test/linux-no-interaction'),
+      roots: roots,
+    );
+    for (final operation in <Future<Object?> Function()>[
+      () => protector.createOnly(interaction: PlatformInteraction.forbidden),
+      () => protector.openExisting(
+        ProviderState(Uint8List(32)),
+        interaction: PlatformInteraction.forbidden,
+      ),
+      () => protector.prepareReset(interaction: PlatformInteraction.forbidden),
+    ]) {
+      await expectLater(
+        operation(),
+        throwsA(_failure(PlatformProtectorFailureCode.interactionRequired)),
+      );
+    }
+    expect(roots.lockedAddresses, isEmpty);
+    expect([roots.readCount, roots.createCount, roots.deleteCount], [0, 0, 0]);
+  });
+
   test('creates, seals, and reopens through one fixed provider root', () async {
     final roots = _MemoryRootStore();
     final protector = LinuxSecretServiceProtector(
@@ -20,7 +43,7 @@ void main() {
     );
 
     final creation = await protector.createOnly(
-      interaction: PlatformInteraction.forbidden,
+      interaction: PlatformInteraction.allowed,
     );
     expect(creation.disposition, RootCreationDisposition.created);
     expect(roots.itemCount, 1);
@@ -36,7 +59,7 @@ void main() {
 
     final reopened = await protector.openExisting(
       state,
-      interaction: PlatformInteraction.forbidden,
+      interaction: PlatformInteraction.allowed,
     );
     expect(reopened, isNotNull);
     expect(
@@ -54,14 +77,14 @@ void main() {
       roots: roots,
     );
     final first = await protector.createOnly(
-      interaction: PlatformInteraction.forbidden,
+      interaction: PlatformInteraction.allowed,
     );
     final state = first.lease.providerState.copyBytes();
     await first.lease.close();
     final record = roots.copyOnly(protector.binding.providerAddress);
 
     final second = await protector.createOnly(
-      interaction: PlatformInteraction.forbidden,
+      interaction: PlatformInteraction.allowed,
     );
 
     expect(second.disposition, RootCreationDisposition.adopted);
@@ -85,18 +108,18 @@ void main() {
       roots.addRaw(binding.providerAddress, Uint8List.fromList(<int>[2]));
 
       await expectLater(
-        protector.createOnly(interaction: PlatformInteraction.forbidden),
+        protector.createOnly(interaction: PlatformInteraction.allowed),
         throwsA(_failure(PlatformProtectorFailureCode.stateConflict)),
       );
       await expectLater(
         protector.openExisting(
           ProviderState(List<int>.filled(32, 0)),
-          interaction: PlatformInteraction.forbidden,
+          interaction: PlatformInteraction.allowed,
         ),
         throwsA(_failure(PlatformProtectorFailureCode.stateConflict)),
       );
       await expectLater(
-        protector.prepareReset(interaction: PlatformInteraction.forbidden),
+        protector.prepareReset(interaction: PlatformInteraction.allowed),
         throwsA(_failure(PlatformProtectorFailureCode.stateConflict)),
       );
       expect(roots.itemCount, 2);
@@ -113,9 +136,7 @@ void main() {
         roots: duplicateRoots,
       );
       await expectLater(
-        duplicateProtector.createOnly(
-          interaction: PlatformInteraction.forbidden,
-        ),
+        duplicateProtector.createOnly(interaction: PlatformInteraction.allowed),
         throwsA(_failure(PlatformProtectorFailureCode.stateConflict)),
       );
       expect(duplicateRoots.itemCount, 2);
@@ -127,7 +148,7 @@ void main() {
         roots: changedRoots,
       );
       await expectLater(
-        changedProtector.createOnly(interaction: PlatformInteraction.forbidden),
+        changedProtector.createOnly(interaction: PlatformInteraction.allowed),
         throwsA(_failure(PlatformProtectorFailureCode.stateConflict)),
       );
       expect(changedRoots.itemCount, 1);
@@ -150,12 +171,12 @@ void main() {
       roots: roots,
     );
     final created = await first.createOnly(
-      interaction: PlatformInteraction.forbidden,
+      interaction: PlatformInteraction.allowed,
     );
     await created.lease.close();
 
     await expectLater(
-      second.createOnly(interaction: PlatformInteraction.forbidden),
+      second.createOnly(interaction: PlatformInteraction.allowed),
       throwsA(_failure(PlatformProtectorFailureCode.stateConflict)),
     );
     expect(roots.itemCount, 1);
@@ -170,14 +191,14 @@ void main() {
       roots: roots,
     );
     final created = await protector.createOnly(
-      interaction: PlatformInteraction.forbidden,
+      interaction: PlatformInteraction.allowed,
     );
     final state = ProviderState(created.lease.providerState.copyBytes());
     await created.lease.close();
     roots.flipLastValueByte(binding.providerAddress);
 
     await expectLater(
-      protector.openExisting(state, interaction: PlatformInteraction.forbidden),
+      protector.openExisting(state, interaction: PlatformInteraction.allowed),
       throwsA(_failure(PlatformProtectorFailureCode.invalidated)),
     );
     expect(roots.itemCount, 1);
@@ -196,7 +217,7 @@ void main() {
       await expectLater(
         protector.openExisting(
           ProviderState(<int>[1]),
-          interaction: PlatformInteraction.forbidden,
+          interaction: PlatformInteraction.allowed,
         ),
         throwsA(_failure(PlatformProtectorFailureCode.invalidated)),
       );
@@ -215,12 +236,12 @@ void main() {
         roots: roots,
       );
       final created = await protector.createOnly(
-        interaction: PlatformInteraction.forbidden,
+        interaction: PlatformInteraction.allowed,
       );
       await created.lease.close();
 
       final reset = await protector.prepareReset(
-        interaction: PlatformInteraction.forbidden,
+        interaction: PlatformInteraction.allowed,
       );
       await reset.commit();
       await reset.close();
@@ -239,11 +260,11 @@ void main() {
       roots: roots,
     );
     final created = await protector.createOnly(
-      interaction: PlatformInteraction.forbidden,
+      interaction: PlatformInteraction.allowed,
     );
     await created.lease.close();
     final reset = await protector.prepareReset(
-      interaction: PlatformInteraction.forbidden,
+      interaction: PlatformInteraction.allowed,
     );
     roots.flipLastValueByte(binding.providerAddress);
 
@@ -267,10 +288,10 @@ void main() {
         roots: roots,
       );
       final reset = await protector.prepareReset(
-        interaction: PlatformInteraction.forbidden,
+        interaction: PlatformInteraction.allowed,
       );
       final created = await protector.createOnly(
-        interaction: PlatformInteraction.forbidden,
+        interaction: PlatformInteraction.allowed,
       );
       await created.lease.close();
 
@@ -295,11 +316,11 @@ void main() {
         roots: roots,
       );
       final created = await protector.createOnly(
-        interaction: PlatformInteraction.forbidden,
+        interaction: PlatformInteraction.allowed,
       );
       await created.lease.close();
       final reset = await protector.prepareReset(
-        interaction: PlatformInteraction.forbidden,
+        interaction: PlatformInteraction.allowed,
       );
 
       await expectLater(
@@ -326,12 +347,12 @@ void main() {
       await expectLater(
         protector.openExisting(
           ProviderState(List<int>.filled(32, 0)),
-          interaction: PlatformInteraction.forbidden,
+          interaction: PlatformInteraction.allowed,
         ),
         throwsA(_failure(PlatformProtectorFailureCode.invalidated)),
       );
       final reset = await protector.prepareReset(
-        interaction: PlatformInteraction.forbidden,
+        interaction: PlatformInteraction.allowed,
       );
       await reset.commit();
       await reset.close();
@@ -350,7 +371,7 @@ void main() {
     await expectLater(
       protector.openExisting(
         ProviderState(List<int>.filled(32, 0)),
-        interaction: PlatformInteraction.forbidden,
+        interaction: PlatformInteraction.allowed,
       ),
       throwsA(_failure(PlatformProtectorFailureCode.locked)),
     );
@@ -358,7 +379,7 @@ void main() {
     await expectLater(
       protector.openExisting(
         ProviderState(List<int>.filled(32, 0)),
-        interaction: PlatformInteraction.forbidden,
+        interaction: PlatformInteraction.allowed,
       ),
       throwsA(_failure(PlatformProtectorFailureCode.unavailable)),
     );
@@ -366,7 +387,7 @@ void main() {
     await expectLater(
       protector.openExisting(
         ProviderState(List<int>.filled(32, 0)),
-        interaction: PlatformInteraction.forbidden,
+        interaction: PlatformInteraction.allowed,
       ),
       throwsA(_failure(PlatformProtectorFailureCode.interactionRequired)),
     );
@@ -374,7 +395,7 @@ void main() {
     await expectLater(
       protector.openExisting(
         ProviderState(List<int>.filled(32, 0)),
-        interaction: PlatformInteraction.forbidden,
+        interaction: PlatformInteraction.allowed,
       ),
       throwsA(_failure(PlatformProtectorFailureCode.busy)),
     );

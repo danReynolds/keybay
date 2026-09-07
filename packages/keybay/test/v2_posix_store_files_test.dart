@@ -66,6 +66,29 @@ void main() {
     expect(root.existsSync(), isFalse);
   });
 
+  test('descriptor metadata agrees with native file stat', () async {
+    final root = Directory('${fixture.path}/store');
+    final files = _files(root);
+    final bytes = Uint8List(4097)..fillRange(0, 4097, 19);
+    await _replace(files, bytes);
+    final live = File('${root.path}/$_liveName');
+    final stat = live.statSync();
+    expect(stat.type, FileSystemEntityType.file);
+    expect(stat.mode & 0x1ff, 0x180);
+    final pin = (await files.openPinnedLive())!;
+    try {
+      expect(pin.length, stat.size);
+      expect(await pin.readExact(offset: 0, length: pin.length), bytes);
+    } finally {
+      await pin.close();
+    }
+    _chmod('0644', live.path);
+    await expectLater(
+      files.openPinnedLive(),
+      throwsA(_failure(StoreFilesFailureCode.operationFailed)),
+    );
+  });
+
   test('uses ABI-correct directory and no-follow flags', () async {
     final root = Directory('${fixture.path}/store');
     await _replace(_files(root), <int>[1]);

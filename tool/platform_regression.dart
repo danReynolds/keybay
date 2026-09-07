@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 
 const _routine = ['core', 'macos', 'linux', 'flatpak', 'android', 'ios'];
@@ -71,6 +72,7 @@ not physical-device or release qualification.''';
         ? (status.stdout as String).isNotEmpty
         : null,
     'host': Platform.operatingSystem,
+    'dartAbi': Abi.current().toString(),
     'dart': Platform.version.split(' ').first,
     'status': 'incomplete',
     'results': results,

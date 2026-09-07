@@ -33,12 +33,15 @@ server. iOS boots an available iPhone simulator using the existing XCTest runner
 `all` includes every row, even if the current host lacks a prerequisite. A
 complete local `all` therefore needs a suitably equipped Mac. CI distributes
 the same commands across its Linux, macOS and mobile jobs. Provider-sensitive
-changes select affected jobs; a manual CI run selects every provider.
+changes select affected jobs; a manual CI run selects every provider. macOS
+provider CI includes native arm64 and Intel x64 runners. The x64 job also runs
+the core suite, covering the Darwin descriptor ABI with the actual x64 SDK.
+Local Rosetta runs use the same commands with an x64 Dart SDK on PATH.
 
 ## Results and failures
 
 Each invocation prints a unique `build/regression/run-*/report.json` path. The
-summary records source commit and dirty state, host, Dart version, start/finish
+summary records source commit and dirty state, host, Dart version and ABI, start/finish
 time, and each selected lane's status and exit code. Console diagnostics stay
 in the terminal or CI log. Flatpak additionally writes its detailed provider
 receipt beside the summary (or to `KEYBAY_FLATPAK_REPORT` when explicitly set).
@@ -114,8 +117,9 @@ the opt-in physical Profile/AOT separate-process checks, with their own reports.
 Use `--upgrade` instead to replace build 101 with 102 and verify passphrase-protected
 continuity. Use `--crash` to kill the exact fixture process after acknowledgment
 and again during a bounded write workload, then verify passphrase and record
-recovery in a third process. These physical runners have compiled and passed
-host orchestration checks; physical execution remains pending. The `core` lane also exercises real process kills around POSIX store
+recovery in a third process. Both physical upgrade and crash procedures passed on the recorded Pixel 6a
+and iPhone 16 configurations; see the [qualification report](qualification-status.md)
+for exact sources and remaining lock/reboot/restore cases. The `core` lane also exercises real process kills around POSIX store
 replacement on macOS/Linux, using disposable provider state.
 Routine emulator/simulator results
 do not establish physical secure-hardware behavior, process/update continuity,

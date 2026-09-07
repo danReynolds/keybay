@@ -25,6 +25,11 @@ protection; selector-free `Keybay.reset()` removes the current application's
 encrypted store, staging, and deletable provider state. It retains nonsecret
 coordination locks; the next successful open generates a fresh store key.
 
+A retained platform root without its complete encrypted file returns
+`storeStateConflict`, including after some interrupted initializations or Apple
+reinstalls/restores. Follow the [deliberate recovery guidance](../../doc/sdk.md#errors-and-limits);
+do not automatically reset on error.
+
 Opening, changing authentication, and resetting may invoke trusted OS/provider
 UI. Record operations and `auth.list()` never prompt. There is no public
 interaction option.
@@ -72,8 +77,9 @@ See the [SDK guide](../../doc/sdk.md), [security policy](../../SECURITY.md), and
 
 Supported production profiles are iOS, Android 12+, macOS, and ordinary Linux
 desktop. The Flatpak candidate uses sandbox identity, private ciphertext, and
-XDG Secret Portal protection; qualified isolation awaits native Linux evidence
-with two installed application IDs. Reset retains the portal-owned application
+XDG Secret Portal protection. Two-app isolation has passed for recorded native
+Linux and nested Docker configurations; see the [qualification report](../../doc/qualification-status.md)
+for source applicability and remaining gates. Reset retains the portal-owned application
 secret, so an older complete encrypted backup can restore access. Flatpak never
 falls back to ordinary Secret Service. Windows, Snap, and unsupported provider
 configurations fail closed. MIT licensed.

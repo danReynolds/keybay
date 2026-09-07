@@ -41,7 +41,7 @@ void main() {
         } on Object {
           process.kill(ProcessSignal.sigkill);
           await process.exitCode;
-          rethrow;
+          throw StateError('Locked-store worker timed out: ${await stderr}');
         }
         final output = await stdout;
         final diagnostics = await stderr;
@@ -54,6 +54,9 @@ void main() {
         files.deleteSync(recursive: true);
       }
     },
+    // The worker owns the operation deadline and must finish cleanup before
+    // the test runner cancels this enclosing test.
+    timeout: const Timeout(Duration(seconds: 45)),
     skip:
         Platform.environment['KEYBAY_INTEGRATION'] != '1' ||
             helper == null ||

@@ -228,7 +228,7 @@ void main() {
       final beforeAdd = await environment.separateEngine(deriver).open();
       addTearDown(beforeAdd.close);
       final added = await owner.auth.add(_credential(<int>[1, 2, 3]));
-      await _expectCrossEngineAuthListStale(beforeAdd);
+      await _expectCrossEngineAuthListFailure(beforeAdd);
 
       final beforeUpdate = await environment
           .separateEngine(deriver)
@@ -236,14 +236,14 @@ void main() {
       addTearDown(beforeUpdate.close);
       final updated = await owner.auth.update(_credential(<int>[4, 5, 6]));
       expect(updated.id, added.id);
-      await _expectCrossEngineStale(beforeUpdate);
+      await _expectCrossEngineAuthenticationFailure(beforeUpdate);
 
       final beforeRemove = await environment
           .separateEngine(deriver)
           .open(credential: _credential(<int>[4, 5, 6]));
       addTearDown(beforeRemove.close);
       await owner.auth.remove(added.id);
-      await _expectCrossEngineStale(beforeRemove);
+      await _expectCrossEngineAuthenticationFailure(beforeRemove);
 
       expect(await owner.get('service/token'), 'preserved');
     },
@@ -941,19 +941,23 @@ Future<void> _expectRecords(KeybaySession session) async {
   expect(await session.get('zulu/value'), 'charl');
 }
 
-Future<void> _expectCrossEngineStale(V2StoreSession session) async {
+Future<void> _expectCrossEngineAuthenticationFailure(
+  V2StoreSession session,
+) async {
   await expectLater(
     session.get('service/token'),
-    throwsA(_keybayFailure(KeybayErrorCode.staleSession)),
+    throwsA(_keybayFailure(KeybayErrorCode.storeAuthenticationFailed)),
   );
+  await session.close();
   expect(debugStoreSessionKeyIsCleared(session), isTrue);
 }
 
-Future<void> _expectCrossEngineAuthListStale(V2StoreSession session) async {
+Future<void> _expectCrossEngineAuthListFailure(V2StoreSession session) async {
   await expectLater(
     session.auth.list(),
-    throwsA(_keybayFailure(KeybayErrorCode.staleSession)),
+    throwsA(_keybayFailure(KeybayErrorCode.storeAuthenticationFailed)),
   );
+  await session.close();
   expect(debugStoreSessionKeyIsCleared(session), isTrue);
 }
 

@@ -12,6 +12,36 @@ import 'package:test/test.dart';
 // workspace. This checks that assumption at empty, key and maximum-record sizes;
 // format vectors and SDK rejection tests exercise the surrounding construction.
 void main() {
+  test('Argon2 workspace is stable and writable until release', () async {
+    final state = const DartArgon2id(
+      parallelism: 4,
+      memory: 64 * 1024,
+      iterations: 3,
+      hashLength: 32,
+    ).newState();
+    // ignore: invalid_use_of_protected_member
+    final buffer = state.getByteBuffer();
+    final memory = buffer.asUint64List();
+    List<int>? result;
+    try {
+      result = await state.deriveKeyBytes(
+        password: [1, 2, 3],
+        nonce: Uint8List(16),
+      );
+      // ignore: invalid_use_of_protected_member
+      expect(state.getByteBuffer(), same(buffer));
+      expect(memory.lengthInBytes, 64 * 1024 * 1024);
+      expect(memory.any((word) => word != 0), isTrue);
+      memory.fillRange(0, memory.length, 0);
+      expect(memory, everyElement(0));
+    } finally {
+      result?.fillRange(0, result.length, 0);
+      memory.fillRange(0, memory.length, 0);
+      state.tryReleaseMemory();
+    }
+    // No access to memory after release: the dependency may have freed it.
+  }, timeout: const Timeout(Duration(minutes: 2)));
+
   for (final length in [0, 32, V2StoreLimits.recordValueBytes]) {
     for (final validTag in [true, false]) {
       test('AEAD workspace ownership: $length bytes, valid=$validTag', () async {

@@ -30,7 +30,9 @@ try {
 }
 ```
 
-`open` initializes absent state. There is no separate create/configure step.
+`open` initializes fully absent state. A retained platform root without its
+complete encrypted file returns `storeStateConflict`; see [recovery](#errors-and-limits)
+before integrating the quickstart. There is no separate create/configure step.
 The session retains the recovered store key, not every record name or value.
 `close` rejects new work, lets accepted work settle, and clears Keybay's
 in-memory store-key buffer. Process exit also releases memory, but explicit
@@ -39,7 +41,7 @@ closure keeps the exposure window bounded in long-lived applications.
 `Keybay.open()`, `session.auth.add/update/remove`, and `Keybay.reset()` may
 invoke trusted OS or provider UI. Applications should call them from a context
 that can accommodate that interaction. Record operations and `auth.list()`
-never prompt, including any provider recheck used to classify a stale session.
+never prompt or acquire the platform provider, including when an operation fails.
 There is no public interaction option. Keybay does not collect a passphrase
 through provider UI; the application supplies `PassphraseCredential` explicitly.
 
@@ -89,6 +91,13 @@ On macOS, the qualified hardened Developer ID form signs that module and its
 dedicated `dartaotruntime` with the same team; see [macOS packaging](platforms/macos.md#hardened-aot-packaging).
 Recognized `dart install` bundles retain their owning declaration, which Keybay
 checks against any embedded declaration.
+
+The desktop `package:test` runner uses a generated temporary entrypoint whose
+owning application identity cannot be established. `Keybay.open()` there fails
+closed with `applicationIdentityUnavailable`. Test your application's store
+integration through a small declared `dart run` program or the appropriate
+Flutter native integration runner. The SDK does not expose an identity override
+for tests.
 
 Flutter hosts also need the checked-in integration described by their platform
 page, notably `KeybayApplicationIdentifier` in the processed iOS Info.plist.
@@ -162,9 +171,29 @@ hardware methods that may have more than one configured instance.
 
 Catch `KeybayException` and branch on `code`, not human-readable text. Important
 codes include `authRequired`, `unlockFailed`, `platformProtectorUnavailable`,
-`platformProtectorLocked`, `storeAuthenticationFailed`, `storeBusy`,
-`staleSession`, and `sessionClosed`. Error strings never contain record values,
-passphrases, provider state, or unrestricted paths.
+`platformProtectorLocked`, `storeAuthenticationFailed`, `storeStateConflict`,
+`storeBusy`, `staleSession`, and `sessionClosed`. Error strings never contain
+record values, passphrases, provider state, or unrestricted paths.
+
+`storeStateConflict` means the observed files/provider state cannot safely be
+opened or initialized. A retained root without a complete file can occur after
+an interrupted first initialization, or on iOS/entitled macOS if a reinstall or
+same-device restore retains Keychain state while the excluded store file is
+absent. It is not proof that reinstall occurred. When the application has
+established that starting over is appropriate and accepts loss of any previous
+local store, explicitly call `Keybay.reset()`, then reopen. Never automatically
+reset every conflict or authentication failure. Physical reinstall/restore
+qualification remains tracked in the [mobile procedures](mobile-failure-qualification.md).
+
+A known local invalidation reports `staleSession`. Rotation in another process
+or isolate may instead report `storeAuthenticationFailed`, as can damaged or
+replaced data. Close the old session and attempt an authenticated reopen; keep
+a failed reopen as an error, not permission to erase state.
+
+Mutations use a one-second lock-acquisition deadline. Another operation may
+hold the lock longer while provider UI or Argon2 completes. Retry `storeBusy`
+with bounded backoff within your application's deadline; do not spin or treat
+it as data loss.
 
 Record keys use 1–120 ASCII characters in slash-separated segments matching
 `[A-Za-z0-9][A-Za-z0-9._-]*`. Empty, `.` and `..` segments are invalid. A slash
@@ -186,8 +215,9 @@ platform-protected root per application:
 The Flatpak candidate binds `/.flatpak-info` identity and its fixed private data
 directory to the XDG Secret Portal. Its reusable secret is domain-separated into
 Keybay's wrapping root. Native Linux evidence with two installed application IDs
-is required before claiming qualified Flatpak isolation; hermetic tests and
-Docker runs alone do not supply it. A detected Flatpak never falls back to
+has passed for the recorded GNOME configuration, as has the bounded nested
+Docker lane. See the [qualification report](qualification-status.md) for source
+applicability; these runs do not qualify every provider or permission set. A detected Flatpak never falls back to
 ordinary Secret Service. Snap, Windows, and unsupported provider configurations
 fail closed.
 

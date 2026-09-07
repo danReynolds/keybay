@@ -1218,10 +1218,11 @@ only after the durable replacement succeeds. Other sessions registered with
 the same Keybay runtime are invalidated. Sessions in another isolate or process
 fail closed when their old `Kstore` cannot authenticate the new file, but retain
 key or plaintext already in memory until their own lifecycle clears it. Keybay
-may make a non-interactive platform-root recheck solely to classify
-`StaleSession`; it never authorizes provider UI or releases record plaintext
-during that check. A fresh authenticated `open()` is required when rotation
-cannot be distinguished from tamper or wholesale replacement.
+does not reacquire the platform root to classify this failure. Cross-runtime
+rotation, tamper, and wholesale replacement can therefore produce the same
+`storeAuthenticationFailed` error. The caller closes the old session and makes
+a fresh authenticated `open()`; a failed reopen is not permission to reset.
+`staleSession` remains the result of known invalidation within the runtime.
 
 An operation already pinned to the prior generation may settle after rotation
 if that generation authenticates successfully; it is ordered before the commit.
@@ -1338,11 +1339,9 @@ interaction is permitted.
 
 `get`, `getBytes`, `getManyBytes`, `set`, `setBytes`, `contains`, `listKeys`,
 `delete`, `clearAll`, and `auth.list` never prompt. They use the session's store
-key. Any optional provider recheck for stale-session classification explicitly
-forbids interaction; a portal or classic macOS file Keychain that cannot enforce
-that restriction is not called. Without that optional diagnostic, the original
-`storeAuthenticationFailed` result is retained rather than inferring a peer
-authentication change.
+key and never acquire the platform provider, including on failure. There is
+no provider-based stale-session diagnostic. Cross-runtime authentication changes
+retain `storeAuthenticationFailed` rather than inferring the reason for failure.
 An unclassified authentication failure remains a failure, never permission to
 show UI or return plaintext. Keybay itself never obtains a passphrase through
 provider UI: callers supply the credential explicitly. A future biometric,
@@ -1404,11 +1403,15 @@ passphrase flow.
 The exact-pinned `cryptography` package supplies a pure-Dart `DartArgon2id`, so
 the primitive is available anywhere maintained Dart runs; qualification still
 depends on measured memory and latency, not mere availability. The dependency
-passes RFC 9106 section 5.3's Argon2id vector in Keybay's suite. Its managed
-working memory cannot be promised perfectly overwritten after derivation, so
-documentation treats Dart heap copies, swap, and crash capture as residual
-risks rather than adding a native KDF implementation solely for stronger wipe
-claims.
+passes RFC 9106 section 5.3's Argon2id vector in Keybay's suite. On native hosts
+the production profile uses a 64 MiB native workspace and four helper isolates.
+Keybay captures the workspace before deriving, overwrites it before releasing
+it, and attempts release even if cleanup fails. Its use of the dependency's
+protected workspace accessor is pinned and covered by an ownership regression.
+Cleanup does not allocate another workspace after allocation failure. The
+single-isolate queue bounds callers' concurrent derivations, not the dependency's
+helper count. Dependency-internal hash state, Dart heap copies, swap and crash
+capture remain residual risks; this is not a whole-process erasure guarantee.
 
 ### What a passphrase adds
 
@@ -2181,7 +2184,7 @@ directory suffix with descriptor-relative no-follow operations, and binds that
 root to one identity-derived Secret Service record. Its exact-pinned raw D-Bus
 adapter uses typed byte arrays and only the fixed `SearchItems`, plain
 `OpenSession`, `GetSecret`, `ReadAlias`, `CreateItem(replace=false)`, exact-item
-`Delete`, and `Session.Close` calls. It never invokes provider prompts, unlocks,
+`Delete`, and `Session.Close` calls. It never invokes protocol prompts, unlocks,
 or collection creation. Zero, one, locked, and duplicate search results remain
 distinct; root reads are bounded to 4096 bytes; create adopts only an exact
 readback. An absent default collection is unavailable; only an actual returned

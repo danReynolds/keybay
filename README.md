@@ -46,6 +46,11 @@ OS-authenticated application identity where the platform provides one; ordinary
 Dart executables declare their namespace in the owning `pubspec.yaml`. See the
 [SDK guide](doc/sdk.md).
 
+A retained platform root without its complete encrypted file returns
+`storeStateConflict`, including after some interrupted initializations or Apple
+reinstalls/restores. Follow the [deliberate recovery guidance](doc/sdk.md#errors-and-limits);
+do not automatically reset on error.
+
 Opening, changing authentication, and resetting may invoke trusted OS/provider
 UI. Record operations and authentication listing never prompt.
 

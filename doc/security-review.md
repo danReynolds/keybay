@@ -1,9 +1,47 @@
 # SDK security review handoff
 
-Prepared 2026-09-06. **Independent external review remains pending.** This is
-the review brief and record of local findings, not an external audit report.
-The SDK remains the priority; CLI/TUI, Snap, Windows, migration, hardware
-credentials and rollback anchors are outside this review's implementation scope.
+The [independent Claude report](reviews/2026-09-06-claude.md), supplied by the
+maintainer, reviews commit `88c9cb5e…`. It is a separate AI model review, not a
+human external audit. Its additional referenced receipts were not supplied with
+the pasted report; those executions remain reviewer-reported. Earlier retained
+project CI/device receipts remain separate evidence. CLI/TUI, Snap, Windows,
+migration, hardware credentials and rollback anchors remain deferred.
+
+## Remediation of the Claude findings
+
+The shared engine and fixed platform adapters remain. The targeted corrections
+are:
+
+- **KB-CR-001:** select `fstat$INODE64` on macOS x64 to match the declared struct,
+  use a variadic `fcntl` binding consistently, and add native Intel core/provider
+  CI alongside arm64. Descriptor metadata is compared with native file stat;
+  this is actual SDK coverage, in addition to the reproduced Rosetta C probe.
+- **KB-CR-002/005:** document root-only `storeStateConflict`, deliberate reset,
+  test-runner identity and bounded `storeBusy` handling. A conflict is not proof
+  of reinstall and never implies automatic reset. Qualification wording now
+  reflects the recorded Flatpak and physical mobile runs.
+- **KB-CR-003:** retain the Argon2 workspace before derivation, overwrite it
+  before release, preserve primary failure and attempt release even if clearing
+  fails. Whole-word clearing avoids a slow byte loop. Tests verify ownership and
+  success/failure cleanup while memory is live; no freed view is read. The
+  protected accessor is an explicitly reviewed dependency coupling. No custom
+  KDF, native allocator or new dependency is introduced.
+- **KB-CR-004:** delete provider-based cross-runtime stale diagnostics. Record
+  operations and `auth.list` never acquire providers, even after corruption or
+  peer rotation. Cross-runtime changes can report `storeAuthenticationFailed`;
+  local invalidation still reports `staleSession`. Secret Service also rejects
+  forbidden acquisitions before provider access. Tests cover all record methods,
+  auth listing, provider call counts and peer-record preservation.
+
+Transaction locking remains intact. Exact post-write generation comparison and
+other informational preferences have no demonstrated defect requiring changes
+in this pass. Missing physical lifecycle and release-configuration evidence
+remains missing. The [qualification report](qualification-status.md) records
+verification and source applicability. Claude should review the remediation diff
+before this review gate is treated as resolved.
+
+The sections below preserve the earlier engineering review and its historical
+source/evidence claims. They do not describe the new provider-free record path.
 
 ## Review target
 

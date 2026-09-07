@@ -760,25 +760,10 @@ final class V2StoreSession implements KeybaySession {
       _ensureAccepting();
       final result = _operationTail.then<T>((_) async {
         try {
-          try {
-            _ensureRunnable();
-            return await Future<T>.sync(operation);
-          } finally {
-            _clearBuffers(ownedInputs);
-          }
-        } on KeybayException catch (error, stackTrace) {
-          if (error.code == KeybayErrorCode.storeAuthenticationFailed &&
-              await _hasNewerAuthenticatedGeneration()) {
-            _invalidateImmediately();
-            Error.throwWithStackTrace(
-              _error(
-                KeybayErrorCode.staleSession,
-                'The Keybay session is stale.',
-              ),
-              stackTrace,
-            );
-          }
-          Error.throwWithStackTrace(error, stackTrace);
+          _ensureRunnable();
+          return await Future<T>.sync(operation);
+        } finally {
+          _clearBuffers(ownedInputs);
         }
       });
       // Each operation keeps its own failure; later work and close only wait
@@ -820,68 +805,6 @@ final class V2StoreSession implements KeybaySession {
         KeybayErrorCode.staleSession,
         'The Keybay session is stale.',
       );
-    }
-  }
-
-  /// Distinguishes a genuinely damaged current generation from a rotation by
-  /// another engine. This diagnostic path never asks for a credential and the
-  /// provider acquisition explicitly forbids UI, including on its lease.
-  Future<bool> _hasNewerAuthenticatedGeneration() async {
-    try {
-      return await _host.files.withExclusiveTransaction((transaction) async {
-        final artifacts = await transaction.observeArtifacts();
-        if (!artifacts.hasLiveFile) return true;
-        if (artifacts.hasTransactionArtifacts) return false;
-
-        final pin = await transaction.openPinnedLive();
-        if (pin == null) return true;
-        PlatformRootLease? lease;
-        V2KeyPackage? package;
-        Uint8List? plaintext;
-        try {
-          final prefix = await _readPrefix(pin);
-          final state = ProviderState(prefix.bootstrap.core.providerState);
-          lease = await _host.protector.openExisting(
-            state,
-            interaction: PlatformInteraction.forbidden,
-          );
-          if (lease == null || !lease.providerState.hasSameBytes(state)) {
-            return false;
-          }
-          final domain = _host.binding.domain.copyBytes();
-          final aad = encodePlatformPackageAad(
-            storageDomain: domain,
-            bootstrapCore: prefix.bootstrap.core,
-          );
-          plaintext = await lease.openPackage(
-            sealedPackage: prefix.sealedPackage,
-            aad: aad,
-          );
-          package = decodeKeyPackage(plaintext);
-          final packageStoreId = package.storeId;
-
-          // Only a newer epoch under the same authenticated store identity is
-          // positive evidence of rotation. Replacement, rollback, and
-          // same-epoch policy changes remain indistinguishable from tamper.
-          return _constantTimeEquals(packageStoreId, _storeId) &&
-              package.epoch > _epoch;
-        } on Object {
-          return false;
-        } finally {
-          package?.clear();
-          if (plaintext != null) _clear(plaintext);
-          if (lease != null) {
-            try {
-              await lease.close();
-            } on Object {
-              // Classification is best-effort and never replaces the failure.
-            }
-          }
-          await _closePin(pin);
-        }
-      });
-    } on Object {
-      return false;
     }
   }
 

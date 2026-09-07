@@ -22,7 +22,7 @@ const String linuxDesktopProfileCode = 'linux.desktop.secret-service-file.v1';
 final HostProfile _linuxDesktopProfile = HostProfile(linuxDesktopProfileCode);
 
 /// Resolves an ordinary, unsandboxed Linux process to XDG files and one
-/// Secret Service root over a non-interactive, bytes-only D-Bus adapter.
+/// Secret Service root over a bytes-only D-Bus adapter with no explicit prompts.
 ///
 /// This profile is namespace-only. It deliberately refuses an observed
 /// Flatpak sandbox or Snap security label: confined processes belong to

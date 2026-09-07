@@ -186,8 +186,8 @@ Android uses the existing JNI FFI boundary because Android Keystore has no NDK
 secret-storage API. Linux uses exact-pinned typed D-Bus calls to Secret Service
 or the Secret Portal, never a shell/text protocol. Open, authentication changes,
 and reset may invoke trusted OS/provider UI. Record operations and `auth.list`
-never prompt, including stale-session rechecks. This policy is passed internally
-to providers; it adds no public interaction option.
+never acquire a provider, including on authentication failure. Interaction policy
+is passed internally to providers; it adds no public interaction option.
 
 ## Supply chain and evidence
 

@@ -92,8 +92,9 @@ record set.
 
 Provider calls carry an internal interaction policy fixed by the operation.
 Open, authentication changes, and reset may invoke trusted OS/provider UI;
-record operations and authentication listing never do. A provider recheck
-cannot broaden that permission. The public API has no interaction option.
+record operations and authentication listing never acquire a provider. Their
+failure paths do not recheck provider state to diagnose cross-process rotation.
+The public API has no interaction option.
 
 ## Platform profiles
 

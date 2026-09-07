@@ -88,69 +88,52 @@ void main() {
     },
   );
 
-  test(
-    'cross-engine record and auth-list diagnostics explicitly forbid UI',
-    () async {
-      final environment = _Environment();
-      addTearDown(environment.dispose);
-      final owner = await environment.engine.open(credential: _credential());
-      addTearDown(owner.close);
-      await owner.set('service/token', 'preserved');
-      final readers = <KeybaySession>[];
-      for (var index = 0; index < 3; index++) {
+  for (final damage in [false, true]) {
+    test(
+      '${damage ? 'damaged' : 'peer-rotated'} record operations never acquire the provider',
+      () async {
+        final environment = _Environment();
+        addTearDown(environment.dispose);
+        final owner = await environment.engine.open(credential: _credential());
+        addTearDown(owner.close);
+        await owner.set('service/token', 'preserved');
         final reader = await environment.newEngine().open(
           credential: _credential(),
         );
-        readers.add(reader);
         addTearDown(reader.close);
-      }
-      await owner.auth.update(_credential());
-      environment.protector.calls.clear();
+        if (damage) {
+          final damaged = await _copyLive(environment.files);
+          damaged[damaged.length - 5] ^= 1;
+          environment.files.replaceLiveBytes(damaged);
+        } else {
+          await owner.auth.update(_credential());
+        }
+        environment.protector.calls.clear();
+        final accesses = environment.protector.providerAccesses;
 
-      await expectLater(
-        readers[0].get('service/token'),
-        throwsA(_failure(KeybayErrorCode.staleSession)),
-      );
-      await expectLater(
-        readers[1].set('service/token', 'rejected'),
-        throwsA(_failure(KeybayErrorCode.staleSession)),
-      );
-      await expectLater(
-        readers[2].auth.list(),
-        throwsA(_failure(KeybayErrorCode.staleSession)),
-      );
-      expect(environment.protector.calls, <_ProviderCall>[
-        for (var index = 0; index < 3; index++)
-          (operation: 'open', interaction: PlatformInteraction.forbidden),
-      ]);
-      expect(await owner.get('service/token'), 'preserved');
-    },
-  );
-
-  test(
-    'damage diagnostics cannot invoke a provider that requires interaction',
-    () async {
-      final environment = _Environment(requiresInteraction: true);
-      addTearDown(environment.dispose);
-      final session = await environment.engine.open();
-      addTearDown(session.close);
-      await session.set('service/token', 'preserved');
-      final damaged = await _copyLive(environment.files);
-      damaged[damaged.length - 5] ^= 1;
-      environment.files.replaceLiveBytes(damaged);
-      environment.protector.calls.clear();
-      final accesses = environment.protector.providerAccesses;
-
-      await expectLater(
-        session.get('service/token'),
-        throwsA(_failure(KeybayErrorCode.storeAuthenticationFailed)),
-      );
-      expect(environment.protector.calls, <_ProviderCall>[
-        (operation: 'open', interaction: PlatformInteraction.forbidden),
-      ]);
-      expect(environment.protector.providerAccesses, accesses);
-    },
-  );
+        for (final operation in <Future<Object?> Function()>[
+          () => reader.get('service/token'),
+          () => reader.getBytes('service/token'),
+          () => reader.getManyBytes(['service/token']),
+          () => reader.set('service/token', 'rejected'),
+          () => reader.setBytes('service/token', Uint8List(1)),
+          reader.listKeys,
+          () => reader.contains('service/token'),
+          () => reader.delete('service/token'),
+          reader.clearAll,
+          reader.auth.list,
+        ]) {
+          await expectLater(
+            operation(),
+            throwsA(_failure(KeybayErrorCode.storeAuthenticationFailed)),
+          );
+          expect(environment.protector.calls, isEmpty);
+          expect(environment.protector.providerAccesses, accesses);
+        }
+        if (!damage) expect(await owner.get('service/token'), 'preserved');
+      },
+    );
+  }
 
   test(
     'reusable roots survive failed initialization and reset without adoption',

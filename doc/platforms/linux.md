@@ -16,7 +16,10 @@ and atomically replaces the live file.
 Keybay speaks the Secret Service D-Bus protocol directly through exact-pinned
 `package:dbus`. It never calls `Unlock`, `Prompt`, or `CreateCollection`. A
 locked item, prompt path, absent default collection, timeout, or late reply is a
-typed failure rather than surprise provider UI or a new empty store.
+typed failure rather than a new empty store. Provider-specific access-control
+UI is outside the protocol's prompt-object mechanism: root acquisition therefore
+requires allowed interaction. Only open, authentication changes and reset
+acquire the provider. Record operations and authentication listing never do.
 
 First creation is insert-only and runs under a fixed provider lock in private
 `XDG_RUNTIME_DIR`; a racing initializer adopts only the exact authenticated
@@ -68,8 +71,8 @@ HKDF-SHA256, the resolved storage domain as salt, and the fixed
 Keybay root item and clears operation-owned root buffers after use.
 
 `Keybay.open()`, authentication changes, and reset may invoke trusted provider
-UI. Record operations and `auth.list()` never prompt; a stale-session check
-cannot call an interactive portal. The initial profile rejects continuation
+UI. Record operations and `auth.list()` never acquire the portal, including
+on authentication failure. The initial profile rejects continuation
 tokens and nonempty persisted provider state. Cancellation, timeout, malformed
 response, or missing portal fails closed. A detected Flatpak never falls back
 to ordinary Secret Service, including when that service is reachable.
@@ -118,16 +121,20 @@ found independent 64-byte random secrets stored by application ID in the default
 keyring. This is a review of generation and persistence, not an entropy
 measurement. Continuity depends on that provider state surviving; deleting or
 replacing the default keyring can lose access. The lane uses an unlocked
-backend and does not qualify prompted cancellation or recovery from concurrent
-prompts.
+backend for this historical run. Later native x64 qualification also exercised
+prompt cancellation, timeout and overlapping cancellations; see the dated
+[qualification report](../qualification-status.md). Timeout recovery explicitly
+dismisses any remaining provider dialog; automatic UI dismissal is not claimed.
 
 The complete two-application lane passed locally on 2026-09-05 in Ubuntu 24.04
 arm64 under Docker Engine 29.6.1, using Linux 6.12.76-linuxkit, Flatpak 1.14.6,
 GNOME Keyring 46.1, and XDG Desktop Portal 1.18.4. It verified inner mount/PID
 namespaces, active seccomp, no-new-privileges, and zero effective capabilities,
 alongside the identity, file, lifecycle, concurrency, restart, and no-fallback
-checks above. This is evidence for that recorded configuration. The configured
-native Ubuntu x64 CI lane has not yet run against this snapshot.
+checks above. Native Ubuntu 24.04 x64 CI subsequently passed on 2026-09-06,
+including the prompted cases. Both receipts apply to their recorded sources and
+provider configurations, not every Linux desktop; current source applicability
+is recorded in the [qualification report](../qualification-status.md).
 
 Nested Docker needs a private system D-Bus daemon and the outer-container
 options `--security-opt seccomp=unconfined` and

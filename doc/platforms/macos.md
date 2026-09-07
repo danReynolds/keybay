@@ -15,6 +15,13 @@ Keychain group, non-synchronizing and `WhenUnlockedThisDeviceOnly`.
 
 The entitlement protects root access from processes outside the signed group.
 It does not by itself sandbox the file; App Sandbox is a separate protection.
+Keychain state can survive loss of the application container. If a reinstall,
+restore or interrupted initialization leaves a root without a complete file,
+`open()` returns `storeStateConflict`. Use the SDK's [deliberate recovery
+procedure](../sdk.md#errors-and-limits); do not reset solely because an error
+occurred. Physical reinstall/restore and entitlement transitions need their
+own qualification.
+
 Explicitly authorized same-team apps may share a group. Keybay therefore makes
 no absolute per-app or Secure Enclave claim.
 
@@ -29,9 +36,9 @@ Classic file Keychains cannot reliably suppress UI for one native call.
 Opening, changing authentication, and resetting may therefore show trusted
 Keychain UI. Keybay rejects interaction-forbidden root acquisitions before
 calling the Keychain. Record operations use the session's store key and never
-prompt; if a changed file cannot be authenticated with that key, the optional
-root recheck is unavailable and the error remains `storeAuthenticationFailed`
-instead of inferring a peer authentication change.
+contact the provider. If a changed file cannot be authenticated with that key,
+the error remains `storeAuthenticationFailed` instead of inferring a peer
+authentication change.
 
 This profile is `namespaceOnly`: the declaration is not authenticated by the
 OS. Keychain ACL behavior can add protection for a stable signed executable,

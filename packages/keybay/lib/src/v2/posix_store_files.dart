@@ -1374,7 +1374,7 @@ void _syncDescriptor(int descriptor) {
     // required as the second barrier for both store files and the directory
     // descriptor whose entries carry staging, replacement, and reset state.
     while (true) {
-      final result = _fcntl(descriptor, _fFullFsync);
+      final result = _fcntl(descriptor, _fFullFsync, 0);
       final error = result < 0 ? _errno : 0;
       if (result == 0) break;
       if (error == _eInterrupted) continue;
@@ -1502,7 +1502,8 @@ final class _DarwinTimespec extends Struct {
   external int nanoseconds;
 }
 
-/// Darwin's public 64-bit `struct stat` layout.
+/// Darwin's public 64-bit-inode `struct stat` layout.
+/// macOS x64 selects fstat$INODE64; its plain fstat symbol uses a legacy layout.
 ///
 /// Darwin `/dev/fd` status reports synthesize permissions from the descriptor's
 /// access mode, so access bits must come directly from `fstat(2)` instead.
@@ -1616,10 +1617,11 @@ final int Function(int, Pointer<Uint8>, int, int) _pread = _libc
 final int Function(int) _fsync = _libc
     .lookupFunction<Int32 Function(Int32), int Function(int)>('fsync');
 
-final int Function(int, int) _fcntl = _libc
-    .lookupFunction<Int32 Function(Int32, Int32), int Function(int, int)>(
-      'fcntl',
-    );
+final int Function(int, int, int) _fcntl = _libc
+    .lookupFunction<
+      Int32 Function(Int32, Int32, VarArgs<(Int32,)>),
+      int Function(int, int, int)
+    >('fcntl');
 
 final int Function(int, int) _fchmod = _libc
     .lookupFunction<Int32 Function(Int32, Uint32), int Function(int, int)>(
@@ -1630,7 +1632,7 @@ final int Function(int, Pointer<_DarwinStat>) _darwinFstat = _libc
     .lookupFunction<
       Int32 Function(Int32, Pointer<_DarwinStat>),
       int Function(int, Pointer<_DarwinStat>)
-    >('fstat');
+    >(Abi.current() == Abi.macosX64 ? r'fstat$INODE64' : 'fstat');
 
 final Pointer<Void> Function(int) _aclInit = _libc
     .lookupFunction<Pointer<Void> Function(Int32), Pointer<Void> Function(int)>(

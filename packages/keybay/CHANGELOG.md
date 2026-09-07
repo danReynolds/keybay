@@ -2,6 +2,12 @@
 
 ## Unreleased — V2
 
+- Correct Darwin descriptor metadata on macOS x64 and add Intel regression coverage.
+- Keep record operations and authentication listing entirely provider-free;
+  cross-runtime protection changes may report `storeAuthenticationFailed`.
+- Overwrite the Argon2 workspace before release and harden failure cleanup.
+- Clarify retained-root recovery, integration testing and qualification limits.
+
 - Replace the previous storage API with one application store opened through
   `Keybay.open()`, closable sessions, and additive passphrase protection. V1
   stores are not migrated automatically.

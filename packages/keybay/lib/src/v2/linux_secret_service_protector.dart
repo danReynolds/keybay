@@ -48,6 +48,7 @@ final class LinuxSecretServiceProtector implements PlatformProtector {
     ProviderState state, {
     required PlatformInteraction interaction,
   }) => _atSecretServiceBoundary(
+    interaction,
     () => _core.openExisting(state, () async {
       final item = await _roots.readUnique(_account);
       return item?.value;
@@ -58,6 +59,7 @@ final class LinuxSecretServiceProtector implements PlatformProtector {
   Future<PlatformRootCreation> createOnly({
     required PlatformInteraction interaction,
   }) => _atSecretServiceBoundary(
+    interaction,
     () => _roots.withCreationLock(_account, () async {
       Uint8List? existingRecord;
       Uint8List? candidateRoot;
@@ -101,7 +103,7 @@ final class LinuxSecretServiceProtector implements PlatformProtector {
   @override
   Future<PreparedPlatformReset> prepareReset({
     required PlatformInteraction interaction,
-  }) => _atSecretServiceBoundary(() async {
+  }) => _atSecretServiceBoundary(interaction, () async {
     final item = await _roots.readUnique(_account);
     final record = item?.value;
     try {
@@ -145,7 +147,16 @@ final class LinuxSecretServiceProtector implements PlatformProtector {
   }
 }
 
-Future<T> _atSecretServiceBoundary<T>(Future<T> Function() operation) async {
+Future<T> _atSecretServiceBoundary<T>(
+  PlatformInteraction interaction,
+  Future<T> Function() operation,
+) async {
+  // Secret Service does not standardize provider-specific access-control UI.
+  if (interaction == PlatformInteraction.forbidden) {
+    throw const PlatformProtectorFailure(
+      PlatformProtectorFailureCode.interactionRequired,
+    );
+  }
   try {
     return await operation();
   } on PlatformProtectorFailure {

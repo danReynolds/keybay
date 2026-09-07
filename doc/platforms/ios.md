@@ -39,8 +39,13 @@ V2.
 Keychain state may outlive uninstall while the application container does not.
 If a reinstall sees retained root state without its complete encrypted store,
 Keybay fails closed until the application explicitly calls `Keybay.reset()`.
-It never treats retained or missing state as permission to initialize over an
-existing encrypted store.
+The same root-only state can follow a same-device restore or interrupted first
+initialization. Follow the SDK's [deliberate recovery procedure](../sdk.md#errors-and-limits);
+do not reset automatically on conflict. Keychain retention after uninstall is
+an [implementation detail](https://developer.apple.com/forums/thread/36442),
+not a permanent OS guarantee. Keybay never treats retained or missing state as
+permission to initialize over an existing encrypted store. Physical reinstall
+and restore remain separate qualification cases.
 
 The iOS simulator lane exercises the genuine Keychain and file APIs, including
 open, persistence, passphrase protection, and reset. It does not prove physical

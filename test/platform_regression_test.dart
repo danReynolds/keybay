@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -68,6 +69,7 @@ exit "${FIXTURE_MOBILE_EXIT:-0}"
       ]);
       final receipt = report();
       expect(receipt['status'], 'pass');
+      expect(receipt['dartAbi'], Abi.current().toString());
       expect(receipt['sourceCommit'], matches(RegExp(r'^[a-f0-9]{40}$')));
       expect(receipt['sourceDirty'], isTrue);
       expect(receipt['finishedUtc'], isNotNull);

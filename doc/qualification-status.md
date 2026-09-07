@@ -5,6 +5,20 @@ local evidence, not release certification or an automatically refreshed dashboar
 New regression runs write individual JSON reports; update this summary after
 reviewing their results and source applicability. Times below are UTC.
 
+## Claude review remediation
+
+The separate [Claude review](reviews/2026-09-06-claude.md) has been received.
+The [remediation record](security-review.md#remediation-of-the-claude-findings)
+covers the macOS x64 ABI correction, provider-free record operations, Argon2
+workspace clearing and documentation fixes. The reviewed immutable snapshot is
+`88c9cb5e…`; remediation verification is recorded separately from its earlier
+receipts. Follow-up review of the changes and physical lifecycle/release gates
+remain open.
+
+The platform table below retains the previous qualification baseline. Changed
+runtime boundaries require the remediation results before claims carry forward;
+older `current runtime` descriptions refer to the baseline digest recorded below.
+
 ## Platform coverage
 
 | Platform / profile | Latest evidence | What passed | Remaining qualification |
