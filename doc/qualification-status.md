@@ -82,7 +82,17 @@ There is no open finding requiring an architectural rewrite or new feature.
 | --- | --- | --- |
 | Physical lifecycle gaps | **Deferred until devices are available.** Record lock/reboot/first-unlock/relock, interruption during auth change, reference-app backup/restore/transfer and Apple retained-root reinstall recovery using the [bounded procedures](mobile-failure-qualification.md). | Android and iPhone availability; actual backup/transfer may need a dedicated test account/device or second device. Android does not promise user presence. |
 | Argon2 acceptance | **Descoped for now; lower priority.** Define maintained device classes and latency/peak-memory budgets, then accept production Profile/AOT measurements against them. Existing results establish no accepted latency or memory budget. | Future physical mobile and representative desktop/Flatpak measurements. No parameter change or new benchmark framework is presumed. |
-| SDK release closeout | **Active.** Prepare breaking version `0.2.0`, integrate reviewed source, align supported-configuration and security claims, and finish analysis, tests and publish dry-run checks. Package publication is a separate action. | SDK only. The repository's existing shared version metadata remains synchronized; it does not qualify or publish the CLI. |
+| SDK release closeout | **0.2.0 prepared.** Version/changelog, scoped claims, local formatting/analysis, core and minimum-SDK tests, and package publish dry run passed. [PR #66](https://github.com/danReynolds/keybay/pull/66) records final integration and required CI status. Package publication is a separate action. | SDK only. The existing shared version metadata remains synchronized; it does not qualify or publish the CLI. |
+
+Local closeout at `bce3b8d…` passed the complete core suite and standalone SDK
+qualification on Dart 3.11.0 (500 passed; five platform/workspace skips).
+The 238 KB SDK publish dry run passed with only the three deliberate exact-pin
+warnings. Hosted dependency versions and the reviewed runtime digest are
+unchanged; the Flutter lockfile changes only the local SDK version to 0.2.0.
+The [closeout evidence](../build/qualification/sdk-closeout-20260907/README.md)
+records exact source, final CI/integration results and the separate publication
+state. Additional notarization or executable distribution is outside this SDK
+package closeout.
 
 The candidate covers iOS, Android 12+, entitled and unentitled macOS, ordinary
 Linux Secret Service and Flatpak Secret Portal profiles. Native macOS coverage
