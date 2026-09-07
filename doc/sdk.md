@@ -187,8 +187,11 @@ qualification remains tracked in the [mobile procedures](mobile-failure-qualific
 
 A known local invalidation reports `staleSession`. Rotation in another process
 or isolate may instead report `storeAuthenticationFailed`, as can damaged or
-replaced data. Close the old session and attempt an authenticated reopen; keep
-a failed reopen as an error, not permission to erase state.
+replaced data. An operation already running during a same-runtime rotation can
+also report `storeAuthenticationFailed`; subsequent operations observe the local
+invalidation and report `staleSession`. Close the old session and attempt an
+authenticated reopen; keep a failed reopen as an error, not permission to erase
+state.
 
 Mutations use a one-second lock-acquisition deadline. Another operation may
 hold the lock longer while provider UI or Argon2 completes. Retry `storeBusy`

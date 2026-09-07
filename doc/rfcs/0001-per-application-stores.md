@@ -1223,6 +1223,9 @@ rotation, tamper, and wholesale replacement can therefore produce the same
 `storeAuthenticationFailed` error. The caller closes the old session and makes
 a fresh authenticated `open()`; a failed reopen is not permission to reset.
 `staleSession` remains the result of known invalidation within the runtime.
+An operation already running during a same-runtime rotation can pin the new
+generation before observing that invalidation and report
+`storeAuthenticationFailed`; subsequent operations report `staleSession`.
 
 An operation already pinned to the prior generation may settle after rotation
 if that generation authenticates successfully; it is ordered before the commit.

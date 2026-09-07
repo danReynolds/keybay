@@ -12,8 +12,10 @@ The [remediation record](security-review.md#remediation-of-the-claude-findings)
 covers the macOS x64 ABI correction, provider-free record operations, Argon2
 workspace clearing and documentation fixes. The reviewed immutable snapshot is
 `88c9cb5e…`; remediation verification is recorded separately from its earlier
-receipts. Follow-up review of the changes and physical lifecycle/release gates
-remain open.
+receipts. The [accepted follow-up](reviews/2026-09-07-claude-followup.md) closes
+all five findings and accepts the informational dispositions at `0042f6d…`.
+The review/remediation phase is complete; physical lifecycle and release
+qualification are separate.
 
 The corrected runtime is commit `48e2bb80…`, SHA-256
 `57163d1f9714024acf5ad3d86ea9ef7874684703b6592e912dfeea29b46cd5cf`
@@ -37,28 +39,67 @@ Local ARM64 passed 502 core tests and all seven native Keychain tests; the
 repository tools passed 40 tests and analysis was clean. Local Rosetta x64
 passed the complete core suite, but two native fixture attempts timed out in
 passphrase preparation. A standalone JIT comparison also timed out on the
-original reviewed runtime; this does not establish the timing cause or a
-Rosetta native-lane pass. AOT KDF vectors matched in five fresh processes on
-ARM64 and five under Rosetta. Measurements remain observations without accepted
-device budgets; the before/after ARM64 comparison ran on a loaded host.
+original reviewed runtime. These failed attempts remain retained. Claude's
+follow-up subsequently passed all seven native tests under Rosetta, 30 x64
+POSIX tests, and the 502-test ARM64 core suite on Dart 3.11.0, 3.12.2 and 3.13.3.
+Those are attributed reviewer runs, with their original receipt source fields.
+Alternating JIT samples showed roughly 1–94 second derivations on both old and
+new source, plus one uncaptured exit-255 failure. The cause remains unresolved;
+this is not evidence that the remediation introduced the variance or that the
+effect is confined to tests. Native Intel CI is the routine x64 regression lane.
+AOT KDF vectors matched in five fresh processes on ARM64 and five under Rosetta.
+Measurements remain observations without accepted device budgets; the
+before/after ARM64 comparison ran on a loaded host.
 
 The [local follow-up pack](../build/qualification/claude-remediation-20260907/REVIEW_NEXT.md)
 retains the diff, source identity, public reports and failed attempts. No physical
-device or signed-app run was repeated for this remediation. Its changed reader,
-KDF and POSIX boundaries must be considered before carrying earlier evidence
-forward. The original Claude review pack remains unchanged and verifies.
+device or signed-app run was repeated for this remediation. The accepted
+source-applicability review carries earlier physical evidence forward for the
+unchanged native identity, custody, backup configuration and transaction
+ordering. New reader-failure and KDF-cleanup behavior has hermetic and platform
+CI coverage; these changes alone do not require repeating completed physical
+procedures. The original Claude review pack remains unchanged and verifies.
+Both reviewer reports and the available receipts now have a separate
+[acceptance evidence record](../build/qualification/claude-review-acceptance-20260907/README.md).
+
+## Remaining SDK closeout
+
+The shared engine, public SDK, five host profiles (Android, iOS, entitled and
+unentitled macOS, ordinary Linux) and Flatpak implementation are complete for
+this scope. Reusable core/provider/mobile regression commands are in place,
+current CI passes, physical Android/iOS baseline, process continuity, app
+upgrade and crash recovery have passed, and the independent AI review is closed.
+There is no open finding requiring an architectural rewrite or new feature.
+
+| Remaining work | Concrete finish condition | Device or scope dependency |
+| --- | --- | --- |
+| Physical lifecycle gaps | Record lock/reboot/first-unlock/relock, interruption during auth change, reference-app backup/restore/transfer and Apple retained-root reinstall recovery. Use the existing fixture/receipt conventions and the [bounded procedures](mobile-failure-qualification.md). | Android and iPhone availability; actual backup/transfer may need a dedicated test account/device or second device. Observe each platform's real policy; Android does not promise user presence. |
+| Argon2 acceptance | Define maintained device classes and latency/peak-memory budgets, then accept production Profile/AOT measurements against them. Existing desktop and Pixel results are feasibility observations. | Physical mobile measurements and representative supported desktop/Flatpak environments; no new benchmark framework or parameter change is presumed. |
+| SDK release closeout | Reconcile final source, supported configurations and security claims with this evidence; integrate the reviewed source and finish version/changelog, analysis, tests and publish dry-run checks for the chosen release. | Existing development-signed macOS and Developer ID runtime/module continuity passed. Additional signing, entitlement transitions or notarization need evidence only if that distribution/configuration is included in the release claim. |
+
+These are qualification and release tasks, not another implementation milestone.
+No completed baseline is rerun merely because documentation changed. CLI/TUI,
+single-file hardened executable packaging, Snap, Windows, migration, hardware
+credentials, rollback anchors and root rotation remain deferred. Other Secret
+Service providers, `iosX64` simulator execution and additional signing/device
+configurations remain unqualified; extending claims to them requires their own
+evidence, not automatic expansion of the current closeout scope. Rosetta JIT
+variance remains an execution-mode limitation to disclose and investigate when
+that mode is material to a supported usage claim.
+
+## Earlier platform baseline
 
 The platform table and remaining sections below retain the **Sep 6 baseline**.
 Their `current runtime` and `unchanged implementation` descriptions refer to the
 baseline digest recorded there, not the corrected runtime above. Remaining
-physical lifecycle, release-configuration, maintained-device Argon2 acceptance
-and Claude follow-up review gates remain open.
+physical lifecycle, release-configuration and maintained-device Argon2 acceptance
+gaps are summarized above; the Claude follow-up is now accepted.
 
 ## Platform coverage
 
 | Platform / profile | Latest evidence | What passed | Remaining qualification |
 | --- | --- | --- | --- |
-| **Shared SDK** | **Pass**, Sep 6; current runtime | Latest local `core` lane: 493 passed, three real D-Bus cases skipped on macOS; Dart 3.13.3 analysis clean. Includes nine additional source-review regressions for native rotation contention, crypto workspace ownership and concurrent portal cancellation. Earlier Linux/Flatpak evidence passed the real D-Bus cases. | Independent external crypto/security review; maintained-device Argon2 acceptance budgets. |
+| **Shared SDK** | **Pass**, Sep 6; baseline runtime | Local `core` lane: 493 passed, three real D-Bus cases skipped on macOS; Dart 3.13.3 analysis clean. Includes nine additional source-review regressions for native rotation contention, crypto workspace ownership and concurrent portal cancellation. Earlier Linux/Flatpak evidence passed the real D-Bus cases. | Review and remediation subsequently accepted Sep 7 as recorded above; maintained-device Argon2 acceptance budgets remain open. |
 | **macOS file Keychain** | **Pass**, Sep 6 16:37, native CI and local Dart 3.13.3 | Seven tests: bounded root access, exact provider lifecycle, private files, persistence, passphrase/reset, and locked-provider record operations. Current and stale sessions are prepared before locking; native locked status is verified, current operations succeed and stale access fails closed. Disposable Keychain deleted; user search list and default preserved. The public facade separately passed on the CI account. | Unlock/recovery after a provider lock is not covered by this fixture. The separate Developer ID row covers bounded genuine-account continuity. Other signing/runtime transitions remain open. |
 | **macOS signed app** | **Pass**, Sep 5 20:02; unchanged platform/common implementation, native Apple Development signing | Signed SDK baseline; passphrase-protected store seeded by build 101 and reopened without initialization by build 102. Explicit phase results, distinct code hashes, Apple-trusted signatures, exact sole Keychain group and sandboxing verified. Provider root, store and staging file absent after reset; harness exited; signing configuration and Keychain settings preserved. | Developer ID distribution/release upgrades, entitlement transitions, physical lock/reboot and reinstall. This qualifies the recorded development-signed profile and unchanged Apple/common implementation, not distribution signing. |
 | **macOS single-file Developer ID** | **Failed**, Sep 6; dedicated hardened AOT SDK fixture | Trusted signature, secure timestamp, hardened-runtime flag and empty entitlements verified. Actual launch was killed before fixture startup. A minimal program without Keybay reproduces the failure; signed control without hardened runtime runs. No test store created; user Keychain settings preserved. | Single-file product packaging remains deferred with CLI work. The native module form below clears the SDK continuity check; it does not repair the single-file executable. |
@@ -92,8 +133,8 @@ credentials, rollback anchors and root rotation are also outside this scope.
 
 - The [security review handoff](security-review.md) records the fixed portal
   cancellation defect, native AOT identity correction and qualified macOS
-  runtime/module form. External
-  review awaits a selected reviewer. The [mobile failure procedures](mobile-failure-qualification.md)
+  runtime/module form. The subsequent Claude review and accepted follow-up are
+  recorded above. The [mobile failure procedures](mobile-failure-qualification.md)
   now have physical crash passes on both Android and iOS. Remaining
   lock/reboot/restore phases are pending.
 

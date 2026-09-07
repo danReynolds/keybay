@@ -3,9 +3,18 @@
 The [independent Claude report](reviews/2026-09-06-claude.md), supplied by the
 maintainer, reviews commit `88c9cb5e…`. It is a separate AI model review, not a
 human external audit. Its additional referenced receipts were not supplied with
-the pasted report; those executions remain reviewer-reported. Earlier retained
-project CI/device receipts remain separate evidence. CLI/TUI, Snap, Windows,
-migration, hardware credentials and rollback anchors remain deferred.
+the pasted report, but were subsequently located in the local reviewer output.
+The [follow-up review](reviews/2026-09-07-claude-followup.md) accepts all five
+remediations and the informational dispositions at `0042f6d…`.
+**The Claude review and remediation phase is closed.** This is not release
+approval or a claim of a human external audit.
+
+Both reports and the available reviewer receipts are retained byte-for-byte in
+the [acceptance evidence](../build/qualification/claude-review-acceptance-20260907/README.md)
+with a hash manifest. They are reviewer executions, separately attributed from
+project CI/device runs; null or scratch-commit receipt identities have not been
+relabelled as clean-source runs. CLI/TUI, Snap, Windows, migration, hardware
+credentials and rollback anchors remain deferred.
 
 ## Remediation of the Claude findings
 
@@ -46,8 +55,23 @@ including native Intel core/provider coverage. The [qualification report](qualif
 retains local Rosetta timing failures and distinguishes new CI evidence from
 earlier physical and signing runs. Missing lifecycle/release evidence remains
 missing. The [local follow-up brief](../build/qualification/claude-remediation-20260907/REVIEW_NEXT.md)
-provides the exact diff and retained reports. Claude should review the changes
-before this review gate is treated as resolved.
+provides the exact diff and retained reports. The accepted follow-up adds real
+Rosetta native-provider and additional Dart-version runs. Its remaining
+same-runtime in-flight error-classification clarification is now in the SDK
+guide and RFC; no runtime change or broader architecture work is required.
+
+Rosetta JIT timings vary widely on both the reviewed and remediated runtime.
+The reviewer also recorded one exit-255 failure without its full error. This
+does not identify the underlying cause or limit its possible effect to tests.
+Native Intel CI remains the routine x64 regression lane; retain the Rosetta
+observation without blanket timeout increases or a new KDF implementation.
+
+Earlier physical and signing evidence remains applicable to unchanged native
+identity, custody and storage boundaries. The changed reader failure and KDF
+cleanup paths have hermetic and platform CI coverage; their remediation alone
+does not require repeating completed physical procedures. Unobserved lifecycle
+phases, maintained-device KDF acceptance and configuration-specific release
+claims still need their own evidence.
 
 The sections below preserve the earlier engineering review and its historical
 source/evidence claims. They do not describe the new provider-free record path.

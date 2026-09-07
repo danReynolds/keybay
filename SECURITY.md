@@ -96,8 +96,10 @@ not physical secure-hardware mediation. Hardware claims are made only from
 measured platform metadata and retained qualification.
 
 The current device, lifecycle, and provider evidence is tracked in
-[doc/device-security-suite.md](doc/device-security-suite.md). A separate Claude review has been received; its findings, remediation and
-remaining acceptance gates are recorded in the [review record](doc/security-review.md).
+[doc/device-security-suite.md](doc/device-security-suite.md). A separate Claude
+review and follow-up accepted the five remediations; that review phase is
+closed. Findings, retained evidence and remaining qualification gates are
+recorded in the [review record](doc/security-review.md).
 It is an AI model review, not a human external audit; Keybay has one maintainer.
 
 ## Reporting
