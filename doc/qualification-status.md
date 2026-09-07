@@ -1,6 +1,6 @@
 # Latest platform qualification
 
-Evidence reviewed **2026-09-06**. This is a dated, reviewed summary of retained
+Evidence reviewed **2026-09-07**. This is a dated, reviewed summary of retained
 local evidence, not release certification or an automatically refreshed dashboard.
 New regression runs write individual JSON reports; update this summary after
 reviewing their results and source applicability. Times below are UTC.
@@ -15,9 +15,44 @@ workspace clearing and documentation fixes. The reviewed immutable snapshot is
 receipts. Follow-up review of the changes and physical lifecycle/release gates
 remain open.
 
-The platform table below retains the previous qualification baseline. Changed
-runtime boundaries require the remediation results before claims carry forward;
-older `current runtime` descriptions refer to the baseline digest recorded below.
+The corrected runtime is commit `48e2bb80…`, SHA-256
+`57163d1f9714024acf5ad3d86ea9ef7874684703b6592e912dfeea29b46cd5cf`
+(40 SDK Dart files, using the digest rule below). Commit `b4b198a…` adds only a
+test-worker startup correction: its cold-compilation allowance is separate from
+the unchanged SDK lock deadline. The initial Intel CI attempt exposed that
+five-second fixture timeout; its failure is retained.
+
+The [remediation CI run](https://github.com/danReynolds/keybay/actions/runs/34073634184)
+passed all 14 normal jobs at exact clean source `b4b198a…`; the scheduled fuzz
+canary was skipped as intended. Native Intel macOS passed 502 core tests
+with three host-specific D-Bus skips, all seven real Keychain tests, and the
+public facade. The actual `macos_x64` Dart ABI is recorded in its reports.
+Native ARM64 macOS, Linux, two-app Flatpak, Android API 31/36 and the iOS
+simulator passed. Minimum Dart, analysis, formatting, dependency/publish checks
+and the existing repository checks passed too. The
+[initial run](https://github.com/danReynolds/keybay/actions/runs/34073103276)
+at `48e2bb80…` retains the Intel fixture-startup failure.
+
+Local ARM64 passed 502 core tests and all seven native Keychain tests; the
+repository tools passed 40 tests and analysis was clean. Local Rosetta x64
+passed the complete core suite, but two native fixture attempts timed out in
+passphrase preparation. A standalone JIT comparison also timed out on the
+original reviewed runtime; this does not establish the timing cause or a
+Rosetta native-lane pass. AOT KDF vectors matched in five fresh processes on
+ARM64 and five under Rosetta. Measurements remain observations without accepted
+device budgets; the before/after ARM64 comparison ran on a loaded host.
+
+The [local follow-up pack](../build/qualification/claude-remediation-20260907/REVIEW_NEXT.md)
+retains the diff, source identity, public reports and failed attempts. No physical
+device or signed-app run was repeated for this remediation. Its changed reader,
+KDF and POSIX boundaries must be considered before carrying earlier evidence
+forward. The original Claude review pack remains unchanged and verifies.
+
+The platform table and remaining sections below retain the **Sep 6 baseline**.
+Their `current runtime` and `unchanged implementation` descriptions refer to the
+baseline digest recorded there, not the corrected runtime above. Remaining
+physical lifecycle, release-configuration, maintained-device Argon2 acceptance
+and Claude follow-up review gates remain open.
 
 ## Platform coverage
 

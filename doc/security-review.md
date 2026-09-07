@@ -33,11 +33,20 @@ are:
   forbidden acquisitions before provider access. Tests cover all record methods,
   auth listing, provider call counts and peer-record preservation.
 
-Transaction locking remains intact. Exact post-write generation comparison and
-other informational preferences have no demonstrated defect requiring changes
-in this pass. Missing physical lifecycle and release-configuration evidence
-remains missing. The [qualification report](qualification-status.md) records
-verification and source applicability. Claude should review the remediation diff
+For the informational findings: **006** retains transaction ordering and adds
+bounded retry guidance; **007** is covered by the simplified failure contract;
+**009** documents the test-runner limitation; **010** corrects `fcntl` above.
+**008** (exact post-write generation comparison) and **011** (dependency-owned
+Argon2 helpers) remain unchanged: this review established no defect requiring
+either mechanism to be replaced.
+
+The runtime correction is commit `48e2bb80…`; a test-worker startup correction
+followed at `b4b198a…`. All 14 normal CI jobs passed for that exact source,
+including native Intel core/provider coverage. The [qualification report](qualification-status.md)
+retains local Rosetta timing failures and distinguishes new CI evidence from
+earlier physical and signing runs. Missing lifecycle/release evidence remains
+missing. The [local follow-up brief](../build/qualification/claude-remediation-20260907/REVIEW_NEXT.md)
+provides the exact diff and retained reports. Claude should review the changes
 before this review gate is treated as resolved.
 
 The sections below preserve the earlier engineering review and its historical
