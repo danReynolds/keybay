@@ -8,6 +8,9 @@ import 'environment.dart';
 import 'failure.dart';
 import 'manifest.dart';
 import 'secret_output.dart';
+import 'lifetime.dart';
+import 'process_executor.dart';
+import 'terminal.dart';
 
 const int exitSuccess = 0;
 const int exitFailure = 1;
@@ -20,20 +23,8 @@ typedef SessionOpener =
     Future<KeybaySession> Function({KeybayCredential? credential});
 typedef SecretValueReader =
     Future<Uint8List> Function({required String key, required bool fromStdin});
-typedef PassphraseReader = Future<Uint8List> Function();
+typedef PassphraseReader = Future<Uint8List> Function({String? summary});
 typedef SecretOutputAuthorizer = void Function();
-
-abstract interface class CommandExecutor {
-  /// Replaces this process with [executable]. [environment] is the resolved
-  /// string-level view (parent + manifest) used for the CLI's own lookups;
-  /// [overlay] is exactly the manifest-named subset to materialize.
-  Future<int> execute({
-    required String executable,
-    required List<String> arguments,
-    required Map<String, String> environment,
-    required Map<String, String> overlay,
-  });
-}
 
 final class CliApplication {
   CliApplication({
@@ -42,6 +33,8 @@ final class CliApplication {
     required this.readSecretValue,
     required this.readPassphrase,
     required this.authorizeSecretOutput,
+    required this.authorizeSecretInput,
+    required this.lifetime,
     required this.commandExecutor,
     required Map<String, String> parentEnvironment,
     required this.stdout,
@@ -53,6 +46,8 @@ final class CliApplication {
   final SecretValueReader readSecretValue;
   final PassphraseReader readPassphrase;
   final SecretOutputAuthorizer authorizeSecretOutput;
+  final void Function({required bool fromStdin}) authorizeSecretInput;
+  final CommandLifetime lifetime;
   final CommandExecutor commandExecutor;
   final Map<String, String> parentEnvironment;
   final StringSink stdout;
@@ -60,6 +55,7 @@ final class CliApplication {
 
   Future<int> execute(CliCommand command) async {
     try {
+      lifetime.check();
       return switch (command) {
         HelpCommand() => _help(),
         VersionCommand() => _version(),
@@ -68,7 +64,13 @@ final class CliApplication {
         GetCommand() => await _get(command),
         RemoveCommand() => await _remove(command),
         ListCommand() => await _list(),
+        OpenCommand() => throw StateError(
+          'Open must own the native terminal lifecycle.',
+        ),
       };
+    } on CliFailure catch (error) {
+      error.writeTo(stderr);
+      return error.exitCode;
     } on ManifestParseException catch (error) {
       stderr.writeln('error: invalid manifest: $error');
       stderr.writeln('Nothing was launched.');
@@ -109,21 +111,26 @@ final class CliApplication {
 
   Future<int> _run(RunCommand command) async {
     final manifest = await loadManifest(command.manifestPath);
+    lifetime.check();
+    final prepared = commandExecutor.prepare(
+      executable: command.executable,
+      arguments: command.arguments,
+      environment: parentEnvironment,
+    );
     late final EnvironmentResolution resolution;
     final keys = _referencedKeys(manifest);
     if (keys.isEmpty) {
       resolution = resolveEnvironment(
         manifest: manifest,
-        parentEnvironment: parentEnvironment,
         storedValues: const <String, Uint8List>{},
       );
     } else {
       resolution = await _withSession((session) async {
         final selected = await session.getManyBytes(keys);
         try {
+          lifetime.check();
           return resolveEnvironment(
             manifest: manifest,
-            parentEnvironment: parentEnvironment,
             storedValues: <String, Uint8List>{
               for (final entry in selected.entries)
                 if (entry.value case final value?) entry.key: value,
@@ -134,39 +141,43 @@ final class CliApplication {
             _clear(value);
           }
         }
-      });
+      }, summary: launchSummary(command.manifestPath, prepared, manifest));
     }
 
+    lifetime.check();
     if (!resolution.isComplete) {
       _writeMissingReferences(command.manifestPath, resolution);
       return exitNotFound;
     }
 
+    await lifetime.close();
+    lifetime.check();
     return commandExecutor.execute(
-      executable: command.executable,
-      arguments: command.arguments,
-      environment: resolution.environment,
+      command: prepared,
       overlay: resolution.overlay,
     );
   }
 
-  Future<int> _set(SetCommand command) => _withSession((session) async {
-    final value = await readSecretValue(
-      key: command.key,
-      fromStdin: command.readFromStdin,
-    );
-    try {
-      final writing = session.setBytes(command.key, value);
-      _clear(value);
-      await writing;
-    } finally {
-      _clear(value);
-    }
-    if (!command.readFromStdin) {
+  Future<int> _set(SetCommand command) async {
+    authorizeSecretInput(fromStdin: command.readFromStdin);
+    return _withSession((session) async {
+      final value = await readSecretValue(
+        key: command.key,
+        fromStdin: command.readFromStdin,
+      );
+      try {
+        lifetime.check();
+        final writing = session.setBytes(command.key, value);
+        _clear(value);
+        await writing;
+        lifetime.check();
+      } finally {
+        _clear(value);
+      }
       stderr.writeln('Stored ${command.key}');
-    }
-    return exitSuccess;
-  });
+      return exitSuccess;
+    });
+  }
 
   Future<int> _get(GetCommand command) async {
     // Refuse an unsafe output channel before opening the store or learning
@@ -174,11 +185,12 @@ final class CliApplication {
     authorizeSecretOutput();
     return _withSession((session) async {
       final bytes = await session.getBytes(command.key);
-      if (bytes == null) {
-        stderr.writeln('Key not found: ${command.key}');
-        return exitNotFound;
-      }
       try {
+        lifetime.check();
+        if (bytes == null) {
+          stderr.writeln('Key not found: ${command.key}');
+          return exitNotFound;
+        }
         final value = decodeStoredValue(command.key, bytes);
         if (!secretIsSafeForTerminal(value)) {
           throw StoredValueException(
@@ -186,6 +198,8 @@ final class CliApplication {
             'contains terminal control characters that cannot be revealed safely',
           );
         }
+        authorizeSecretOutput();
+        lifetime.check();
         stdout.writeln(value);
         return exitSuccess;
       } finally {
@@ -196,42 +210,53 @@ final class CliApplication {
 
   Future<int> _remove(RemoveCommand command) => _withSession((session) async {
     await session.delete(command.key);
+    lifetime.check();
     return exitSuccess;
   });
 
   Future<int> _list() => _withSession((session) async {
     final keys = (await session.listKeys()).toList()..sort();
+    lifetime.check();
     for (final key in keys) {
       stdout.writeln(key);
     }
     return exitSuccess;
   });
 
-  Future<T> _withSession<T>(Future<T> Function(KeybaySession) operation) async {
+  Future<T> _withSession<T>(
+    Future<T> Function(KeybaySession) operation, {
+    String? summary,
+  }) async {
     KeybaySession? session;
     try {
-      session = await _openAuthenticatedSession();
-      if ((await session.auth.list()).isEmpty) {
+      session = await _openAuthenticatedSession(summary: summary);
+      lifetime.check();
+      final methods = await session.auth.list();
+      lifetime.check();
+      if (methods.isEmpty) {
         stderr.writeln(
           'warning: platform protection only; no additional credential is '
           'configured.',
         );
       }
+      lifetime.check();
       return await operation(session);
     } finally {
       await session?.close();
     }
   }
 
-  Future<KeybaySession> _openAuthenticatedSession() async {
+  Future<KeybaySession> _openAuthenticatedSession({String? summary}) async {
     try {
       return await openSession();
     } on KeybayException catch (error) {
       if (error.code != KeybayErrorCode.authRequired) rethrow;
     }
 
-    final passphrase = await readPassphrase();
+    lifetime.check();
+    final passphrase = await readPassphrase(summary: summary);
     try {
+      lifetime.check();
       final opening = openSession(
         credential: PassphraseCredential(phrase: passphrase),
       );
@@ -250,7 +275,7 @@ final class CliApplication {
     final total = resolution.referenceCount;
     final noun = missing == 1 ? 'reference' : 'references';
     stderr.writeln(
-      'error: $missing of $total $noun in $manifestPath '
+      'error: $missing of $total $noun in ${terminalQuoted(manifestPath)} '
       '${missing == 1 ? 'is' : 'are'} not set on this machine:',
     );
     stderr.writeln();
@@ -275,4 +300,32 @@ List<String> _referencedKeys(Manifest manifest) {
 
 void _clear(Uint8List? bytes) {
   if (bytes != null) bytes.fillRange(0, bytes.length, 0);
+}
+
+/// All caller-controlled text is quoted, and values never enter this summary.
+String launchSummary(
+  String manifestPath,
+  PreparedCommand command,
+  Manifest manifest,
+) {
+  final text = StringBuffer()
+    ..writeln(
+      'Run: ${terminalQuoted(command.path)} ${command.arguments.skip(1).map(terminalQuoted).join(' ')}',
+    )
+    ..writeln('Manifest: ${terminalQuoted(manifestPath)}')
+    ..writeln('Environment:');
+  for (final entry in manifest.values.entries) {
+    final affectsExecution =
+        entry.key == 'PATH' ||
+        entry.key.startsWith('LD_') ||
+        entry.key.startsWith('DYLD_');
+    final kind = switch (entry.value) {
+      LiteralManifestValue() => '(literal)',
+      SecretManifestValue(:final key) => '<- $key',
+    };
+    text.writeln(
+      '  ${entry.key} $kind${affectsExecution ? ' [affects execution]' : ''}',
+    );
+  }
+  return text.toString();
 }

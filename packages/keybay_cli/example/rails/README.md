@@ -28,23 +28,22 @@ Then choose an installed or source-checkout executable as described in the
 ```sh
 bundle config set --local path vendor/bundle
 bundle install
-cp secrets.env.example .secrets.env
 keybay run -- bin/rails server --binding 127.0.0.1 --port 3000
 keybay set keybay-rails/stripe-secret-key
 keybay run -- bin/rails server --binding 127.0.0.1 --port 3000
 ```
 
-The first run fails closed before Rails boots. Enter any disposable value at
-the hidden prompt. The app then listens only on `http://127.0.0.1:3000`. Open
-that URL in a browser to see the public endpoint and exact value inherited by
-the Rails process. The controller rejects non-loopback requests and disables
-caching and referrers, but the value can still appear in screenshots or
-browser tooling, so never enter a production credential. Stop the server with
-Control-C.
+The `.env` file is included and ready to use. If the demo key is not
+set, the first run reports it missing before Rails boots. Enter any disposable
+value at the hidden prompt. The app then listens only on
+`http://127.0.0.1:3000`. Open that URL in a browser to see the public endpoint
+and exact value inherited by the Rails process. The controller rejects
+non-loopback requests and disables caching and referrers, but the value can
+still appear in screenshots or browser tooling, so never enter a production
+credential. Stop the server with Control-C.
 
 After the example:
 
 ```sh
 keybay rm keybay-rails/stripe-secret-key
-rm .secrets.env
 ```

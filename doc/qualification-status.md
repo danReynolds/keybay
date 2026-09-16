@@ -5,6 +5,25 @@ local evidence, not release certification or an automatically refreshed dashboar
 New regression runs write individual JSON reports; update this summary after
 reviewing their results and source applicability. Times below are UTC.
 
+CLI command and terminal regressions are recorded separately in
+[CLI qualification status](cli-qualification-status.md).
+
+## Local Pub activation follow-up
+
+On Sep 7, local activation of the CLI exposed a workspace ownership bug:
+Pub stores member snapshots under the workspace root, and the SDK resolver
+looked for that root's application declaration. The resolver now selects the
+snapshot's package through its isolate's bounded package config and reads the
+owning pubspec. Missing, ambiguous and non-local metadata fail closed. Public
+API, native identities, storage format, crypto and provider policy are unchanged.
+
+macOS arm64 SDK core passed **505 tests, three host-specific skips** in
+`build/regression/run-FXCPiV/report.json`, including real Pub activation both
+inside and outside a workspace. The full CLI core/macOS/Docker-Linux selections
+also passed; their receipt and local installation scope are in the CLI report.
+The accepted independent review below predates this resolver follow-up. No
+new CI, physical-device or signed-distribution claim is made for this change.
+
 ## Claude review remediation
 
 The separate [Claude review](reviews/2026-09-06-claude.md) has been received.

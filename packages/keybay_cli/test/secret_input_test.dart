@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:keybay_cli/src/secret_input.dart';
+import 'package:keybay_cli/src/lifetime.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -75,10 +76,49 @@ void main() {
     });
   });
 
+  test('public maximum value accepts exactly one producer ending', () {
+    final bytes = Uint8List(maxSecretInputBytes + 2)
+      ..fillRange(0, maxSecretInputBytes, 0x61);
+    bytes[maxSecretInputBytes] = 0x0d;
+    bytes[maxSecretInputBytes + 1] = 0x0a;
+    final result = decodeSecretBytes(bytes);
+    expect(result.length, maxSecretInputBytes);
+    result.fillRange(0, result.length, 0);
+  });
+
+  test(
+    'interrupting partial hidden input restores echo and cancels input',
+    () async {
+      final lifetime = CommandLifetime();
+      final terminal = _FakeTerminal(hasTerminal: true, echoMode: true);
+      var cancelled = false;
+      final stream = StreamController<List<int>>(
+        onCancel: () {
+          cancelled = true;
+        },
+      );
+      final reader = SecretInputReader(
+        input: stream.stream,
+        terminal: terminal,
+        stderr: StringBuffer(),
+        lifetime: lifetime,
+      );
+      final reading = reader.read(key: 'acme/key', fromStdin: false);
+      stream.add(utf8.encode('partial-sentinel'));
+      await Future<void>.delayed(Duration.zero);
+      lifetime.cancel();
+      await expectLater(reading, throwsA(isA<CommandInterrupted>()));
+      expect(terminal.echoMode, isTrue);
+      expect(cancelled, isTrue);
+      await stream.close();
+    },
+  );
+
   group('reader', () {
     test('--stdin reads to EOF without requiring a terminal', () async {
       final terminal = _FakeTerminal(hasTerminal: false, echoMode: true);
       final reader = SecretInputReader(
+        lifetime: CommandLifetime(),
         input: Stream<List<int>>.fromIterable(<List<int>>[
           utf8.encode('multi'),
           utf8.encode('-chunk\n'),
@@ -97,6 +137,7 @@ void main() {
     test('--stdin bounds the stream at the public record limit', () async {
       const sentinel = 'tail-must-not-be-consumed-or-echoed';
       final reader = SecretInputReader(
+        lifetime: CommandLifetime(),
         input: Stream<List<int>>.fromIterable(<List<int>>[
           Uint8List(maxSecretInputBytes + 2),
           utf8.encode(sentinel),
@@ -122,6 +163,7 @@ void main() {
       // `--stdin` at a terminal would echo the secret into scrollback.
       final terminal = _FakeTerminal(hasTerminal: true, echoMode: true);
       final reader = SecretInputReader(
+        lifetime: CommandLifetime(),
         input: const Stream<List<int>>.empty(),
         terminal: terminal,
         stderr: StringBuffer(),
@@ -143,6 +185,7 @@ void main() {
 
     test('interactive mode refuses redirected stdin', () async {
       final reader = SecretInputReader(
+        lifetime: CommandLifetime(),
         input: const Stream<List<int>>.empty(),
         terminal: _FakeTerminal(hasTerminal: false, echoMode: true),
         stderr: StringBuffer(),
@@ -169,6 +212,7 @@ void main() {
           echoMode: true,
         );
         final reader = SecretInputReader(
+          lifetime: CommandLifetime(),
           input: const Stream<List<int>>.empty(),
           terminal: terminal,
           stderr: StringBuffer(),
@@ -200,6 +244,7 @@ void main() {
           );
           final stderr = StringBuffer();
           final reader = SecretInputReader(
+            lifetime: CommandLifetime(),
             input: Stream<List<int>>.value(utf8.encode('$sentinel\nignored')),
             terminal: terminal,
             stderr: stderr,
@@ -221,6 +266,7 @@ void main() {
     test('interactive mode restores echo when decoding fails', () async {
       final terminal = _FakeTerminal(hasTerminal: true, echoMode: true);
       final reader = SecretInputReader(
+        lifetime: CommandLifetime(),
         input: Stream<List<int>>.value(<int>[0xff, 0x0a]),
         terminal: terminal,
         stderr: StringBuffer(),
@@ -247,6 +293,7 @@ void main() {
           failOnSetCall: 2,
         );
         final reader = SecretInputReader(
+          lifetime: CommandLifetime(),
           input: input.stream,
           terminal: terminal,
           stderr: StringBuffer(),
@@ -265,6 +312,7 @@ void main() {
     test('interactive mode accepts a chunked final line at EOF', () async {
       final terminal = _FakeTerminal(hasTerminal: true, echoMode: true);
       final reader = SecretInputReader(
+        lifetime: CommandLifetime(),
         input: Stream<List<int>>.fromIterable(<List<int>>[
           utf8.encode('chunked-'),
           utf8.encode('value'),
@@ -284,6 +332,7 @@ void main() {
     test('interactive mode bounds input before a newline arrives', () async {
       final terminal = _FakeTerminal(hasTerminal: true, echoMode: true);
       final reader = SecretInputReader(
+        lifetime: CommandLifetime(),
         input: Stream<List<int>>.value(Uint8List(maxSecretInputBytes + 2)),
         terminal: terminal,
         stderr: StringBuffer(),

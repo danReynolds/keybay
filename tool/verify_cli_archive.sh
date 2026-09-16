@@ -23,7 +23,7 @@ expected = {
     "example": "directory",
     "example/quickstart": "directory",
     "example/quickstart/README.md": "file",
-    "example/quickstart/secrets.env.example": "file",
+    "example/quickstart/.env": "file",
     "example/quickstart/app.sh": "file",
     "keybay": "file",
 }
@@ -51,7 +51,7 @@ except (OSError, tarfile.TarError, ValueError) as error:
     raise SystemExit(1)
 PY
 tar -xzf "$archive" -C "$tmp"
-expected_files=$'LICENSE\nREADME.md\nexample/quickstart/README.md\nexample/quickstart/app.sh\nexample/quickstart/secrets.env.example\nkeybay'
+expected_files=$'LICENSE\nREADME.md\nexample/quickstart/.env\nexample/quickstart/README.md\nexample/quickstart/app.sh\nkeybay'
 actual_files="$(cd "$tmp" && find . -type f -print | sed 's#^\./##' | LC_ALL=C sort)"
 if [[ "$actual_files" != "$expected_files" ]]; then
   echo "unexpected release archive files:" >&2
@@ -80,7 +80,7 @@ if [[ ! -x "$tmp/example/quickstart/app.sh" ]]; then
 fi
 for relative in \
   example/quickstart/README.md \
-  example/quickstart/secrets.env.example \
+  example/quickstart/.env \
   example/quickstart/app.sh; do
   if ! cmp -s "$tmp/$relative" "packages/keybay_cli/$relative"; then
     echo "release archive changed packaged example file '$relative'" >&2

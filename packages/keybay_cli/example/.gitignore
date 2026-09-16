@@ -1,1 +1,2 @@
-*/.secrets.env
+# These checked-in manifests contain public configuration and references only.
+!/*/.env

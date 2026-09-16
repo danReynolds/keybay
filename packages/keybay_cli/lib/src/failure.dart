@@ -34,11 +34,13 @@ CliFailure failureForKeybay(KeybayException error) {
       'error: the platform-protected store key is no longer usable.',
       'Restore the matching platform state or deliberately reset Keybay; existing values cannot be recovered without it.',
     ],
-    KeybayErrorCode.authRequired ||
-    KeybayErrorCode.protectionMismatch ||
-    KeybayErrorCode.unlockFailed => <String>[
+    KeybayErrorCode.authRequired || KeybayErrorCode.unlockFailed => <String>[
       'error: Keybay authentication failed.',
       'Check the passphrase and retry.',
+    ],
+    KeybayErrorCode.protectionMismatch => <String>[
+      'error: the supplied credential does not match the store protection.',
+      'Reopen Keybay to authenticate its current protection; no automatic retry was made.',
     ],
     KeybayErrorCode.storeBusy => <String>[
       'error: the Keybay store is busy.',
@@ -46,7 +48,7 @@ CliFailure failureForKeybay(KeybayException error) {
     ],
     KeybayErrorCode.resetIncomplete => <String>[
       'error: a previous Keybay reset did not complete.',
-      'Retry the reset before accessing this store.',
+      'Preserve the store; completing reset requires another deliberate confirmation.',
     ],
     KeybayErrorCode.storeAuthenticationFailed ||
     KeybayErrorCode.unsupportedStoreVersion ||
@@ -74,7 +76,7 @@ CliFailure failureForKeybay(KeybayException error) {
     KeybayErrorCode.storageOperationFailed ||
     KeybayErrorCode.entropyUnavailable => <String>[
       'error: a required secure Keybay operation failed.',
-      'Retry once; if it persists, preserve the store and report the failure.',
+      'A submitted operation may have completed. Preserve the store and reopen to inspect state before retrying.',
     ],
   };
 

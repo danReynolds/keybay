@@ -1,6 +1,9 @@
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
+
+import 'package:ffi/ffi.dart';
 
 import 'key.dart';
 
@@ -49,23 +52,61 @@ final class ManifestParseException implements Exception {
 
 final RegExp _environmentNamePattern = RegExp(r'[A-Za-z_][A-Za-z0-9_]*');
 
-/// Reads [file] once, bounded to one byte beyond the accepted manifest size.
+/// Read one nonblocking, read-only descriptor. Descriptor paths are used only
+/// to stat the pinned handle, never to reopen/read the selected pathname.
 Future<Manifest> readManifest(File file) async {
-  final handle = await file.open();
+  if (!Platform.isMacOS && !Platform.isLinux) {
+    throw UnsupportedError('POSIX manifest input required');
+  }
+  final libc = DynamicLibrary.process();
+  final open = libc
+      .lookupFunction<
+        Int32 Function(Pointer<Utf8>, Int32),
+        int Function(Pointer<Utf8>, int)
+      >('open');
+  final read = libc
+      .lookupFunction<
+        IntPtr Function(Int32, Pointer<Uint8>, IntPtr),
+        int Function(int, Pointer<Uint8>, int)
+      >('read');
+  final close = libc.lookupFunction<Int32 Function(Int32), int Function(int)>(
+    'close',
+  );
+  final path = file.path.toNativeUtf8();
+  late final int fd;
   try {
-    final bytes = BytesBuilder(copy: false);
-    var remaining = manifestMaxBytes + 1;
-    while (remaining > 0) {
-      final chunk = await handle.read(
-        remaining < manifestLineMaxBytes ? remaining : manifestLineMaxBytes,
-      );
-      if (chunk.isEmpty) break;
-      bytes.add(chunk);
-      remaining -= chunk.length;
-    }
-    return parseManifestBytes(bytes.takeBytes());
+    // O_RDONLY | O_NONBLOCK | O_CLOEXEC | O_NOCTTY
+    fd = open(
+      path,
+      Platform.isMacOS ? 0x4 | 0x1000000 | 0x20000 : 0x800 | 0x80000 | 0x100,
+    );
   } finally {
-    await handle.close();
+    malloc.free(path);
+  }
+  if (fd < 0) throw const FileSystemException('manifest open failed');
+  final buffer = calloc<Uint8>(manifestMaxBytes + 1);
+  try {
+    final descriptorPath = Platform.isLinux
+        ? '/proc/self/fd/$fd'
+        : '/dev/fd/$fd';
+    if (FileStat.statSync(descriptorPath).type != FileSystemEntityType.file) {
+      throw const ManifestParseException('manifest must be a regular file');
+    }
+    var count = 0;
+    while (count <= manifestMaxBytes) {
+      final n = read(fd, buffer + count, manifestMaxBytes + 1 - count);
+      if (n < 0) throw const FileSystemException('manifest read failed');
+      if (n == 0) break;
+      count += n;
+    }
+    return parseManifestBytes(buffer.asTypedList(count));
+  } finally {
+    // Even a literal manifest can contain sensitive values.
+    buffer
+        .asTypedList(manifestMaxBytes + 1)
+        .fillRange(0, manifestMaxBytes + 1, 0);
+    calloc.free(buffer);
+    _closeManifest(close, fd);
   }
 }
 
@@ -136,7 +177,7 @@ Manifest parseManifestBytes(List<int> source) {
       if (!isValidCliKey(key)) {
         throw ManifestParseException(
           'reference must look like '
-          'kb://acme-payments/openai-api-key and be at most '
+          'kb://api-token or kb://acme/api-token and be at most '
           '$cliKeyMaxLength key characters',
           line: lineNumber,
         );
@@ -214,4 +255,8 @@ String _trimAsciiSpaceAndTab(String value) {
     end--;
   }
   return value.substring(start, end);
+}
+
+void _closeManifest(int Function(int) close, int fd) {
+  if (close(fd) != 0) throw const FileSystemException('manifest close failed');
 }

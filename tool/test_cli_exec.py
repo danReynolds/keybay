@@ -18,18 +18,19 @@ from pathlib import Path
 
 def run(
     cli: str,
-    manifest: Path,
+    manifest: Path | None,
     *command: str,
     cwd: Path | None = None,
     env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [cli, "run", "-f", str(manifest), "--", *command],
+        [cli, "run", *([] if manifest is None else ["-f", str(manifest)]), "--", *command],
         cwd=cwd,
         env=env,
         text=True,
         capture_output=True,
         check=False,
+        timeout=10,
     )
 
 
@@ -121,10 +122,25 @@ def main() -> int:
         )
         assert_result(captured_get, 4, stderr_contains="captured output is refused")
 
-        # V2 deliberately authenticates and emits any platform-only warning
-        # before `set` accepts a value. Its input-byte and TTY contracts are
-        # therefore covered by the dedicated prompt harness and unit tests;
-        # this provider-independent exec suite does not open the real store.
+        # Invalid value channels must fail before real-provider access.
+        non_tty_set = subprocess.run([cli, "set", "acme/key"], input="ignored",
+                                     text=True, capture_output=True, timeout=10)
+        assert_result(non_tty_set, 4, stderr_contains="controlling foreground TTY")
+
+        fifo = tmp / "manifest.fifo"
+        os.mkfifo(fifo)
+        for invalid in [fifo, tmp, Path("/dev/null")]:
+            assert_result(run(cli, invalid, "/usr/bin/true"), 2,
+                          stderr_contains="regular file")
+        symlink = tmp / "manifest-link"
+        symlink.symlink_to(empty)
+        assert_result(run(cli, symlink, "/usr/bin/true"), 0)
+
+        # Even a manifest referencing secrets cannot reach the provider when
+        # its initial executable cannot be resolved.
+        protected = tmp / "references.env"
+        protected.write_text("TOKEN=kb://acme/key\n", encoding="utf-8")
+        assert_result(run(cli, protected, "/absent/keybay-test-command"), 127)
 
         inherited = dict(os.environ)
         inherited["KEYBAY_LITERAL"] = "from-parent"
@@ -205,38 +221,95 @@ def main() -> int:
 
         nested = tmp / "nested"
         nested.mkdir()
-        (tmp / ".secrets.env").write_text("VALUE=parent\n", encoding="utf-8")
-        no_upward = subprocess.run(
-            [cli, "run", "--", "/usr/bin/true"],
-            cwd=nested,
-            text=True,
-            capture_output=True,
-            check=False,
+        (tmp / ".env").write_text("VALUE=parent\n", encoding="utf-8")
+        for name in (".secrets.env", ".env.local", ".env.production", ".env.example"):
+            (nested / name).write_text(
+                "VALUE=alternate\nALTERNATE_ONLY=from-alternate\n", encoding="utf-8"
+            )
+
+        # Only .env in the working directory is implicit. Neither a parent
+        # .env nor any other filename is a fallback when it is missing.
+        no_default = run(cli, None, "/usr/bin/printf", "launched", cwd=nested)
+        assert_result(no_default, 2, stdout="", stderr_contains="could not be read")
+
+        default = nested / ".env"
+        default.write_text("VALUE=current\nDEFAULT_ONLY=from-default\n", encoding="utf-8")
+        assert_result(
+            run(cli, None, "/usr/bin/printenv", "VALUE", cwd=nested),
+            0, stdout="current\n",
         )
-        assert_result(no_upward, 2, stderr_contains="could not be read")
+        clean_env = dict(os.environ)
+        clean_env.pop("DEFAULT_ONLY", None)
+        clean_env.pop("ALTERNATE_ONLY", None)
+        assert_result(
+            run(cli, None, "/usr/bin/printenv", "ALTERNATE_ONLY", cwd=nested, env=clean_env),
+            1, stdout="",
+        )
+
+        # Explicit files replace the default completely, including arbitrary
+        # filenames and the former default. No default-only values leak in.
+        for name in (".env.production", ".secrets.env"):
+            assert_result(
+                run(cli, Path(name), "/usr/bin/printenv", "VALUE", cwd=nested),
+                0, stdout="alternate\n",
+            )
+        assert_result(
+            run(cli, Path(".env.production"), "/usr/bin/printenv", "DEFAULT_ONLY",
+                cwd=nested, env=clean_env),
+            1, stdout="",
+        )
+
+        # A selected file that is missing or invalid must not fall back to a
+        # valid .env (or to a valid alternative when .env itself is invalid).
+        assert_result(
+            run(cli, Path("missing.env"), "/usr/bin/printf", "launched", cwd=nested),
+            2, stdout="", stderr_contains="could not be read",
+        )
+        malformed = nested / "malformed.env"
+        malformed.write_text("INVALID NAME=value\n", encoding="utf-8")
+        assert_result(
+            run(cli, malformed, "/usr/bin/printf", "launched", cwd=nested),
+            2, stdout="", stderr_contains="invalid manifest",
+        )
+        default.write_text("INVALID NAME=value\n", encoding="utf-8")
+        assert_result(
+            run(cli, None, "/usr/bin/printf", "launched", cwd=nested),
+            2, stdout="", stderr_contains="invalid manifest",
+        )
+        assert_result(
+            run(cli, Path(".env.production"), "/usr/bin/printenv", "VALUE", cwd=nested),
+            0, stdout="alternate\n",
+        )
 
         no_path = tmp / "no-path.env"
         no_path.write_text("PATH=\n", encoding="utf-8")
-        result = run(cli, no_path, "printenv")
-        assert_result(result, 127, stderr_contains="PATH is absent or empty")
+        result = run(cli, no_path, "printenv", "PATH")
+        assert_result(result, 0, stdout="\n")
+        unset = dict(os.environ)
+        unset.pop("PATH", None)
+        assert_result(run(cli, mixed, "printenv", env=unset), 127)
 
         local_tool = tmp / "local-tool"
-        executable(local_tool, "#!/bin/sh\necho cwd-must-not-run\n")
-        ignored_cwd = tmp / "ignored-cwd.env"
-        ignored_cwd.write_text("PATH=:/usr/bin\n", encoding="utf-8")
-        result = run(cli, ignored_cwd, "local-tool", cwd=tmp)
-        assert_result(result, 127)
-        if "cwd-must-not-run" in result.stdout:
-            raise AssertionError("empty PATH element synthesized cwd")
+        executable(local_tool, "#!/bin/sh\nprintf cwd-ok\n")
+        inherited_cwd = dict(os.environ, PATH=":/usr/bin")
+        assert_result(run(cli, mixed, "local-tool", cwd=tmp, env=inherited_cwd), 0, stdout="cwd-ok")
+        inherited_cwd["PATH"] = ""
+        assert_result(run(cli, mixed, "local-tool", cwd=tmp, env=inherited_cwd), 0, stdout="cwd-ok")
 
         relative_bin = tmp / "relative-bin"
         relative_bin.mkdir()
         relative_tool = relative_bin / "relative-tool"
         executable(relative_tool, "#!/bin/sh\nprintf relative-ok\n")
         relative_path = tmp / "relative.env"
-        relative_path.write_text("PATH=relative-bin\n", encoding="utf-8")
-        result = run(cli, relative_path, "relative-tool", cwd=tmp)
+        relative_path.write_text("PATH=/manifest-must-not-select\n", encoding="utf-8")
+        result = run(cli, relative_path, "relative-tool", cwd=tmp,
+                     env=dict(os.environ, PATH="relative-bin"))
         assert_result(result, 0, stdout="relative-ok")
+        assert_result(run(cli, relative_path, "./relative-bin/relative-tool", cwd=tmp), 0, stdout="relative-ok")
+        dangling = tmp / "dangling"
+        dangling.symlink_to(tmp / "absent")
+        assert_result(run(cli, empty, str(dangling)), 127)
+        assert_result(run(cli, empty, str(relative_bin)), 126)
 
         denied = tmp / "not-executable"
         denied.write_text("must never run\n", encoding="utf-8")

@@ -1,7 +1,8 @@
 # Generated state from independently runnable framework examples.
 example/flutter/.dart_tool/
 example/flutter/build/
-example/*/.secrets.env
+# Include the examples' public configuration and secret references.
+!example/*/.env
 example/node/node_modules/
 example/rails/.bundle/
 example/rails/log/

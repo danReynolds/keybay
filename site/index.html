@@ -48,7 +48,7 @@
       <section class="hero" id="top">
         <div class="shell hero-grid">
           <div>
-            <p class="eyebrow">Five-command CLI · macOS · Linux desktop</p>
+            <p class="eyebrow">CLI + TUI · macOS · Linux desktop</p>
             <h1>Keep secrets<br>out of Git.</h1>
             <p class="lede">Commit your non-secret config and <code>kb://</code> references. Keybay keeps the values in an OS-protected local store, then gives your app the environment it already expects. No Keybay account or hosted service. No Keybay daemon, network path, or shell hook.</p>
 
@@ -57,9 +57,9 @@
 
           <div class="hero-example" id="cli" aria-label="Keybay CLI workflow">
             <p class="interface-label">keybay CLI · macOS / Linux</p>
-            <div class="workflow-example" role="group" aria-label="Committed .secrets.env file">
+            <div class="workflow-example" role="group" aria-label="Committed .env file">
               <div class="example-heading">
-                <p class="example-title"><code>.secrets.env</code></p>
+                <p class="example-title"><code>.env</code></p>
                 <p class="example-context">Non-secret manifest</p>
               </div>
               <pre><code class="language-shell" data-language="shell">API_URL=https://staging.example.com
@@ -72,7 +72,7 @@ OPENAI_API_KEY=kb://acme-example/openai-api-key</code></pre>
               </div>
               <pre><code class="language-shell" data-language="shell">$ keybay set acme-example/openai-api-key
 Value for acme-example/openai-api-key (input hidden):
-Stored.
+Stored acme-example/openai-api-key
 
 $ keybay run -- ./app.sh
 Keybay example app started.

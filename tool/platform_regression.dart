@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
+
 const _routine = ['core', 'macos', 'linux', 'flatpak', 'android', 'ios'];
 const _scripts = {
   'core': ['tool/test_core.sh'],
@@ -14,9 +16,27 @@ const _scripts = {
   'macos-developer-id': ['tool/test_macos_developer_id.sh'],
 };
 
-Future<void> main(List<String> arguments) async {
-  const usage =
-      '''Usage: ./tool/test_e2e.sh [all | core macos linux flatpak android ios]
+const _cliScripts = {
+  'core': ['tool/test_cli_core.sh'],
+  'macos': ['tool/test_cli_platform.sh', 'macos'],
+  'linux': ['tool/test_cli_platform.sh', 'linux'],
+};
+
+Future<void> main(List<String> input) async {
+  final cli = input.isNotEmpty && input.first == '--cli';
+  final arguments = cli ? input.sublist(1) : input;
+  final scripts = cli ? _cliScripts : _scripts;
+  final routine = cli ? ['core', 'macos', 'linux'] : _routine;
+  final product = cli ? 'CLI' : 'SDK';
+  final usage = cli
+      ? '''Usage: ./tool/test_cli.sh [core | macos | linux | all]
+Supply one or more names; no arguments means core (no real store).
+core runs command, SDK-boundary, TUI/PTY, clipboard, exec and archive checks.
+macos/linux run real-provider flows with disposable identities; Linux runs in
+Docker on macOS. Missing prerequisites are blocked (69), not passed.
+Reports in build/regression distinguish CLI from SDK results. These checks do
+not qualify signed distribution/upgrade/notarization.'''
+      : '''Usage: ./tool/test_e2e.sh [all | core macos linux flatpak android ios]
        ./tool/test_e2e.sh macos-signed
        ./tool/test_e2e.sh macos-developer-id
 
@@ -33,11 +53,12 @@ not physical-device or release qualification.''';
     stdout.writeln(usage);
     return;
   }
-  final selected =
-      arguments.isEmpty || (arguments.length == 1 && arguments.single == 'all')
-      ? _routine
+  final selected = arguments.isEmpty
+      ? (cli ? ['core'] : routine)
+      : (arguments.length == 1 && arguments.single == 'all')
+      ? routine
       : arguments.toSet().toList();
-  if (selected.any((name) => !_scripts.containsKey(name))) {
+  if (selected.any((name) => !scripts.containsKey(name))) {
     stderr.writeln(usage);
     exitCode = 64;
     return;
@@ -52,25 +73,18 @@ not physical-device or release qualification.''';
     final permissions = await Process.run('chmod', ['700', run.path]);
     if (permissions.exitCode != 0) throw StateError('Cannot protect report');
   }
-  final head = await Process.run('git', [
-    'rev-parse',
-    'HEAD',
-  ], workingDirectory: root);
-  final status = await Process.run('git', [
-    'status',
-    '--porcelain',
-  ], workingDirectory: root);
+  final head = await _gitOutput(root, ['rev-parse', 'HEAD']);
+  final status = await _gitOutput(root, ['status', '--porcelain']);
   final results = <Map<String, Object?>>[
     for (final platform in selected)
       {'platform': platform, 'status': 'not-run', 'exitCode': null},
   ];
   final report = <String, Object?>{
-    'kind': 'sdk-regression',
+    'kind': cli ? 'cli-regression' : 'sdk-regression',
+    if (cli) 'sourceDigest': _cliSourceDigest(root),
     'startedUtc': DateTime.now().toUtc().toIso8601String(),
-    'sourceCommit': head.exitCode == 0 ? (head.stdout as String).trim() : null,
-    'sourceDirty': status.exitCode == 0
-        ? (status.stdout as String).isNotEmpty
-        : null,
+    'sourceCommit': head?.trim(),
+    'sourceDirty': status?.isNotEmpty,
     'host': Platform.operatingSystem,
     'dartAbi': Abi.current().toString(),
     'dart': Platform.version.split(' ').first,
@@ -104,7 +118,7 @@ not physical-device or release qualification.''';
         !Platform.isMacOS) {
       stderr.writeln('$platform requires macOS.');
     } else {
-      final command = ['bash', ..._scripts[platform]!];
+      final command = ['bash', ...scripts[platform]!];
       try {
         final child = await Process.start(
           command.first,
@@ -117,6 +131,12 @@ not physical-device or release qualification.''';
       } on ProcessException catch (error) {
         stderr.writeln('Could not start $platform: ${error.message}');
         code = error.errorCode == 2 ? 69 : 1;
+      }
+    }
+    if (cli && platform == 'linux') {
+      final nested = File('${run.path}/cli-linux.json');
+      if (nested.existsSync()) {
+        result['linuxReport'] = jsonDecode(nested.readAsStringSync());
       }
     }
     result['exitCode'] = code;
@@ -134,10 +154,55 @@ not physical-device or release qualification.''';
   report['status'] = failed ? 'fail' : (blocked ? 'blocked' : 'pass');
   report['finishedUtc'] = DateTime.now().toUtc().toIso8601String();
   save();
-  stdout.writeln('\nSDK regression: ${report['status']}');
+  stdout.writeln('\n$product regression: ${report['status']}');
   for (final result in results) {
     stdout.writeln('  ${result['platform']}: ${result['status']}');
   }
   stdout.writeln('Regression report: ${reportFile.path}');
   exitCode = failed ? 1 : (blocked ? 69 : 0);
+}
+
+// Hash the command, SDK dependency and regression sources in both native and
+// copied Docker checkouts. Tests do not depend on Git metadata being present.
+String _cliSourceDigest(String root) {
+  final files = <File>[
+    for (final name in [
+      'pubspec.yaml',
+      'pubspec.lock',
+      'packages/keybay/pubspec.yaml',
+      'packages/keybay_cli/pubspec.yaml',
+      'packages/keybay_cli/dart_test.yaml',
+      'analysis_options.yaml',
+    ])
+      File('$root/$name'),
+    for (final name in [
+      'packages/keybay/lib',
+      'packages/keybay/test/support',
+      'packages/keybay_cli/lib',
+      'packages/keybay_cli/bin',
+      'packages/keybay_cli/test',
+      'packages/keybay_cli/tool',
+      'tool',
+    ])
+      ...Directory('$root/$name')
+          .listSync(recursive: true, followLinks: false)
+          .whereType<File>()
+          .where((file) => !file.path.contains('/__pycache__/')),
+  ]..sort((a, b) => a.path.compareTo(b.path));
+  final inventory = StringBuffer();
+  for (final file in files) {
+    inventory.writeln(
+      '${file.path.substring(root.length + 1)} ${sha256.convert(file.readAsBytesSync())}',
+    );
+  }
+  return sha256.convert(utf8.encode(inventory.toString())).toString();
+}
+
+Future<String?> _gitOutput(String root, List<String> arguments) async {
+  try {
+    final result = await Process.run('git', arguments, workingDirectory: root);
+    return result.exitCode == 0 ? result.stdout as String : null;
+  } on ProcessException {
+    return null; // Copied Docker sources carry the content digest instead.
+  }
 }
