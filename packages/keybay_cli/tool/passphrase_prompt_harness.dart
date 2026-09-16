@@ -1,9 +1,15 @@
 import 'dart:io';
 
 import 'package:keybay_cli/src/secret_input.dart';
+import 'package:keybay_cli/src/lifetime.dart';
 
 Future<void> main() async {
-  final reader = SecretInputReader.system(stdin: stdin, stderr: stderr);
+  final lifetime = CommandLifetime()..start();
+  final reader = SecretInputReader.system(
+    stdin: stdin,
+    stderr: stderr,
+    lifetime: lifetime,
+  );
   var status = 0;
   try {
     final passphrase = await reader.readPassphrase();
@@ -19,10 +25,13 @@ Future<void> main() async {
     // Keep the test terminal alive briefly so the parent can inspect ECHO
     // before Darwin revokes the synthetic controlling terminal on exit.
     await Future<void>.delayed(const Duration(milliseconds: 250));
+  } on CommandInterrupted catch (error) {
+    status = error.exitCode;
   } on SecretInputException catch (error) {
     stderr.writeln('error: $error');
     status = error.interactionUnavailable ? 4 : 2;
   }
+  await lifetime.close();
   await stdout.flush();
   await stderr.flush();
   exit(status);

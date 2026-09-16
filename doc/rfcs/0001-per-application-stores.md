@@ -701,8 +701,8 @@ format: 1 to 120 characters, composed of slash-separated segments matching
 `.`/`..` segments, percent decoding, Unicode normalization, query strings, and
 fragments do not exist in the key model.
 
-The CLI may require a narrower organizational subset, such as at least two
-segments, because one CLI store serves many projects. A `kb://` reference uses
+The CLI accepts the same grammar; project prefixes are optional organization,
+not an access control boundary. A `kb://` reference uses
 the exact characters after the prefix as the record key; it is not a general
 URI and performs no decoding. These rules keep names safe to render and ensure
 that every layer selects the same record.
@@ -775,10 +775,13 @@ macOS module loading with hardened runtime and library validation intact.
 
 Source execution resolves the nearest pubspec above the canonical source
 entrypoint and never searches the current working directory. Legacy
-`dart pub global activate` execution accepts only a snapshot beneath the
-package root's verified `.dart_tool/pub/bin` directory and reads that root's
-pubspec. A source or activated launch carrying an embedded declaration must
-match its pubspec.
+`dart pub global activate` execution accepts only a snapshot at the verified
+`.dart_tool/pub/bin/<package>/<snapshot>` location associated with the isolate's
+package config. It resolves that package's unique local `rootUri` entry and
+reads the owning pubspec; a workspace root must not supply another package's
+identity. Package config reads are bounded to 1 MiB and missing, ambiguous or
+non-local owners fail closed. A source or activated launch carrying an embedded
+declaration must match its owning pubspec.
 
 `dart install` AOT-compiles each executable into an application bundle that
 retains the source package's `pubspec.yaml` and generated `pubspec.lock` above

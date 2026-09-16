@@ -3,17 +3,16 @@ import 'package:test/test.dart';
 
 void main() {
   group('secret output guard', () {
-    test('authorizes only when both streams own the foreground TTY', () {
+    test('authorizes only when stdout owns the controlling foreground TTY', () {
       final terminal = _FakeSecretOutputTerminal();
 
       SecretOutputGuard(terminal).authorize();
 
-      expect(terminal.foregroundReads, 2);
+      expect(terminal.foregroundReads, 1);
     });
 
     test('refuses redirected or captured streams before foreground probes', () {
       for (final terminal in <_FakeSecretOutputTerminal>[
-        _FakeSecretOutputTerminal(inputHasTerminal: false),
         _FakeSecretOutputTerminal(outputHasTerminal: false),
       ]) {
         expect(
@@ -22,7 +21,7 @@ void main() {
             isA<SecretOutputException>().having(
               (error) => error.message,
               'message',
-              allOf(contains('interactive TTY'), contains('captured')),
+              allOf(contains('controlling TTY'), contains('captured')),
             ),
           ),
         );
@@ -30,10 +29,9 @@ void main() {
       }
     });
 
-    test('refuses background input or output', () {
+    test('refuses background or unrelated terminal output', () {
       for (final terminal in <_FakeSecretOutputTerminal>[
-        _FakeSecretOutputTerminal(inputIsForeground: false),
-        _FakeSecretOutputTerminal(outputIsForeground: false),
+        _FakeSecretOutputTerminal(outputIsControllingForeground: false),
       ]) {
         expect(
           () => SecretOutputGuard(terminal).authorize(),
@@ -66,30 +64,16 @@ void main() {
 
 final class _FakeSecretOutputTerminal implements SecretOutputTerminal {
   _FakeSecretOutputTerminal({
-    this.inputHasTerminal = true,
     this.outputHasTerminal = true,
-    bool inputIsForeground = true,
-    bool outputIsForeground = true,
-  }) : _inputIsForeground = inputIsForeground,
-       _outputIsForeground = outputIsForeground;
-
-  @override
-  final bool inputHasTerminal;
+    bool outputIsControllingForeground = true,
+  }) : _foreground = outputIsControllingForeground;
   @override
   final bool outputHasTerminal;
-  final bool _inputIsForeground;
-  final bool _outputIsForeground;
+  final bool _foreground;
   int foregroundReads = 0;
-
   @override
-  bool get inputIsForeground {
+  bool get outputIsControllingForeground {
     foregroundReads++;
-    return _inputIsForeground;
-  }
-
-  @override
-  bool get outputIsForeground {
-    foregroundReads++;
-    return _outputIsForeground;
+    return _foreground;
   }
 }

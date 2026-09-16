@@ -17,3 +17,15 @@ dev_dependencies:
 workspace:
   - packages/keybay
   - packages/keybay_cli
+
+# Active development only: fleury_widgets declares its dependency on fleury
+# from the hosted registry, which pub will not unify with the git commit the
+# CLI pins. The override points at that exact same commit — it substitutes the
+# source, never the code — and dependency_closure_test asserts the two refs
+# match. Remove it once a hosted Fleury release exists.
+dependency_overrides:
+  fleury:
+    git:
+      url: https://github.com/danReynolds/fleury.git
+      ref: 1f967547915ce0ae7be717cf677e803e958ece5b
+      path: packages/fleury

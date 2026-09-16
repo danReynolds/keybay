@@ -10,18 +10,14 @@ final class SecretOutputException implements Exception {
 }
 
 abstract interface class SecretOutputTerminal {
-  bool get inputHasTerminal;
   bool get outputHasTerminal;
-  bool get inputIsForeground;
-  bool get outputIsForeground;
+  bool get outputIsControllingForeground;
 }
 
 /// Authorizes the narrow, human-visible `get` output path.
 ///
-/// Both standard input and standard output must be the foreground terminal.
-/// Requiring input as well as output makes an attached human session part of
-/// the contract even though `get` itself does not read input. The check runs
-/// before the store is opened or a value is decrypted.
+/// Stdout must be the controlling foreground terminal. Stdin is unconsumed
+/// and need not be a terminal. Check before opening and immediately at reveal.
 final class SecretOutputGuard {
   SecretOutputGuard(this.terminal);
 
@@ -31,16 +27,16 @@ final class SecretOutputGuard {
   final SecretOutputTerminal terminal;
 
   void authorize() {
-    if (!terminal.inputHasTerminal || !terminal.outputHasTerminal) {
+    if (!terminal.outputHasTerminal) {
       throw const SecretOutputException(
-        'get requires an interactive TTY on stdin and stdout; redirected or '
+        'get requires the controlling TTY on stdout; redirected or '
         'captured output is refused (use keybay run to provide a secret to a '
         'program)',
       );
     }
-    if (!terminal.inputIsForeground || !terminal.outputIsForeground) {
+    if (!terminal.outputIsControllingForeground) {
       throw const SecretOutputException(
-        'get must own the foreground TTY; foreground the job and retry',
+        'get must write to its controlling foreground TTY; foreground the job and retry',
       );
     }
   }
@@ -70,14 +66,8 @@ final class _SystemSecretOutputTerminal implements SecretOutputTerminal {
   const _SystemSecretOutputTerminal();
 
   @override
-  bool get inputHasTerminal => terminalIsAttached(0);
-
-  @override
   bool get outputHasTerminal => terminalIsAttached(1);
 
   @override
-  bool get inputIsForeground => terminalIsForeground(0);
-
-  @override
-  bool get outputIsForeground => terminalIsForeground(1);
+  bool get outputIsControllingForeground => terminalIsControllingForeground(1);
 }

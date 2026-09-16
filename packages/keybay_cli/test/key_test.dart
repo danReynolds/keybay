@@ -3,17 +3,21 @@ import 'package:test/test.dart';
 
 void main() {
   group('CLI key grammar', () {
-    test('accepts qualified project and shared keys', () {
+    test('accepts simple names and namespaced keys', () {
+      expect(isValidCliKey('x'), isTrue);
+      expect(isValidCliKey('openai-api-key'), isTrue);
       expect(isValidCliKey('acme-payments/openai-api-key'), isTrue);
       expect(isValidCliKey('acme_shared/service.key_2'), isTrue);
       expect(isValidCliKey('acme/project/staging/database-url'), isTrue);
       expect(isValidCliKey('0/1'), isTrue);
     });
 
-    test('rejects unqualified, empty, and malformed keys', () {
+    test('rejects empty and malformed keys', () {
       for (final key in <String>[
         '',
-        'openai-api-key',
+        '-key',
+        'key with space',
+        'key\n',
         '/key',
         'namespace/',
         '-namespace/key',

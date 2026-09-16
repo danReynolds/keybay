@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:keybay_cli/src/secret_input.dart';
+import 'package:keybay_cli/src/lifetime.dart';
 
 typedef _NativeSignal = Pointer<Void> Function(Int32, Pointer<Void>);
 typedef _DartSignal = Pointer<Void> Function(int, Pointer<Void>);
@@ -15,7 +16,12 @@ Future<void> main(List<String> arguments) async {
   final dispositionProbe = verifyDispositions
       ? (_SignalDispositionProbe()..installDistinctBaselines())
       : null;
-  final reader = SecretInputReader.system(stdin: stdin, stderr: stderr);
+  final lifetime = CommandLifetime()..start();
+  final reader = SecretInputReader.system(
+    stdin: stdin,
+    stderr: stderr,
+    lifetime: lifetime,
+  );
   try {
     final value = await reader.read(key: 'test/prompt', fromStdin: false);
     stdout.writeln('read:${value.length}');
@@ -24,10 +30,13 @@ Future<void> main(List<String> arguments) async {
       stdout.writeln('signals:restored');
     }
     await Future<void>.delayed(const Duration(milliseconds: 250));
+  } on CommandInterrupted catch (error) {
+    exitCode = error.exitCode;
   } on SecretInputException catch (error) {
     stderr.writeln('error: $error');
     exitCode = 2;
   } finally {
+    await lifetime.close();
     dispositionProbe?.restoreOriginal();
   }
 }

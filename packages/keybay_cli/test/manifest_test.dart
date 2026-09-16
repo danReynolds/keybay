@@ -59,6 +59,15 @@ void main() {
       expect((manifest.values['B']! as SecretManifestValue).key, 'acme/two');
     });
 
+    test('preserves simple and namespaced reference keys verbatim', () {
+      final manifest = _parse('SIMPLE=kb://x\nNAMESPACED=kb://x/y\n');
+      expect((manifest.values['SIMPLE']! as SecretManifestValue).key, 'x');
+      expect(
+        (manifest.values['NAMESPACED']! as SecretManifestValue).key,
+        'x/y',
+      );
+    });
+
     test('treats quotes, interpolation, and export as ordinary grammar', () {
       final manifest = _parse(r'''
 QUOTED="value"
@@ -95,7 +104,7 @@ INTERPOLATED=${HOME}
       () {
         for (final value in <String>[
           'kb://',
-          'kb://openai-api-key',
+          'kb://-key',
           'kb:///key',
           'kb://namespace/',
           'kb://namespace/-key',
@@ -192,7 +201,7 @@ INTERPOLATED=${HOME}
   test('readManifest bounds the file read', () async {
     final directory = await Directory.systemTemp.createTemp('keybay-manifest-');
     addTearDown(() => directory.delete(recursive: true));
-    final file = File('${directory.path}/.secrets.env');
+    final file = File('${directory.path}/.env');
     await file.writeAsBytes(List<int>.filled(manifestMaxBytes + 100, 0x20));
 
     await expectLater(

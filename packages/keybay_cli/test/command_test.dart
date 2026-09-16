@@ -3,6 +3,17 @@ import 'package:test/test.dart';
 
 void main() {
   group('command parser', () {
+    test('open takes no flags or arguments', () {
+      expect(parseCommand(['open']), isA<OpenCommand>());
+      expect(
+        () => parseCommand(['open', '--help']),
+        throwsA(isA<CliUsageException>()),
+      );
+      expect(
+        () => parseCommand(['open', 'store']),
+        throwsA(isA<CliUsageException>()),
+      );
+    });
     test('parses the two global flags', () {
       expect(parseCommand(<String>['--help']), isA<HelpCommand>());
       expect(parseCommand(<String>['--version']), isA<VersionCommand>());
@@ -19,7 +30,7 @@ void main() {
 
       expect(command, isA<RunCommand>());
       final run = command as RunCommand;
-      expect(run.manifestPath, defaultManifestPath);
+      expect(run.manifestPath, './.env');
       expect(run.executable, 'npm');
       expect(run.arguments, <String>['start', '--watch']);
     });
@@ -29,7 +40,7 @@ void main() {
           parseCommand(<String>[
                 'run',
                 '-f',
-                '.secrets.staging.env',
+                '.env.production',
                 '--',
                 'go',
                 'run',
@@ -37,7 +48,7 @@ void main() {
               ])
               as RunCommand;
 
-      expect(command.manifestPath, '.secrets.staging.env');
+      expect(command.manifestPath, '.env.production');
       expect(command.executable, 'go');
       expect(command.arguments, <String>['run', '.']);
     });
@@ -86,12 +97,12 @@ void main() {
       expect(parseCommand(<String>['list']), isA<ListCommand>());
     });
 
-    test('rejects bare keys for every single-key command', () {
-      for (final verb in <String>['set', 'get', 'rm']) {
-        expect(
-          () => parseCommand(<String>[verb, 'openai-api-key']),
-          throwsA(isA<CliUsageException>()),
-        );
+    test('accepts simple and namespaced keys for every single-key command', () {
+      for (final key in ['x', 'x/y']) {
+        expect((parseCommand(['set', key]) as SetCommand).key, key);
+        expect((parseCommand(['set', '--stdin', key]) as SetCommand).key, key);
+        expect((parseCommand(['get', key]) as GetCommand).key, key);
+        expect((parseCommand(['rm', key]) as RemoveCommand).key, key);
       }
     });
 
@@ -113,7 +124,7 @@ void main() {
     });
 
     test('usage errors do not echo an invalid argument', () {
-      const sentinel = 'do-not-echo-this-secret';
+      const sentinel = 'do not echo this secret';
       late final CliUsageException error;
       try {
         parseCommand(<String>['set', sentinel]);

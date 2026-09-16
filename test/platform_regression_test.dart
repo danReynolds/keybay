@@ -15,6 +15,49 @@ void main() {
       'tool/test_e2e.sh',
       'tool/platform_regression.dart',
     ]);
+    // The shared runner uses the repository's pinned crypto package for
+    // source receipts. Preserve absolute dependency roots in the copied fixture.
+    final config = File('.dart_tool/package_config.json').absolute;
+    final resolved =
+        jsonDecode(config.readAsStringSync()) as Map<String, dynamic>;
+    for (final package
+        in (resolved['packages'] as List).cast<Map<String, dynamic>>()) {
+      package['rootUri'] = config.uri
+          .resolve(package['rootUri'] as String)
+          .toString();
+    }
+    final fixtureConfig = File(
+      '${repository.path}/.dart_tool/package_config.json',
+    );
+    fixtureConfig.parent.createSync();
+    fixtureConfig.writeAsStringSync(jsonEncode(resolved));
+    for (final folder in [
+      'packages/keybay/lib',
+      'packages/keybay/test/support',
+      'packages/keybay_cli/lib',
+      'packages/keybay_cli/bin',
+      'packages/keybay_cli/test',
+      'packages/keybay_cli/tool',
+    ]) {
+      Directory('${repository.path}/$folder').createSync(recursive: true);
+    }
+    for (final file in [
+      'pubspec.yaml',
+      'pubspec.lock',
+      'analysis_options.yaml',
+      'packages/keybay/pubspec.yaml',
+      'packages/keybay_cli/pubspec.yaml',
+      'packages/keybay_cli/dart_test.yaml',
+    ]) {
+      File('${repository.path}/$file').writeAsStringSync('fixture');
+    }
+    File(
+      '${repository.path}/tool/test_cli_core.sh',
+    ).writeAsStringSync("printf 'cli-core\\n' >> invocations");
+    File('${repository.path}/tool/test_cli_platform.sh').writeAsStringSync(r'''
+printf 'cli-%s\n' "$1" >> invocations
+exit "${FIXTURE_CLI_EXIT:-0}"
+''');
     for (final name in [
       'core',
       'macos_native',
@@ -173,6 +216,35 @@ exit "${FIXTURE_MOBILE_EXIT:-0}"
       expect(receipt['status'], 'interrupted');
       expect(((receipt['results'] as List)[1] as Map)['status'], 'not-run');
       expect(receipt['finishedUtc'], isNull);
+    },
+  );
+
+  test(
+    'CLI default is core and receipts are distinct with a source digest',
+    () async {
+      final result = await run(['--cli']);
+      expect(result.exitCode, 0, reason: '${result.stdout} ${result.stderr}');
+      expect(File('${repository.path}/invocations').readAsLinesSync(), [
+        'cli-core',
+      ]);
+      expect(report()['kind'], 'cli-regression');
+      expect(report()['sourceDigest'], matches(RegExp(r'^[a-f0-9]{64}$')));
+    },
+  );
+
+  test(
+    'CLI subsets use their own scripts and missing prerequisites remain blocked',
+    () async {
+      final result = await run(
+        ['--cli', 'linux', 'core'],
+        {'FIXTURE_CLI_EXIT': '69'},
+      );
+      expect(result.exitCode, 69, reason: '${result.stdout} ${result.stderr}');
+      expect(File('${repository.path}/invocations').readAsLinesSync(), [
+        'cli-linux',
+        'cli-core',
+      ]);
+      expect(report()['status'], 'blocked');
     },
   );
 

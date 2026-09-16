@@ -1,176 +1,152 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:keybay_cli/src/failure.dart';
 import 'dart:typed_data';
 
 import 'package:keybay_cli/src/process_executor.dart';
 import 'package:test/test.dart';
 
 void main() {
-  group('PATH resolution', () {
-    test(
-      'uses final child PATH, ignores empty entries, and preserves argv',
-      () async {
-        final system = _FakeExecveSystem(<String, int>{
-          'relative-bin/tool': 2,
-          '/usr/bin/tool': 2,
-        });
-        final stderr = StringBuffer();
-        final executor = PosixCommandExecutor(system: system, stderr: stderr);
-        const environment = <String, String>{
-          'PATH': ':relative-bin::/usr/bin:',
-          'SECRET': 'environment-only',
-        };
-        const overlay = <String, String>{'INJECTED': 'from-manifest'};
+  late Directory directory;
+  setUp(() {
+    directory = Directory.systemTemp.createTempSync('keybay-resolve-');
+  });
+  tearDown(() => directory.deleteSync(recursive: true));
 
-        final result = await executor.execute(
-          executable: 'tool',
-          arguments: const <String>['--flag', 'argument'],
-          environment: environment,
-          overlay: overlay,
-        );
-
-        expect(result, 127);
-        expect(system.calls.map((call) => call.path), <String>[
-          'relative-bin/tool',
-          '/usr/bin/tool',
-        ]);
-        for (final call in system.calls) {
-          expect(call.arguments, <String>['tool', '--flag', 'argument']);
-          expect(call.arguments, isNot(contains('environment-only')));
-          // Only the manifest overlay crosses the exec seam as strings; the
-          // parent environment flows through raw environ, never re-encoded.
-          expect(call.overlay, overlay);
-          expect(call.overlay.values, isNot(contains('environment-only')));
-        }
-        expect(stderr.toString(), '''
-error: command not found: tool
-Fix PATH or use an absolute command path.
-''');
-      },
+  File executable(String name, {bool executable = true}) {
+    final file = File('${directory.path}/$name');
+    file.parent.createSync(recursive: true);
+    file.writeAsStringSync('fixture');
+    expect(
+      Process.runSync('chmod', [
+        executable ? '700' : '600',
+        file.path,
+      ]).exitCode,
+      0,
     );
+    return file;
+  }
 
-    test('an absent or empty PATH never synthesizes cwd', () async {
-      for (final environment in <Map<String, String>>[
-        const <String, String>{},
-        const <String, String>{'PATH': ''},
-      ]) {
-        final system = _FakeExecveSystem(const <String, int>{});
-        final stderr = StringBuffer();
-        final executor = PosixCommandExecutor(system: system, stderr: stderr);
+  PosixCommandExecutor resolver(_FakeExecveSystem system) =>
+      PosixCommandExecutor(
+        system: system,
+        stderr: StringBuffer(),
+        workingDirectory: directory.path,
+      );
 
-        expect(
-          await executor.execute(
-            executable: 'tool',
-            arguments: const <String>[],
-            environment: environment,
-            overlay: const <String, String>{},
-          ),
-          127,
-        );
-        expect(system.calls, isEmpty);
-        expect(stderr.toString(), contains('use an absolute command path'));
-      }
-    });
-
-    test('EACCES wins over pure not-found after the complete search', () async {
-      final system = _FakeExecveSystem(<String, int>{
-        '/one/tool': 2,
-        '/two/tool': 13,
-        '/three/tool': 20,
-      });
-      final stderr = StringBuffer();
-      final executor = PosixCommandExecutor(system: system, stderr: stderr);
-
+  test(
+    'empty/relative PATH entries use captured cwd; canonical argv is frozen',
+    () async {
+      final target = executable('bin/tool');
+      Link('${directory.path}/tool').createSync(target.path);
+      final system = _FakeExecveSystem({});
+      final executor = resolver(system);
+      final args = ['arg'];
+      final command = executor.prepare(
+        executable: 'tool',
+        arguments: args,
+        environment: {'PATH': ':not-used'},
+      );
+      args[0] = 'changed';
+      expect(command.path, target.resolveSymbolicLinksSync());
+      expect(command.arguments, ['tool', 'arg']);
+      expect(system.calls, isEmpty);
       expect(
-        await executor.execute(
-          executable: 'tool',
-          arguments: const <String>[],
-          environment: const <String, String>{'PATH': '/one:/two:/three'},
-          overlay: const <String, String>{},
-        ),
+        await executor.execute(command: command, overlay: {'PATH': '/hostile'}),
         126,
       );
-      expect(system.calls, hasLength(3));
-      expect(stderr.toString(), '''
-error: command is not executable: tool
-Check the command's executable permission and format.
-''');
-    });
+      expect(system.calls.single.path, command.path);
+      expect(system.calls.single.arguments, ['tool', 'arg']);
+      expect(system.calls.single.overlay, {'PATH': '/hostile'});
+    },
+  );
 
-    test(
-      'ENOEXEC and unexpected errno stop the search without a shell retry',
-      () async {
-        for (final entry in <int, String>{
-          8: 'not executable',
-          5: 'errno 5',
-        }.entries) {
-          final system = _FakeExecveSystem(<String, int>{
-            '/one/tool': entry.key,
-            '/two/tool': 2,
-          });
-          final stderr = StringBuffer();
-          final executor = PosixCommandExecutor(system: system, stderr: stderr);
-
-          expect(
-            await executor.execute(
-              executable: 'tool',
-              arguments: const <String>[],
-              environment: const <String, String>{'PATH': '/one:/two'},
-              overlay: const <String, String>{},
-            ),
-            126,
-          );
-          expect(system.calls, hasLength(1));
-          expect(stderr.toString(), contains(entry.value));
-          expect(
-            stderr.toString(),
-            contains(entry.key == 8 ? 'Check the command' : 'then retry'),
-          );
-          expect(system.calls.single.path, isNot('/bin/sh'));
-        }
-      },
+  test('unset PATH never searches, empty PATH searches cwd', () {
+    final target = executable('tool');
+    final executor = resolver(_FakeExecveSystem({}));
+    expect(
+      () =>
+          executor.prepare(executable: 'tool', arguments: [], environment: {}),
+      throwsA(isA<CliFailure>().having((e) => e.exitCode, 'status', 127)),
+    );
+    expect(
+      executor
+          .prepare(executable: 'tool', arguments: [], environment: {'PATH': ''})
+          .path,
+      target.resolveSymbolicLinksSync(),
     );
   });
 
-  group('direct path', () {
-    test('a slash bypasses PATH search', () async {
-      final system = _FakeExecveSystem(<String, int>{'./bin/tool': 2});
-      final stderr = StringBuffer();
-      final executor = PosixCommandExecutor(system: system, stderr: stderr);
-
-      expect(
-        await executor.execute(
-          executable: './bin/tool',
-          arguments: const <String>['arg'],
-          environment: const <String, String>{'PATH': '/must/not/use'},
-          overlay: const <String, String>{},
-        ),
-        127,
+  test('relative and absolute commands bypass PATH', () {
+    final target = executable('bin/tool');
+    final executor = resolver(_FakeExecveSystem({}));
+    for (final name in ['./bin/tool', target.path]) {
+      final command = executor.prepare(
+        executable: name,
+        arguments: [],
+        environment: {'PATH': '/absent'},
       );
-      expect(system.calls, hasLength(1));
-      expect(system.calls.single.path, './bin/tool');
-      expect(system.calls.single.arguments, <String>['./bin/tool', 'arg']);
-      expect(stderr.toString(), contains('Fix PATH'));
-    });
-
-    test('maps EACCES and ENOEXEC to 126 and other errno to 126', () async {
-      for (final errno in <int>[13, 8, 5]) {
-        final system = _FakeExecveSystem(<String, int>{'/bin/tool': errno});
-        final executor = PosixCommandExecutor(
-          system: system,
-          stderr: StringBuffer(),
-        );
-        expect(
-          await executor.execute(
-            executable: '/bin/tool',
-            arguments: const <String>[],
-            environment: const <String, String>{},
-            overlay: const <String, String>{},
-          ),
-          126,
-        );
-      }
-    });
+      expect(command.path, target.resolveSymbolicLinksSync());
+      expect(command.arguments, [name]);
+    }
   });
+
+  test(
+    'search continues past unusable candidates; unusable wins over absent',
+    () {
+      executable('one/tool', executable: false);
+      Directory('${directory.path}/two/tool').createSync(recursive: true);
+      final target = executable('three/tool');
+      final executor = resolver(_FakeExecveSystem({}));
+      expect(
+        executor
+            .prepare(
+              executable: 'tool',
+              arguments: [],
+              environment: {'PATH': 'one:two:three'},
+            )
+            .path,
+        target.resolveSymbolicLinksSync(),
+      );
+      expect(
+        () => executor.prepare(
+          executable: 'tool',
+          arguments: [],
+          environment: {'PATH': 'one:two:absent'},
+        ),
+        throwsA(isA<CliFailure>().having((e) => e.exitCode, 'status', 126)),
+      );
+      Link('${directory.path}/dangling').createSync('missing');
+      expect(
+        () => executor.prepare(
+          executable: './dangling',
+          arguments: [],
+          environment: {},
+        ),
+        throwsA(isA<CliFailure>().having((e) => e.exitCode, 'status', 127)),
+      );
+    },
+  );
+
+  test(
+    'every execution failure makes exactly one attempt, with no fallback',
+    () async {
+      final target = executable('tool');
+      for (final errno in [2, 8, 13, 20, 5]) {
+        final system = _FakeExecveSystem({
+          target.resolveSymbolicLinksSync(): errno,
+        });
+        final executor = resolver(system);
+        final command = executor.prepare(
+          executable: 'tool',
+          arguments: [],
+          environment: {'PATH': ''},
+        );
+        expect(await executor.execute(command: command, overlay: {}), 126);
+        expect(system.calls, hasLength(1));
+      }
+    },
+  );
 
   group('overlayShadowsEnvEntry (raw environ passthrough)', () {
     List<Uint8List> names(List<String> values) => <Uint8List>[

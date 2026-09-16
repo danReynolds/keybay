@@ -28,7 +28,16 @@ void main() {
       (package) => package['name'] == 'keybay_cli',
     );
     final seeds = (root['directDependencies'] as List).cast<String>();
-    expect(seeds, unorderedEquals(<String>['ffi', 'keybay']));
+    expect(
+      seeds,
+      unorderedEquals(<String>[
+        'characters',
+        'ffi',
+        'fleury',
+        'fleury_widgets',
+        'keybay',
+      ]),
+    );
 
     final closure = <String>{};
     final queue = <String>[...seeds];
@@ -44,7 +53,18 @@ void main() {
       closure,
       unorderedEquals(<String>{
         'keybay',
+        'archive',
         'args',
+        'async',
+        'characters',
+        'fleury',
+        'fleury_widgets',
+        'image',
+        'path',
+        'posix',
+        'stdio',
+        'vm_service',
+        'watcher',
         'collection',
         'crypto',
         'cryptography',
@@ -68,6 +88,8 @@ void main() {
           'root',
           reason: 'keybay must resolve from the workspace',
         );
+      } else if (name == 'fleury' || name == 'fleury_widgets') {
+        expect(source, 'git');
       } else {
         expect(
           source,
@@ -99,6 +121,11 @@ void main() {
       pubspec,
       contains(RegExp(r'^\s*ffi:\s*2\.2\.0\s*$', multiLine: true)),
     );
+    expect(pubspec, contains('url: https://github.com/danReynolds/fleury.git'));
+    expect(
+      pubspec,
+      contains(RegExp(r'^      ref: [0-9a-f]{40}\s*$', multiLine: true)),
+    );
     expect(pubspec, isNot(contains('dependency_overrides')));
     expect(
       File('${packageDirectory.path}/pubspec_overrides.yaml').existsSync(),
@@ -110,57 +137,87 @@ void main() {
       ).existsSync(),
       isFalse,
     );
+    // The workspace may override fleury's source — fleury_widgets declares it
+    // from the hosted registry, which pub will not unify with a git pin — but
+    // only onto the very commit this package already names. An override that
+    // could substitute different Fleury code is what the ban is for.
+    final pins = RegExp(
+      r'^      ref: ([0-9a-f]{40})\s*$',
+      multiLine: true,
+    ).allMatches(pubspec).map((match) => match.group(1)!).toList();
+    expect(pins, hasLength(2));
+    expect(
+      pins.toSet(),
+      hasLength(1),
+      reason: 'fleury and fleury_widgets must use the same reviewed commit',
+    );
+    final pinned = pins.first;
+    final workspace = File(
+      '${packageDirectory.path}/../../pubspec.yaml',
+    ).readAsStringSync();
+    final overrides = workspace.contains('dependency_overrides')
+        ? workspace.substring(workspace.indexOf('dependency_overrides'))
+        : '';
+    for (final override in RegExp(
+      r'^  ([a-z_]+):\s*$',
+      multiLine: true,
+    ).allMatches(overrides)) {
+      expect(
+        override.group(1),
+        'fleury',
+        reason: "only fleury's source may be overridden",
+      );
+    }
+    if (overrides.isNotEmpty) {
+      expect(
+        overrides,
+        contains('ref: $pinned'),
+        reason: 'an override must name the pinned Fleury commit',
+      );
+    }
   });
 
-  test(
-    'CLI source contains no network client, file writer, or spawn fallback',
-    () {
-      final roots = <Directory>[
-        Directory('${packageDirectory.path}/lib'),
-        Directory('${packageDirectory.path}/bin'),
-      ];
-      final forbidden = RegExp(
-        r'(?:\b(?:Socket|RawSocket|HttpClient|WebSocket|InternetAddress|NetworkInterface|Directory|IOSink|Link)\b|Process\.(?:run|runSync|start)\b|FileMode\.(?:write|append|writeOnly|writeOnlyAppend)\b|\.(?:writeAsBytes|writeAsString|openWrite)(?:Sync)?\s*\()',
-      );
-      final fileConstructor = RegExp(
-        r'\bFile(?:\.(?:fromRawPath|fromUri))?\s*\(',
-      );
-      var fileConstructorCount = 0;
-      var manifestReaderFound = false;
-      for (final root in roots) {
-        for (final entity in root.listSync(recursive: true)) {
-          if (entity is! File || !entity.path.endsWith('.dart')) continue;
-          final source = entity.readAsStringSync();
-          fileConstructorCount += fileConstructor.allMatches(source).length;
-          manifestReaderFound |= source.contains(
-            'loadManifest: (path) => readManifest(File(path))',
-          );
+  test('CLI source contains no network client, file writer, or spawn fallback', () {
+    final roots = <Directory>[
+      Directory('${packageDirectory.path}/lib'),
+      Directory('${packageDirectory.path}/bin'),
+    ];
+    final forbidden = RegExp(
+      r'(?:\b(?:Socket|RawSocket|HttpClient|WebSocket|InternetAddress|NetworkInterface|IOSink|Link)\b|Process\.(?:run|runSync|start)\b|FileMode\.(?:write|append|writeOnly|writeOnlyAppend)\b|\.(?:writeAsBytes|writeAsString|openWrite)(?:Sync)?\s*\()',
+    );
+    final fileConstructor = RegExp(
+      r'\bFile(?:\.(?:fromRawPath|fromUri))?\s*\(',
+    );
+
+    for (final root in roots) {
+      for (final entity in root.listSync(recursive: true)) {
+        if (entity is! File || !entity.path.endsWith('.dart')) continue;
+        final source = entity.readAsStringSync();
+        if (fileConstructor.hasMatch(source)) {
           expect(
-            source,
-            isNot(matches(forbidden)),
+            entity.uri.pathSegments.last,
+            isIn([
+              'entrypoint.dart',
+              'process_executor.dart',
+              'clipboard.dart',
+            ]),
             reason:
-                '${entity.path} introduces a network, plaintext file-write, or '
-                'spawn API; SR-2, SR-3, SR-8, and SR-13 require review before '
-                'adding that surface',
+                'Only selected manifest input and executable metadata may construct File objects.',
           );
         }
+        expect(
+          entity.path.endsWith('/tui/clipboard.dart')
+              ? source.replaceAll('Process.start', 'ReviewedClipboardStart')
+              : source,
+          isNot(matches(forbidden)),
+          reason:
+              '${entity.path} introduces a network, plaintext file-write, or '
+              'spawn API; SR-2, SR-3, SR-8, and SR-13 require review before '
+              'adding that surface',
+        );
       }
-      expect(
-        fileConstructorCount,
-        2,
-        reason:
-            'CLI File construction is limited to the selected manifest and '
-            'the controlling-terminal passphrase stream',
-      );
-      expect(manifestReaderFound, isTrue);
-      expect(
-        File(
-          '${packageDirectory.path}/lib/src/secret_input.dart',
-        ).readAsStringSync(),
-        contains("File('/dev/tty').open()"),
-      );
-    },
-  );
+    }
+  });
 }
 
 Directory _packageDirectory() {

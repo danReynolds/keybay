@@ -90,6 +90,8 @@ jobs:
       - run: ./tool/test_e2e.sh core
       - run: dart test -x integration
         working-directory: packages/keybay_cli
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb xclip xauth
       - run: ./tool/test_cli.sh
       - if: runner.os == 'Linux'
         run: dart run tool/test_release.dart
@@ -99,13 +101,14 @@ jobs:
         run: dart test watchers/tests
       - if: runner.os == 'Linux'
         run: ./tool/lint_workflows.sh
-      # Exercise the exact package archive and warning contract before a tag.
+      # Exercise the SDK package archive and warning contract before a tag.
       # Keep archive-policy validation on the current-SDK Linux lane; the
       # minimum lane is reserved for runtime/AOT compatibility at the floor.
-      - if: runner.os == 'Linux'
-        run: |
-          ./tool/validate_publish.sh packages/keybay cryptography dbus ffi
-          ./tool/validate_publish.sh packages/keybay_cli ffi keybay
+      # CLI Pub publishing is disabled until Fleury has a hosted release;
+      # test_cli.sh above still validates the exact native CLI archive.
+      - name: Validate SDK publication archive
+        if: runner.os == 'Linux'
+        run: ./tool/validate_publish.sh packages/keybay cryptography dbus ffi
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -132,7 +135,8 @@ jobs:
       # AOT/exec/PTY behavior, not only a pubspec constraint.
       - run: dart test -x integration
         working-directory: packages/keybay_cli
-      - run: KEYBAY_SKIP_DART_INSTALL=1 ./tool/test_cli.sh
+      - run: sudo apt-get update && sudo apt-get install -y xvfb xclip xauth
+      - run: ./tool/test_cli.sh core
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -169,7 +173,7 @@ jobs:
       - run: ./tool/test_e2e.sh macos
       - run: KEYBAY_INTEGRATION=1 dart test test/v2_macos_unentitled_integration_test.dart --name 'public Keybay facade'
         working-directory: packages/keybay
-      - run: ./tool/test_cli_storage.sh
+      - run: ./tool/test_cli.sh core macos
       # Package, verify, extract, and execute the exact README onboarding loop
       # against the fixed-appId product. GitHub-hosted runners are disposable
       # and start without a Keybay store.
@@ -189,9 +193,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dart-lang/setup-dart@7654d458321ee25acccccfdb86cd48bd95768ff1 # v1.8.0
-      - run: sudo apt-get update && sudo apt-get install -y libsecret-tools gnome-keyring dbus libglib2.0-bin
+      - run: sudo apt-get update && sudo apt-get install -y libsecret-tools gnome-keyring dbus libglib2.0-bin xvfb xclip xauth
       - run: dart pub get --enforce-lockfile
       - run: ./tool/test_e2e.sh linux
+      - run: ./tool/test_cli.sh core linux
       # Real Secret Service round-trip: a throwaway D-Bus session with a fresh
       # gnome-keyring unlocked by a known password (secrets component only).
       # Recipe verified locally against real gnome-keyring in a Docker container.
@@ -206,7 +211,6 @@ jobs:
             export XDG_RUNTIME_DIR="$(mktemp -d)"
             eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
             export GNOME_KEYRING_CONTROL
-            ./tool/test_cli_storage.sh
             KEYBAY_QUICKSTART=1 ./tool/test_cli_quickstart.sh
             KEYBAY_BENCHMARK=1 KEYBAY_BENCHMARK_ITERATIONS=100 \
               ./tool/benchmark_cli.sh
@@ -217,19 +221,6 @@ jobs:
           path: ${{ runner.temp }}/cli-benchmark-linux.json
           if-no-files-found: warn
           retention-days: 30
-      # The CLI has its own locked-store contract: exit 69, actionable text,
-      # and no secret in diagnostics. Keep it in a separate disposable session
-      # because this test also leaves the login collection locked.
-      - run: |
-          # The quoted variables expand inside the deliberately separate shell.
-          # shellcheck disable=SC2016
-          dbus-run-session -- bash -c '
-            set -euo pipefail
-            export XDG_RUNTIME_DIR="$(mktemp -d)"
-            eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
-            export GNOME_KEYRING_CONTROL
-            KEYBAY_LOCKED_TEST=1 ./tool/test_cli_locked_storage.sh
-          '
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -295,6 +286,8 @@ jobs:
           git -C "$flutter_root" checkout --detach refs/tags/3.44.4
           test "$(git -C "$flutter_root" rev-parse HEAD)" = ad70ec4617166f1c38e5d2bfd388af71fda14f06
           echo "$flutter_root/bin" >> "$GITHUB_PATH"
+      # The shared regression runner records source digests with package:crypto.
+      - run: dart pub get --enforce-lockfile
       - run: flutter pub get --enforce-lockfile
         working-directory: example_flutter
       - name: enable KVM for the Android emulator
@@ -339,6 +332,8 @@ jobs:
           git -C "$flutter_root" checkout --detach refs/tags/3.44.4
           test "$(git -C "$flutter_root" rev-parse HEAD)" = ad70ec4617166f1c38e5d2bfd388af71fda14f06
           echo "$flutter_root/bin" >> "$GITHUB_PATH"
+      # The shared regression runner records source digests with package:crypto.
+      - run: dart pub get --enforce-lockfile
       - run: flutter pub get --enforce-lockfile
         working-directory: example_flutter
       - run: ./tool/test_e2e.sh ios

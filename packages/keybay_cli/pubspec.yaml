@@ -1,6 +1,8 @@
 name: keybay_cli
 description: Austere, local secret injection backed by Keybay.
 version: 0.2.0
+# Native CLI artifacts remain buildable; pub publishing awaits hosted Fleury.
+publish_to: none
 repository: https://github.com/danReynolds/keybay/tree/main/packages/keybay_cli
 homepage: https://danreynolds.github.io/keybay/#cli
 
@@ -10,7 +12,18 @@ environment:
 resolution: workspace
 
 dependencies:
+  characters: 1.4.1
   ffi: 2.2.0
+  fleury:
+    git:
+      url: https://github.com/danReynolds/fleury.git
+      ref: 1f967547915ce0ae7be717cf677e803e958ece5b
+      path: packages/fleury
+  fleury_widgets:
+    git:
+      url: https://github.com/danReynolds/fleury.git
+      ref: 1f967547915ce0ae7be717cf677e803e958ece5b
+      path: packages/fleury_widgets
   keybay: 0.2.0
 
 dev_dependencies:

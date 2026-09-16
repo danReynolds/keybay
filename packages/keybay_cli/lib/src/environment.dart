@@ -15,20 +15,12 @@ final class StoredValueException implements Exception {
 
 final class EnvironmentResolution {
   EnvironmentResolution({
-    required Map<String, String> environment,
     required Map<String, String> overlay,
     required List<String> missingKeys,
     required this.referenceCount,
     required this.missingReferenceCount,
-  }) : environment = Map<String, String>.unmodifiable(environment),
-       overlay = Map<String, String>.unmodifiable(overlay),
+  }) : overlay = Map<String, String>.unmodifiable(overlay),
        missingKeys = List<String>.unmodifiable(missingKeys);
-
-  /// The parent environment with [overlay] applied. Used for lookups the CLI
-  /// performs itself (PATH search); the child's actual environment is built
-  /// from the raw process `environ` plus [overlay], because this string-level
-  /// merge is lossy for variables Dart cannot represent (see [overlay]).
-  final Map<String, String> environment;
 
   /// Exactly the variables the manifest names, fully resolved. The executor
   /// materializes these and passes every *other* parent variable through
@@ -44,17 +36,15 @@ final class EnvironmentResolution {
   bool get isComplete => missingKeys.isEmpty;
 }
 
-/// Overlays the manifest onto [parentEnvironment] without mutating it.
+/// Resolves only the manifest overlay; inherited environment stays native.
 ///
 /// Only referenced stored values are decoded. Unreferenced entries may be
 /// binary because the underlying library is bytes-first; they are outside the
 /// environment-shaped CLI contract.
 EnvironmentResolution resolveEnvironment({
   required Manifest manifest,
-  required Map<String, String> parentEnvironment,
   required Map<String, Uint8List> storedValues,
 }) {
-  final environment = <String, String>{...parentEnvironment};
   final overlay = <String, String>{};
   final missingKeys = <String>[];
   final seenMissingKeys = <String>{};
@@ -64,7 +54,6 @@ EnvironmentResolution resolveEnvironment({
   for (final entry in manifest.values.entries) {
     switch (entry.value) {
       case LiteralManifestValue(:final value):
-        environment[entry.key] = value;
         overlay[entry.key] = value;
       case SecretManifestValue(:final key):
         referenceCount++;
@@ -75,13 +64,11 @@ EnvironmentResolution resolveEnvironment({
           continue;
         }
         final decoded = decodeStoredValue(key, bytes);
-        environment[entry.key] = decoded;
         overlay[entry.key] = decoded;
     }
   }
 
   return EnvironmentResolution(
-    environment: environment,
     overlay: overlay,
     missingKeys: missingKeys,
     referenceCount: referenceCount,
