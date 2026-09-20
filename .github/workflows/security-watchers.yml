@@ -58,7 +58,7 @@ jobs:
             echo EOF
           } >> "$GITHUB_OUTPUT"
       - name: scan every committed dependency lockfile
-        uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
         with:
           scan-args: |-
             --output=results.json
@@ -67,7 +67,7 @@ jobs:
         continue-on-error: true
       - name: report findings and fail on vulnerabilities
         if: ${{ !cancelled() }}
-        uses: google/osv-scanner-action/osv-reporter-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+        uses: google/osv-scanner-action/osv-reporter-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
         with:
           scan-args: |-
             --output=results.sarif
@@ -76,7 +76,7 @@ jobs:
             --fail-on-vuln=true
       - name: upload findings to code scanning
         if: ${{ !cancelled() }}
-        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           sarif_file: results.sarif
 
@@ -110,7 +110,7 @@ jobs:
           persist-credentials: false
       - name: install Dart
         id: dart
-        uses: dart-lang/setup-dart@7654d458321ee25acccccfdb86cd48bd95768ff1 # v1.8.0
+        uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
       - name: resolve the committed workspace
         id: pub_get
         run: dart pub get --enforce-lockfile
@@ -140,7 +140,7 @@ jobs:
       - name: discover resolved dependency vulnerabilities
         id: report_osv_scan
         if: ${{ always() && steps.report_lockfiles.outcome == 'success' }}
-        uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
         with:
           scan-args: |-
             --output=report-osv-results.json
@@ -151,7 +151,7 @@ jobs:
         id: report_osv_sarif
         if: >-
           ${{ always() && steps.report_osv_scan.outcome != 'skipped' }}
-        uses: google/osv-scanner-action/osv-reporter-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+        uses: google/osv-scanner-action/osv-reporter-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
         with:
           scan-args: |-
             --output=report-osv-results.sarif
@@ -321,7 +321,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
-      - uses: dart-lang/setup-dart@7654d458321ee25acccccfdb86cd48bd95768ff1 # v1.8.0
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
       - run: dart pub get --enforce-lockfile
       - name: download discovery inputs
         id: download
