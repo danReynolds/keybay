@@ -4,6 +4,7 @@ Generated history of weekly and on-demand watcher runs. Raw findings are inputs,
 
 | Run | Dependencies | Platforms | Peers | AI assessment | Actions |
 | --- | --- | --- | --- | --- | --- |
+| [2026-09-14](2026-09-14-34819142373-1/raw.md) | quiet | quiet | findings | assessed: [Dependencies and platforms were quiet; 76 peer signals were reviewed against current V2 with no applicable vulnerability or additional work identified.](2026-09-14-34819142373-1/assessment.md) | None |
 | [2026-09-07](2026-09-07-34096646506-1/raw.md) | quiet | quiet | findings | assessed: [Dependencies and platforms were quiet; 38 peer signals were reviewed against current V2 with no applicable vulnerability or additional work identified.](2026-09-07-34096646506-1/assessment.md) | None |
 | [2026-08-31](2026-08-31-33369314477-1/raw.md) | quiet | quiet | findings | assessed: [Dependencies and platforms were quiet; 42 peer signals were reviewed against current V2 with no applicable vulnerability or additional work identified.](2026-08-31-33369314477-1/assessment.md) | None |
 | [2026-08-24](2026-08-24-32702923289-1/raw.md) | quiet | quiet | findings | assessed: [Dependencies and platforms were quiet; 27 peer signals were reviewed with no applicable Keybay vulnerability or follow-up work identified.](2026-08-24-32702923289-1/assessment.md) | None |
