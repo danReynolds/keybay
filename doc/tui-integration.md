@@ -188,7 +188,7 @@ three seconds; errors persist until dismissal, route invalidation or a
 successful retry of the same action. See Notification presentation.
 
 Both Fleury packages are pinned to merged main commit
-`2e5fd0e5ba1a1ea40c016c7eac0b66e7bb5cf7c3`. This includes the
+`1f967547915ce0ae7be717cf677e803e958ece5b`. This includes the
 [Button/toast/lifecycle APIs](https://github.com/danReynolds/fleury/pull/258),
 [dim-renderer fix](https://github.com/danReynolds/fleury/pull/254) and
 [alignment fix](https://github.com/danReynolds/fleury/pull/257). All final-head
@@ -250,7 +250,11 @@ splits a grapheme cluster, so a wide glyph cannot overflow its column;
 Copy, Edit and passphrase entry preserve the original bytes, including pasted
 controls and CRLF. Secret controllers opt into Fleury's `preserveText` policy;
 name/search fields retain ordinary canonicalization. Existing clipboard and
-semantic redaction remain in effect in masked and revealed modes.
+semantic redaction remain in effect in masked and revealed modes. The bounded
+value viewer wraps its plaintext rows in `ExcludeSemantics`, so revealed vault
+values and escaped form previews never become semantic labels. Regression
+tests inspect raw semantics, inspection JSON, and accessibility output in
+masked, revealed, scrolled, and concealed states at three viewport sizes.
 
 macOS Copy uses AppKit's typed string API, avoiding `pbcopy` type inference.
 The native boundary follows Apple's [NSPasteboard API](https://developer.apple.com/documentation/appkit/nspasteboard).

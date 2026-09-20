@@ -292,11 +292,17 @@ Identical full keys share a value across repositories; namespaces are not an
 access control boundary.
 
 `set` never accepts a value argument. Interactive input requires a TTY and is
-hidden; `--stdin` reads strict UTF-8 through a pipe or redirection. The two modes never cross: `--stdin` at
+hidden. Enter submits, Backspace edits, and Ctrl+U clears the draft. Bracketed
+paste preserves the exact UTF-8 bytes, including CRLF and a trailing newline;
+press Enter after pasting to submit. Hidden prompts support the full 1 MiB
+record limit and 1024-byte passphrase limit, and restore the caller's terminal
+modes on completion, EOF, or a handled interrupt.
+
+`--stdin` reads strict UTF-8 through a pipe or redirection. The two modes never cross: `--stdin` at
 a terminal is refused (typing there would echo the secret into scrollback), and
 empty input is rejected rather than stored, so a silently failed producer in a
 pipeline cannot replace a real credential with the empty string. Internal
-newlines are preserved; at most one final LF or CRLF is removed. Partial producer
+newlines in piped input are preserved; at most one final LF or CRLF is removed. Partial producer
 output is not detectable, so use `pipefail` or check producer status:
 
 ```sh

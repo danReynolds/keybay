@@ -40,20 +40,28 @@ final class SecretInputReader {
     required this.stderr,
     this.managePosixSignals = false,
     required this.lifetime,
-  });
+  }) : _nativeInput = false;
+
+  SecretInputReader._system({
+    required Stdin stdin,
+    required this.stderr,
+    required this.lifetime,
+  }) : input = stdin,
+       terminal = _StdinTerminalControl(stdin),
+       managePosixSignals = true,
+       _nativeInput = true;
 
   factory SecretInputReader.system({
     required Stdin stdin,
     required StringSink stderr,
     required CommandLifetime lifetime,
-  }) => SecretInputReader(
-    input: stdin,
-    terminal: _StdinTerminalControl(stdin),
+  }) => SecretInputReader._system(
+    stdin: stdin,
     stderr: stderr,
-    managePosixSignals: true,
     lifetime: lifetime,
   );
 
+  final bool _nativeInput;
   final Stream<List<int>> input;
   final TerminalControl terminal;
   final StringSink stderr;
@@ -92,14 +100,21 @@ final class SecretInputReader {
         _clear(bytes);
       }
     }
+    if (_nativeInput) {
+      return _readControllingTerminal(
+        prompt: 'Value for $key (input hidden): ',
+        decode: (bytes) => decodeSecretBytes(bytes, stripEnding: false),
+        maximumBytes: maxSecretInputBytes,
+      );
+    }
     return _readHidden(
       input: input,
       terminal: terminal,
       prompt: 'Value for $key (input hidden): ',
       write: stderr.write,
       writeNewline: stderr.writeln,
-      decode: decodeSecretBytes,
-      maximumLineBytes: maxSecretInputBytes + 2,
+      decode: (bytes) => decodeSecretBytes(bytes, stripEnding: false),
+      maximumBytes: maxSecretInputBytes,
     );
   }
 
@@ -107,7 +122,20 @@ final class SecretInputReader {
   ///
   /// Process stdin is never consumed. This remains true when stdin is the
   /// value pipe for `set --stdin` or is inherited by a future child of `run`.
-  Future<Uint8List> readPassphrase({String? summary}) async {
+  Future<Uint8List> readPassphrase({String? summary}) =>
+      _readControllingTerminal(
+        summary: summary,
+        prompt: 'Keybay passphrase: ',
+        decode: (bytes) => decodePassphraseBytes(bytes, stripEnding: false),
+        maximumBytes: maxPassphraseInputBytes,
+      );
+
+  Future<Uint8List> _readControllingTerminal({
+    String? summary,
+    required String prompt,
+    required Uint8List Function(List<int>) decode,
+    required int maximumBytes,
+  }) async {
     final attachment = _ControllingTerminalAttachment.open();
     Uint8List? result;
     try {
@@ -117,11 +145,12 @@ final class SecretInputReader {
       result = await _readHidden(
         input: attachment.input(lifetime),
         terminal: attachment.terminal,
-        prompt: 'Keybay passphrase: ',
+        prompt: prompt,
         write: attachment.write,
         writeNewline: attachment.writeNewline,
-        decode: decodePassphraseBytes,
-        maximumLineBytes: maxPassphraseInputBytes + 2,
+        decode: decode,
+        maximumBytes: maximumBytes,
+        bracketedPaste: attachment.setBracketedPaste,
       );
     } finally {
       try {
@@ -141,7 +170,8 @@ final class SecretInputReader {
     required void Function(Object?) write,
     required void Function([Object?]) writeNewline,
     required Uint8List Function(List<int>) decode,
-    required int maximumLineBytes,
+    required int maximumBytes,
+    void Function(bool)? bracketedPaste,
   }) async {
     if (!terminal.hasTerminal || !terminal.isForeground) {
       throw const SecretInputException(
@@ -150,7 +180,6 @@ final class SecretInputReader {
       );
     }
 
-    final previousEchoMode = terminal.echoMode;
     final signalGuard = managePosixSignals
         ? _IgnoredSignalGuard([
             ProcessSignal.sigquit.signalNumber,
@@ -159,62 +188,59 @@ final class SecretInputReader {
             _sigTtou,
           ])
         : null;
-    var restorationAttempted = false;
-    void restoreEcho() {
-      restorationAttempted = true;
-      terminal.echoMode = previousEchoMode;
-    }
-
+    void Function()? restore;
+    Uint8List? result;
     try {
-      // Install the guards while echo is still in its original state. If a
-      // signal lands anywhere after echo is disabled, a handler is already in
-      // place to restore it (or the fail-safe disposition is already active).
       signalGuard?.start();
-      terminal.echoMode = false;
+      if (terminal is _FileDescriptorTerminalControl) {
+        restore = terminal.enterHiddenMode();
+      } else {
+        final previousEcho = terminal.echoMode;
+        restore = () => terminal.echoMode = previousEcho;
+        terminal.echoMode = false;
+      }
+      bracketedPaste?.call(true);
       write(prompt);
-      final bytes = await _readInput(
-        input,
-        maximumLineBytes,
-        oneLine: true,
-        lifetime: lifetime,
-        beforeCancel: () {
-          try {
-            if (!terminal.isForeground) {
-              throw const SecretInputException(
-                'the controlling terminal lost foreground ownership',
-                interactionUnavailable: true,
-              );
-            }
-          } finally {
-            // Dart closes stdin's descriptor when its subscription is
-            // cancelled. Restore while it is still owned and usable.
-            restoreEcho();
-          }
-        },
-      );
+      final bytes = await _readHiddenInput(input, maximumBytes, lifetime);
       try {
         lifetime.check();
+        if (!terminal.isForeground) {
+          throw const SecretInputException(
+            'the controlling terminal lost foreground ownership',
+            interactionUnavailable: true,
+          );
+        }
         writeNewline();
-        return decode(bytes);
+        result = decode(bytes);
+        return result;
       } finally {
         _clear(bytes);
       }
     } finally {
-      // Every cleanup action must run even if an earlier one fails. A terminal
-      // can disappear while input is pending; a failed echo restoration must
-      // not leave the temporary signal dispositions or stdin subscription
-      // installed for the remainder of the process.
+      // The native descriptor outlives the input stream, including EOF. Always
+      // attempt mode restoration even if paste cleanup or cancellation fails.
       try {
-        if (!restorationAttempted) restoreEcho();
-      } finally {
-        signalGuard?.close();
+        try {
+          bracketedPaste?.call(false);
+        } finally {
+          try {
+            restore?.call();
+          } finally {
+            signalGuard?.close();
+          }
+        }
+      } on Object {
+        if (result != null) _clear(result);
+        rethrow;
       }
     }
   }
 }
 
-Uint8List decodeSecretBytes(List<int> bytes) {
-  final valueLength = _withoutProducerEnding(bytes);
+Uint8List decodeSecretBytes(List<int> bytes, {bool stripEnding = true}) {
+  final valueLength = stripEnding
+      ? _withoutProducerEnding(bytes)
+      : bytes.length;
   if (valueLength > maxSecretInputBytes) {
     throw const SecretInputException(
       'secret input exceeds Keybay\'s 1 MiB record limit; store a '
@@ -233,11 +259,7 @@ Uint8List decodeSecretBytes(List<int> bytes) {
       'secret input contains a NUL character; provide text without NUL',
     );
   }
-  var length = bytes.length;
-  if (length > 0 && bytes[length - 1] == 0x0a) {
-    length--;
-    if (length > 0 && bytes[length - 1] == 0x0d) length--;
-  }
+  final length = valueLength;
   // An empty read is a failed producer (`op read … | keybay set --stdin` with
   // the producer printing nothing exits 0 without pipefail), or a bare Enter
   // at the prompt — not a credential. Storing it would silently replace a real
@@ -254,13 +276,161 @@ Uint8List decodeSecretBytes(List<int> bytes) {
 
 const int maxPassphraseInputBytes = 1024;
 
-/// Applies the CLI's exact passphrase-to-bytes contract.
-Uint8List decodePassphraseBytes(List<int> bytes) {
-  var length = bytes.length;
-  if (length > 0 && bytes[length - 1] == 0x0a) {
-    length--;
-    if (length > 0 && bytes[length - 1] == 0x0d) length--;
+/// A bounded hidden editor. Enter submits; bracketed paste is literal UTF-8,
+/// including CRLF and control bytes. Editing never creates a text/undo copy.
+final class _HiddenInputBuffer {
+  _HiddenInputBuffer(int maximum) : bytes = Uint8List(maximum);
+
+  final Uint8List bytes;
+  final List<int> _marker = [];
+  var length = 0;
+  var _paste = false;
+  var _overflow = false;
+  var complete = false;
+  static const _start = [27, 91, 50, 48, 48, 126];
+  static const _end = [27, 91, 50, 48, 49, 126];
+
+  void add(List<int> chunk) {
+    for (final byte in chunk) {
+      if (complete) break;
+      final marker = _paste ? _end : _start;
+      if (_marker.isNotEmpty || byte == 27) {
+        _marker.add(byte);
+        while (_marker.isNotEmpty) {
+          var matches = true;
+          for (var i = 0; i < _marker.length; i++) {
+            if (_marker[i] != marker[i]) {
+              matches = false;
+              break;
+            }
+          }
+          if (matches) {
+            if (_marker.length == marker.length) {
+              _paste = !_paste;
+              _marker.clear();
+            }
+            break;
+          }
+          _accept(_marker.removeAt(0));
+          if (complete) break;
+        }
+      } else {
+        _accept(byte);
+      }
+    }
   }
+
+  void _accept(int byte) {
+    if (!_paste) {
+      switch (byte) {
+        case 3: // Ctrl+C, handled here because paste must retain literal ETX.
+          throw const CommandInterrupted(130);
+        case 4: // Ctrl+D is EOF, including on an empty prompt.
+        case 10:
+        case 13:
+          complete = true;
+          return;
+        case 8:
+        case 127:
+          if (length > 0 && !_overflow) {
+            do {
+              final removed = bytes[--length];
+              bytes[length] = 0;
+              if (removed & 0xc0 != 0x80) break;
+            } while (length > 0);
+          }
+          return;
+        case 21: // Ctrl+U starts a fresh draft, including after overflow.
+          bytes.fillRange(0, length, 0);
+          length = 0;
+          _overflow = false;
+          return;
+        case 26: // Keep the existing no-suspend/no-quit prompt contract.
+        case 28:
+          return;
+      }
+    }
+    if (length == bytes.length) {
+      // Drain to submission without retaining more bytes. Returning mid-paste
+      // would allow the remaining secret to arrive at the caller's shell.
+      _overflow = true;
+    } else {
+      bytes[length++] = byte;
+    }
+  }
+
+  Uint8List take() {
+    if (_paste) {
+      throw const SecretInputException('secret paste was interrupted');
+    }
+    if (!complete) {
+      for (final byte in _marker) {
+        _accept(byte);
+      }
+    }
+    if (_overflow) {
+      throw SecretInputException(
+        bytes.length == maxSecretInputBytes
+            ? "secret input exceeds Keybay's 1 MiB record limit; store a credential rather than a blob"
+            : 'a Keybay passphrase must contain between 1 and 1024 UTF-8 bytes',
+      );
+    }
+    return Uint8List.fromList(Uint8List.sublistView(bytes, 0, length));
+  }
+
+  void clear() {
+    _clear(bytes);
+    _marker.fillRange(0, _marker.length, 0);
+    _marker.clear();
+  }
+}
+
+Future<Uint8List> _readHiddenInput(
+  Stream<List<int>> input,
+  int maximum,
+  CommandLifetime lifetime,
+) async {
+  final buffer = _HiddenInputBuffer(maximum);
+  final done = Completer<void>();
+  StreamSubscription<List<int>>? subscription;
+  try {
+    lifetime.check();
+    subscription = input.listen(
+      (chunk) {
+        if (done.isCompleted) return;
+        try {
+          buffer.add(chunk);
+          if (buffer.complete) done.complete();
+        } on Object catch (error, stack) {
+          done.completeError(error, stack);
+        }
+      },
+      onError: (Object error, StackTrace stack) {
+        if (!done.isCompleted) done.completeError(error, stack);
+      },
+      onDone: () {
+        if (!done.isCompleted) done.complete();
+      },
+    );
+    await Future.any<void>([done.future, lifetime.cancelled]);
+    lifetime.check();
+    // Do not transfer a result until stream cleanup has succeeded.
+    await subscription.cancel();
+    subscription = null;
+    return buffer.take();
+  } finally {
+    if (!done.isCompleted) done.complete();
+    try {
+      await subscription?.cancel();
+    } finally {
+      buffer.clear();
+    }
+  }
+}
+
+/// Applies the CLI's exact passphrase-to-bytes contract.
+Uint8List decodePassphraseBytes(List<int> bytes, {bool stripEnding = true}) {
+  final length = stripEnding ? _withoutProducerEnding(bytes) : bytes.length;
   if (length == 0 || length > maxPassphraseInputBytes) {
     throw const SecretInputException(
       'a Keybay passphrase must contain between 1 and 1024 UTF-8 bytes',
@@ -284,9 +454,7 @@ Uint8List decodePassphraseBytes(List<int> bytes) {
 Future<Uint8List> _readInput(
   Stream<List<int>> input,
   int maximum, {
-  bool oneLine = false,
   required CommandLifetime lifetime,
-  void Function()? beforeCancel,
 }) async {
   final buffer = Uint8List(maximum + 1);
   var length = 0;
@@ -298,13 +466,12 @@ Future<Uint8List> _readInput(
       subscription = input.listen(
         (chunk) {
           if (done.isCompleted) return;
-          final newline = oneLine ? chunk.indexOf(0x0a) : -1;
-          final wanted = newline < 0 ? chunk.length : newline + 1;
+          final wanted = chunk.length;
           final remaining = buffer.length - length;
           final count = wanted < remaining ? wanted : remaining;
           buffer.setRange(length, length + count, chunk);
           length += count;
-          if (newline >= 0 || length == buffer.length) done.complete();
+          if (length == buffer.length) done.complete();
         },
         onError: (Object error, StackTrace stack) {
           if (!done.isCompleted) done.completeError(error, stack);
@@ -317,11 +484,7 @@ Future<Uint8List> _readInput(
       lifetime.check();
     } finally {
       if (!done.isCompleted) done.complete();
-      try {
-        beforeCancel?.call();
-      } finally {
-        await subscription?.cancel();
-      }
+      await subscription?.cancel();
     }
     // Transfer only after every input cleanup succeeds.
     return Uint8List.fromList(Uint8List.sublistView(buffer, 0, length));
@@ -369,7 +532,7 @@ typedef _NativeSetTerminalAttributes =
     Int32 Function(Int32, Int32, Pointer<Void>);
 typedef _DartSetTerminalAttributes = int Function(int, int, Pointer<Void>);
 
-/// Owns the controlling terminal used for passphrase prompts.
+/// Owns the controlling terminal used for hidden prompts.
 ///
 /// Descriptor zero is deliberately never replaced: it may be a secret-value
 /// pipe for `set --stdin`, and Dart's stdin stream cannot safely survive a
@@ -424,10 +587,26 @@ final class _ControllingTerminalAttachment {
         Platform.isMacOS ? '__error' : '__errno_location',
       );
 
-  Stream<List<int>> input(CommandLifetime lifetime) async* {
-    final buffer = calloc<Uint8>(maxPassphraseInputBytes + 3);
-    try {
-      while (true) {
+  Stream<List<int>> input(CommandLifetime lifetime) {
+    const capacity = 4096;
+    Pointer<Uint8> buffer = nullptr;
+    Timer? poll;
+    var disposed = false;
+    late final StreamController<List<int>> controller;
+    void release() {
+      if (disposed) return;
+      disposed = true;
+      poll?.cancel();
+      if (buffer != nullptr) {
+        buffer.asTypedList(capacity).fillRange(0, capacity, 0);
+        calloc.free(buffer);
+      }
+    }
+
+    void read() {
+      if (disposed || controller.isPaused) return;
+      var delay = Duration.zero;
+      try {
         lifetime.check();
         if (!terminal.isForeground) {
           throw const SecretInputException(
@@ -435,12 +614,16 @@ final class _ControllingTerminalAttachment {
             interactionUnavailable: true,
           );
         }
-        final count = _read(_terminalFd, buffer, maxPassphraseInputBytes + 3);
-        if (count == 0) return;
+        final count = _read(_terminalFd, buffer, capacity);
+        if (count == 0) {
+          unawaited(controller.close());
+          return;
+        }
         if (count > 0) {
           final chunk = Uint8List.fromList(buffer.asTypedList(count));
           try {
-            yield chunk;
+            // Synchronous delivery lets the consumer copy before erasure.
+            controller.add(chunk);
           } finally {
             _clear(chunk);
           }
@@ -452,20 +635,35 @@ final class _ControllingTerminalAttachment {
               interactionUnavailable: true,
             );
           }
-          await Future<void>.delayed(const Duration(milliseconds: 10));
+          delay = const Duration(milliseconds: 10);
         }
+      } on Object catch (error, stack) {
+        controller.addError(error, stack);
+        unawaited(controller.close());
+        return;
       }
-    } finally {
-      buffer
-          .asTypedList(maxPassphraseInputBytes + 3)
-          .fillRange(0, maxPassphraseInputBytes + 3, 0);
-      calloc.free(buffer);
+      if (!disposed) poll = Timer(delay, read);
     }
+
+    controller = StreamController<List<int>>(
+      sync: true,
+      onListen: () {
+        buffer = calloc<Uint8>(capacity);
+        poll = Timer(Duration.zero, read);
+      },
+      onPause: () => poll?.cancel(),
+      onResume: () => poll = Timer(Duration.zero, read),
+      onCancel: release,
+    );
+    return controller.stream;
   }
 
   final int _terminalFd;
-  final TerminalControl terminal;
+  final _FileDescriptorTerminalControl terminal;
   bool _closed = false;
+
+  void setBracketedPaste(bool enabled) =>
+      _writeString(enabled ? '\x1b[?2004h' : '\x1b[?2004l');
 
   void write(Object? value) => _writeString(value?.toString() ?? '');
 
@@ -531,6 +729,73 @@ final class _FileDescriptorTerminalControl implements TerminalControl {
 
   final int fd;
   final _TerminalLayout layout;
+
+  static final _makeRaw = _libc
+      .lookupFunction<
+        Void Function(Pointer<Void>),
+        void Function(Pointer<Void>)
+      >('cfmakeraw');
+
+  static final _flush = _libc
+      .lookupFunction<Int32 Function(Int32, Int32), int Function(int, int)>(
+        'tcflush',
+      );
+
+  /// Return an exact restoration callback that owns the original termios.
+  /// cfmakeraw removes canonical limits, CR translation and signal processing
+  /// from pasted bytes. Output processing stays as the caller configured it.
+  void Function() enterHiddenMode() {
+    final size = layout == _TerminalLayout.darwin
+        ? sizeOf<_DarwinTerminalAttributes>()
+        : sizeOf<_LinuxTerminalAttributes>();
+    final original = calloc<Uint8>(size);
+    final hidden = calloc<Uint8>(size);
+    try {
+      _read(original.cast());
+      hidden.asTypedList(size).setAll(0, original.asTypedList(size));
+      _makeRaw(hidden.cast());
+      switch (layout) {
+        case _TerminalLayout.darwin:
+          hidden.cast<_DarwinTerminalAttributes>().ref.outputFlags = original
+              .cast<_DarwinTerminalAttributes>()
+              .ref
+              .outputFlags;
+          // cfmakeraw on Darwin need not disable IXOFF/IXANY.
+          hidden.cast<_DarwinTerminalAttributes>().ref.inputFlags &=
+              ~(0x200 | 0x400 | 0x800);
+        case _TerminalLayout.linuxGeneric:
+          hidden.cast<_LinuxTerminalAttributes>().ref.outputFlags = original
+              .cast<_LinuxTerminalAttributes>()
+              .ref
+              .outputFlags;
+          hidden.cast<_LinuxTerminalAttributes>().ref.inputFlags &=
+              ~(0x400 | 0x800 | 0x1000);
+      }
+      _write(hidden.cast());
+    } on Object {
+      calloc.free(original);
+      rethrow;
+    } finally {
+      calloc.free(hidden);
+    }
+    return () {
+      try {
+        // Flush input separately: TCSAFLUSH also waits for output to drain,
+        // which can deadlock a caller consuming stdout while the prompt uses
+        // a different controlling terminal. Always attempt mode restoration.
+        final flushed = _flush(fd, Platform.isMacOS ? 1 : 0); // TCIFLUSH
+        final restored = _setAttributes(fd, 0, original.cast()); // TCSANOW
+        if (restored != 0 || flushed != 0) {
+          throw const SecretInputException(
+            'controlling terminal mode restoration failed',
+            interactionUnavailable: true,
+          );
+        }
+      } finally {
+        calloc.free(original);
+      }
+    };
+  }
 
   @override
   bool get hasTerminal => terminalIsAttached(fd);

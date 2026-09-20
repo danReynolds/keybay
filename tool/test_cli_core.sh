@@ -42,6 +42,7 @@ python3 tool/test_cli_tui.py "$tmp/command_harness"
 python3 tool/test_cli_exec.py "$tmp/keybay"
 python3 tool/test_cli_pty.py "$tmp/prompt_harness"
 python3 tool/test_cli_passphrase.py "$tmp/passphrase_prompt_harness"
+python3 tool/test_cli_hidden_input.py "$tmp/prompt_harness" "$tmp/passphrase_prompt_harness"
 python3 tool/test_cli_archive.py
 python3 tool/test_homebrew_formula.py
 if [[ "$(uname -s)" == "Darwin" ]]; then
