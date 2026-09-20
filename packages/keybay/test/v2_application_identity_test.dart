@@ -210,6 +210,90 @@ void main() {
       expect(identity.assurance, ApplicationIdentityAssurance.namespaceOnly);
     });
 
+    test('workspace activation reads its member, not the root declaration', () {
+      final activation = _ActivationFixture.create(
+        applicationId: 'dev.member',
+        workspace: true,
+      );
+      addTearDown(activation.dispose);
+      final identity = activation.resolver().resolve();
+      expect(identity.stableValue, 'dev.member');
+      expect(identity.source, ApplicationIdentitySource.activatedPubspec);
+      expect(
+        activation.resolver(embeddedApplicationId: 'dev.decoy').resolve,
+        throwsA(
+          _failure(ApplicationIdentityFailureCode.conflictingDeclarations),
+        ),
+      );
+      File(
+        '${activation.root.path}/packages/example/pubspec.yaml',
+      ).writeAsStringSync('name: example\n');
+      expect(
+        activation.resolver().resolve,
+        throwsA(_failure(ApplicationIdentityFailureCode.unavailable)),
+      );
+    });
+
+    test('activation metadata must select exactly one local owner', () {
+      final activation = _ActivationFixture.create(applicationId: 'dev.owner');
+      addTearDown(activation.dispose);
+      for (final root in ['../', activation.root.uri.toString()]) {
+        activation.packageConfig.writeAsStringSync(
+          jsonEncode({
+            'configVersion': 2,
+            'packages': [
+              {'name': 'example', 'rootUri': root},
+            ],
+          }),
+        );
+        expect(activation.resolver().resolve().stableValue, 'dev.owner');
+      }
+      for (final config in [
+        '{',
+        'null',
+        '{"configVersion":1,"packages":[]}',
+        '{"configVersion":2,"packages":{}}',
+        for (final owners in [
+          <Map<String, Object?>>[],
+          [
+            {'name': 'other', 'rootUri': '../'},
+          ],
+          [
+            {'name': 'example', 'rootUri': 1},
+          ],
+          [
+            {'name': 'example', 'rootUri': '../'},
+            {'name': 'example', 'rootUri': '../'},
+          ],
+          for (final uri in [
+            'https://example.test/',
+            'file://example.test/owner',
+            'file:///tmp/encoded%2fseparator',
+            '../?query',
+            '../#fragment',
+          ])
+            [
+              {'name': 'example', 'rootUri': uri},
+            ],
+        ])
+          jsonEncode({'configVersion': 2, 'packages': owners}),
+      ]) {
+        activation.packageConfig.writeAsStringSync(config);
+        expect(
+          activation.resolver().resolve,
+          throwsA(_failure(ApplicationIdentityFailureCode.invalidDeclaration)),
+          reason: config,
+        );
+      }
+      activation.packageConfig.writeAsStringSync(
+        ' ' * (DartApplicationIdentityResolver.maximumPackageConfigBytes + 1),
+      );
+      expect(
+        activation.resolver().resolve,
+        throwsA(_failure(ApplicationIdentityFailureCode.metadataTooLarge)),
+      );
+    });
+
     test('rejects a runner outside the activation bin directory', () {
       final activation = _ActivationFixture.create(
         applicationId: 'dev.activated',
@@ -555,14 +639,27 @@ final class _ActivationFixture {
     required this.packageConfig,
   });
 
-  factory _ActivationFixture.create({required String applicationId}) {
+  factory _ActivationFixture.create({
+    required String applicationId,
+    bool workspace = false,
+  }) {
     final root = Directory.systemTemp.createTempSync('keybay-activation-');
     final dartTool = Directory(
       '${root.path}${Platform.pathSeparator}.dart_tool',
     )..createSync();
-    final packageConfig = File(
-      '${dartTool.path}${Platform.pathSeparator}package_config.json',
-    )..writeAsStringSync('{"configVersion":2,"packages":[]}');
+    final packageConfig =
+        File('${dartTool.path}${Platform.pathSeparator}package_config.json')
+          ..writeAsStringSync(
+            jsonEncode({
+              'configVersion': 2,
+              'packages': [
+                {
+                  'name': 'example',
+                  'rootUri': workspace ? '../packages/example' : '../',
+                },
+              ],
+            }),
+          );
     final bin = Directory(
       '${dartTool.path}${Platform.pathSeparator}pub'
       '${Platform.pathSeparator}bin${Platform.pathSeparator}example',
@@ -570,7 +667,18 @@ final class _ActivationFixture {
     final runner = File(
       '${bin.path}${Platform.pathSeparator}example.dart.snapshot',
     )..writeAsBytesSync(const <int>[]);
-    File('${root.path}${Platform.pathSeparator}pubspec.yaml').writeAsStringSync(
+    final owner = workspace
+        ? (Directory('${root.path}/packages/example')
+            ..createSync(recursive: true))
+        : root;
+    if (workspace) {
+      File('${root.path}/pubspec.yaml').writeAsStringSync(
+        'name: workspace\nkeybay:\n  application_id: dev.decoy\n',
+      );
+    }
+    File(
+      '${owner.path}${Platform.pathSeparator}pubspec.yaml',
+    ).writeAsStringSync(
       'name: example\nkeybay:\n  application_id: $applicationId\n',
     );
     return _ActivationFixture._(
@@ -584,12 +692,14 @@ final class _ActivationFixture {
   final File runner;
   final File packageConfig;
 
-  DartApplicationIdentityResolver resolver() => DartApplicationIdentityResolver(
+  DartApplicationIdentityResolver resolver({
+    String embeddedApplicationId = '',
+  }) => DartApplicationIdentityResolver(
     DartRuntimeIdentityInputs(
       script: runner.uri,
       packageConfig: packageConfig.uri,
       resolvedExecutable: Uri.file(Platform.resolvedExecutable),
-      embeddedApplicationId: '',
+      embeddedApplicationId: embeddedApplicationId,
     ),
   );
 

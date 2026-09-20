@@ -89,7 +89,7 @@ def main() -> int:
             add_file(archive, "README.md")
             add_directory(archive, "example")
             add_directory(archive, "example/quickstart")
-            for name in ("README.md", "secrets.env.example", "app.sh"):
+            for name in ("README.md", ".env", "app.sh"):
                 data = (repo / "packages/keybay_cli/example/quickstart" / name).read_bytes()
                 mode = 0o755 if name == "app.sh" else 0o644
                 add_file(archive, f"example/quickstart/{name}", data, mode)

@@ -111,17 +111,13 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="keybay-quickstart-example.") as tmp:
         repo = os.path.join(tmp, "quickstart")
         shutil.copytree(source, repo)
-        shutil.copyfile(
-            os.path.join(repo, "secrets.env.example"),
-            os.path.join(repo, ".secrets.env"),
-        )
 
         missing = run_checked([executable, "run", "--", "./app.sh"], repo)
         if missing.returncode != 3:
             raise AssertionError(f"initial run exited {missing.returncode}: {missing.stderr}")
         expected_missing = (
             PLATFORM_WARNING
-            + "error: 1 of 1 reference in ./.secrets.env is not set on this machine:\n"
+            + 'error: 1 of 1 reference in "./.env" is not set on this machine:\n'
             "\n"
             f"  keybay set {KEY}\n"
             "\n"

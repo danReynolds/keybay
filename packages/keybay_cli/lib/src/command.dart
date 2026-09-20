@@ -1,17 +1,18 @@
 import 'key.dart';
 
-const String defaultManifestPath = './.secrets.env';
+const String defaultManifestPath = './.env';
 const String cliVersion = '0.2.0';
 
 const String cliHelp = '''
 Usage: keybay <command>
 
 Commands:
-  run [-f FILE] -- COMMAND [ARGS...]  Inject a manifest and run a command
+  open                                Open the interactive vault
+  run [-f FILE] -- COMMAND [ARGS...]  Load .env and run a command
   set [--stdin] KEY                   Store a secret
   get KEY                             Reveal a secret to the foreground TTY
   rm KEY                              Remove a secret
-  list                                List qualified keys
+  list                                List key names
 
 Global flags:
   --help                              Show this help
@@ -65,6 +66,10 @@ final class ListCommand extends CliCommand {
   const ListCommand();
 }
 
+final class OpenCommand extends CliCommand {
+  const OpenCommand();
+}
+
 final class CliUsageException implements Exception {
   const CliUsageException(this.message);
 
@@ -75,6 +80,9 @@ final class CliUsageException implements Exception {
 }
 
 CliCommand parseCommand(List<String> arguments) {
+  if (arguments.any((argument) => argument.contains('\u0000'))) {
+    throw const CliUsageException('arguments must not contain NUL');
+  }
   if (arguments.isEmpty) {
     throw const CliUsageException('a command is required');
   }
@@ -91,6 +99,8 @@ CliCommand parseCommand(List<String> arguments) {
     'get' => _parseGet(arguments),
     'rm' => _parseRemove(arguments),
     'list' when arguments.length == 1 => const ListCommand(),
+    'open' when arguments.length == 1 => const OpenCommand(),
+    'open' => throw const CliUsageException('command takes no arguments'),
     'list' => throw const CliUsageException('command takes no arguments'),
     _ => throw const CliUsageException('unknown command'),
   };
@@ -130,7 +140,7 @@ SetCommand _parseSet(List<String> arguments) {
   }
 
   final key = readFromStdin ? arguments[2] : arguments[1];
-  _requireQualifiedKey(key);
+  _requireKey(key);
   return SetCommand(key: key, readFromStdin: readFromStdin);
 }
 
@@ -139,7 +149,7 @@ GetCommand _parseGet(List<String> arguments) {
     throw const CliUsageException('usage: keybay get KEY');
   }
   final key = arguments[1];
-  _requireQualifiedKey(key);
+  _requireKey(key);
   return GetCommand(key);
 }
 
@@ -148,14 +158,14 @@ RemoveCommand _parseRemove(List<String> arguments) {
     throw const CliUsageException('usage: keybay rm KEY');
   }
   final key = arguments[1];
-  _requireQualifiedKey(key);
+  _requireKey(key);
   return RemoveCommand(key);
 }
 
-void _requireQualifiedKey(String key) {
+void _requireKey(String key) {
   if (!isValidCliKey(key)) {
     throw const CliUsageException(
-      'KEY must look like acme-payments/openai-api-key and be at most '
+      'KEY must look like api-token or acme/api-token and be at most '
       '$cliKeyMaxLength characters',
     );
   }

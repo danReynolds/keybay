@@ -108,44 +108,59 @@ Future<void> main() async {
     timeout: const Timeout(Duration(minutes: 2)),
   );
 
-  test('path activation resolves the activated package declaration', () async {
-    final identityLibrary = await Isolate.resolvePackageUri(
-      Uri.parse('package:keybay/src/v2/application_identity.dart'),
-    );
-    expect(identityLibrary, isNotNull);
+  for (final workspace in [false, true]) {
+    test(
+      'path activation resolves its owner (workspace: $workspace)',
+      () async {
+        final identityLibrary = await Isolate.resolvePackageUri(
+          Uri.parse('package:keybay/src/v2/application_identity.dart'),
+        );
+        expect(identityLibrary, isNotNull);
 
-    final fixture = Directory.systemTemp.createTempSync(
-      'keybay_v2_activation_mode_',
-    );
-    addTearDown(() {
-      if (fixture.existsSync()) fixture.deleteSync(recursive: true);
-    });
-    final application = Directory(
-      '${fixture.path}${Platform.pathSeparator}application',
-    )..createSync();
-    final libraryDirectory = Directory(
-      '${application.path}${Platform.pathSeparator}lib'
-      '${Platform.pathSeparator}src${Platform.pathSeparator}v2',
-    )..createSync(recursive: true);
-    File.fromUri(identityLibrary!).copySync(
-      '${libraryDirectory.path}${Platform.pathSeparator}'
-      'application_identity.dart',
-    );
-    File(
-      '${application.path}${Platform.pathSeparator}pubspec.yaml',
-    ).writeAsStringSync('''
+        final fixture = Directory.systemTemp.createTempSync(
+          'keybay_v2_activation_mode_',
+        );
+        addTearDown(() {
+          if (fixture.existsSync()) fixture.deleteSync(recursive: true);
+        });
+        final application = Directory(
+          '${fixture.path}${Platform.pathSeparator}application',
+        )..createSync();
+        if (workspace) {
+          File('${fixture.path}/pubspec.yaml').writeAsStringSync('''
+name: activation_workspace
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+workspace:
+  - application
+keybay:
+  application_id: dev.example.wrong-owner
+''');
+        }
+        final libraryDirectory = Directory(
+          '${application.path}${Platform.pathSeparator}lib'
+          '${Platform.pathSeparator}src${Platform.pathSeparator}v2',
+        )..createSync(recursive: true);
+        File.fromUri(identityLibrary!).copySync(
+          '${libraryDirectory.path}${Platform.pathSeparator}'
+          'application_identity.dart',
+        );
+        File(
+          '${application.path}${Platform.pathSeparator}pubspec.yaml',
+        ).writeAsStringSync('''
 name: keybay_v2_activation_fixture
+${workspace ? 'resolution: workspace' : ''}
 environment:
   sdk: '>=3.6.0 <4.0.0'
 keybay:
   application_id: dev.example.activated-fixture
 ''');
-    final executableDirectory = Directory(
-      '${application.path}${Platform.pathSeparator}bin',
-    )..createSync();
-    File(
-      '${executableDirectory.path}${Platform.pathSeparator}probe.dart',
-    ).writeAsStringSync('''
+        final executableDirectory = Directory(
+          '${application.path}${Platform.pathSeparator}bin',
+        )..createSync();
+        File(
+          '${executableDirectory.path}${Platform.pathSeparator}probe.dart',
+        ).writeAsStringSync('''
 import 'dart:io';
 import 'package:keybay_v2_activation_fixture/src/v2/application_identity.dart';
 
@@ -155,36 +170,45 @@ Future<void> main() async {
   stdout.write('\${identity.stableValue}|\${identity.source.name}');
 }
 ''');
-    final cache = Directory('${fixture.path}${Platform.pathSeparator}pub-cache')
-      ..createSync();
-    final environment = <String, String>{'PUB_CACHE': cache.path};
+        final cache = Directory(
+          '${fixture.path}${Platform.pathSeparator}pub-cache',
+        )..createSync();
+        final environment = <String, String>{'PUB_CACHE': cache.path};
 
-    final activation = await Process.run(Platform.resolvedExecutable, <String>[
-      'pub',
-      'global',
-      'activate',
-      '--source',
-      'path',
-      application.path,
-    ], environment: environment);
-    expect(activation.exitCode, 0, reason: '${activation.stderr}');
+        final activation = await Process.run(
+          Platform.resolvedExecutable,
+          <String>[
+            'pub',
+            'global',
+            'activate',
+            '--source',
+            'path',
+            application.path,
+          ],
+          environment: environment,
+        );
+        expect(activation.exitCode, 0, reason: '${activation.stderr}');
 
-    final activated = await Process.run(
-      Platform.resolvedExecutable,
-      const <String>[
-        'pub',
-        'global',
-        'run',
-        'keybay_v2_activation_fixture:probe',
-      ],
-      environment: environment,
+        final activated = await Process.run(
+          Platform.resolvedExecutable,
+          const <String>[
+            'pub',
+            'global',
+            'run',
+            'keybay_v2_activation_fixture:probe',
+          ],
+          environment: environment,
+          workingDirectory: Directory.systemTemp.path,
+        );
+        expect(activated.exitCode, 0, reason: '${activated.stderr}');
+        expect(
+          '${activated.stdout}',
+          endsWith('dev.example.activated-fixture|activatedPubspec'),
+        );
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
     );
-    expect(activated.exitCode, 0, reason: '${activated.stderr}');
-    expect(
-      '${activated.stdout}',
-      endsWith('dev.example.activated-fixture|activatedPubspec'),
-    );
-  }, timeout: const Timeout(Duration(minutes: 2)));
+  }
 
   test('dart install resolves the retained application declaration', () async {
     if (!_supportsDartInstall()) {

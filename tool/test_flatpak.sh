@@ -28,11 +28,17 @@ if [[ "${1:-}" == --session ]]; then
   # Only the disposable provider receives this display. Neither sandboxed app
   # gets an X11 socket or access to the developer's desktop.
   Xvfb -displayfd 3 -screen 0 1024x768x24 -nolisten tcp 3> "$work/display" > "$work/xvfb.log" 2>&1 &
+  xvfb_pid=$!
   for (( attempt=0; attempt<50; attempt++ )); do
     [[ -s "$work/display" ]] && break
+    kill -0 "$xvfb_pid" 2>/dev/null || break
     sleep 0.1
   done
-  [[ -s "$work/display" ]] || exit 69
+  if [[ ! -s "$work/display" ]]; then
+    echo 'Flatpak prerequisite failed: private Xvfb did not become ready.' >&2
+    cat "$work/xvfb.log" >&2
+    exit 69
+  fi
   DISPLAY=":$(cat "$work/display")"
   export DISPLAY GDK_BACKEND=x11
   dbus-update-activation-environment DISPLAY GDK_BACKEND

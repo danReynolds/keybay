@@ -2,7 +2,7 @@
 # Only environment setup belongs here; the same SDK tests run natively in CI.
 set -euo pipefail
 lane="${1:-}"
-[[ "$lane" == linux || "$lane" == flatpak ]] || exit 64
+[[ "$lane" == linux || "$lane" == flatpak || "$lane" == cli ]] || exit 64
 for program in docker python3 git; do
   command -v "$program" >/dev/null || { echo "missing prerequisite: $program" >&2; exit 69; }
 done
@@ -63,6 +63,12 @@ container="$(docker create "${options[@]}" \
       set -euo pipefail
       cd /build
       dart pub get --enforce-lockfile
+      if [[ "$1" == cli ]]; then
+        result=0
+        bash tool/test_cli.sh core linux || result=$?
+        cp "$(find build/regression -name report.json -print -quit)" /build/cli-linux.json
+        exit "$result"
+      fi
       exec bash "tool/test_$1.sh"
     '\'' keybay-inner "$1"
   ' keybay-container "$lane")"
@@ -70,5 +76,8 @@ result=0
 docker start -a "$container" || result=$?
 if [[ "$lane" == flatpak && -n "${KEYBAY_REGRESSION_DIR:-}" ]]; then
   docker cp "$container:/build/flatpak.json" "$KEYBAY_REGRESSION_DIR/flatpak.json" || result=1
+fi
+if [[ "$lane" == cli && -n "${KEYBAY_REGRESSION_DIR:-}" ]]; then
+  docker cp "$container:/build/cli-linux.json" "$KEYBAY_REGRESSION_DIR/cli-linux.json" || result=1
 fi
 exit "$result"

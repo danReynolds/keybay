@@ -110,6 +110,7 @@ final class DartApplicationIdentityResolver {
       ).resolve();
 
   static const int maximumPubspecBytes = 64 * 1024;
+  static const int maximumPackageConfigBytes = 1024 * 1024;
 
   final DartRuntimeIdentityInputs _inputs;
 
@@ -263,8 +264,18 @@ final class DartApplicationIdentityResolver {
       ]);
       if (!_isWithin(canonicalScript, activationRoot)) return null;
 
+      // Pub caches snapshots under the workspace root, which need not own
+      // the activated executable. The package segment selects its metadata
+      // through the exact package config used by this isolate.
+      final relative = canonicalScript.substring(activationRoot.length + 1);
+      final segments = relative.split(Platform.pathSeparator);
+      if (segments.length != 2 || !segments.last.endsWith('.snapshot')) {
+        return null;
+      }
+      final owner = _activationOwner(packageConfigFile, segments.first);
+
       return _LocalDeclaration(
-        value: _readApplicationId(File(_join(canonicalRoot, ['pubspec.yaml']))),
+        value: _readApplicationId(File(_join(owner.path, ['pubspec.yaml']))),
         source: ApplicationIdentitySource.activatedPubspec,
       );
     } on ApplicationIdentityFailure {
@@ -274,6 +285,39 @@ final class DartApplicationIdentityResolver {
         ApplicationIdentityFailureCode.metadataUnreadable,
       );
     }
+  }
+
+  Directory _activationOwner(File config, String packageName) {
+    try {
+      final decoded = jsonDecode(
+        _readMetadata(config, maximumPackageConfigBytes),
+      );
+      if (decoded case {
+        'configVersion': 2,
+        'packages': final List<Object?> packages,
+      }) {
+        final owners = packages
+            .where((entry) => entry is Map && entry['name'] == packageName)
+            .toList();
+        if (owners case [{'rootUri': final String rootUri}]) {
+          final uri = config.uri.resolve(rootUri);
+          if (uri.scheme == 'file' &&
+              uri.hasAbsolutePath &&
+              uri.authority.isEmpty &&
+              !uri.hasQuery &&
+              !uri.hasFragment) {
+            return Directory(Directory.fromUri(uri).resolveSymbolicLinksSync());
+          }
+        }
+      }
+    } on FormatException {
+      // Malformed or non-file package metadata cannot supply an identity.
+    } on UnsupportedError {
+      // Some file URIs cannot be represented as a native filesystem path.
+    }
+    throw const ApplicationIdentityFailure(
+      ApplicationIdentityFailureCode.invalidDeclaration,
+    );
   }
 
   File _findOwningPubspec(File script) {
@@ -290,29 +334,32 @@ final class DartApplicationIdentityResolver {
     );
   }
 
-  String _readApplicationId(File pubspec) {
+  String _readApplicationId(File pubspec) =>
+      _parsePubspecDeclaration(_readMetadata(pubspec, maximumPubspecBytes));
+
+  String _readMetadata(File file, int maximumBytes) {
     try {
-      final stat = pubspec.statSync();
+      final stat = file.statSync();
       if (stat.type != FileSystemEntityType.file) {
         throw const ApplicationIdentityFailure(
           ApplicationIdentityFailureCode.metadataUnreadable,
         );
       }
-      if (stat.size > maximumPubspecBytes) {
+      if (stat.size > maximumBytes) {
         throw const ApplicationIdentityFailure(
           ApplicationIdentityFailureCode.metadataTooLarge,
         );
       }
-      final handle = pubspec.openSync();
+      final handle = file.openSync();
       final List<int> bytes;
       try {
-        if (handle.lengthSync() > maximumPubspecBytes) {
+        if (handle.lengthSync() > maximumBytes) {
           throw const ApplicationIdentityFailure(
             ApplicationIdentityFailureCode.metadataTooLarge,
           );
         }
-        bytes = handle.readSync(maximumPubspecBytes + 1);
-        if (bytes.length > maximumPubspecBytes) {
+        bytes = handle.readSync(maximumBytes + 1);
+        if (bytes.length > maximumBytes) {
           throw const ApplicationIdentityFailure(
             ApplicationIdentityFailureCode.metadataTooLarge,
           );
@@ -320,8 +367,7 @@ final class DartApplicationIdentityResolver {
       } finally {
         handle.closeSync();
       }
-      final text = utf8.decode(bytes, allowMalformed: false);
-      return _parsePubspecDeclaration(text);
+      return utf8.decode(bytes, allowMalformed: false);
     } on ApplicationIdentityFailure {
       rethrow;
     } on FormatException {

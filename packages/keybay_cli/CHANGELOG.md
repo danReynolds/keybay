@@ -2,8 +2,8 @@
 
 ## 0.2.0
 
-Unreleased. Version and exact SDK dependency advance with the workspace's V2
-cutover; CLI/TUI qualification and publication remain separate deferred work.
+Unreleased. Native distribution qualification and publication remain separate
+from source integration. Pub publishing awaits a hosted Fleury release.
 
 - Adapt existing commands to the single-application V2 SDK and session API.
   Existing V1 stores are not migrated automatically.
@@ -12,6 +12,21 @@ cutover; CLI/TUI qualification and publication remain separate deferred work.
   stdout to be the foreground interactive TTY and refuses redirected, piped,
   captured, or background output before opening the store or decrypting a
   value.
+
+- Add `keybay open`: a searchable interactive vault with explicit reveal/copy,
+  key editing, passphrase settings and reset recovery. Unlock stays within the
+  TUI; blur and resize hide disclosed values, and five minutes of inactivity
+  closes the session.
+- Preserve accepted text, selection and undo history when name, search or reset
+  input is rejected, using the upstream Fleury editing policy.
+- Accept simple key names as well as slash-separated names. Resolve globally
+  activated workspace identity from the CLI package's own declaration.
+- Read `.env` in the working directory by default. `-f` selects one replacement
+  file; no parent search, fallback or implicit layering occurs. Ship ready-to-use
+  reference-only manifests with all four examples.
+- Resolve child executables from the inherited PATH before applying manifest
+  values. Preserve exact environment bytes and await accepted storage work on
+  interruption before closing the session.
 
 ## 0.1.1
 

@@ -31,9 +31,10 @@ dart compile exe \
   packages/keybay_cli/tool/integration_harness.dart \
   -o "$binary"
 
-key="keybay-itest/token"
+# Exercise a simple name through set/get/list/run/rm alongside namespaced keys.
+key="x"
 sentinel="keybay-integration-value-${GITHUB_RUN_ID:-$$}"
-manifest="$tmp/.secrets.env"
+manifest="$tmp/.env"
 printf 'LITERAL=from-manifest\nSECRET=kb://%s\n' "$key" >"$manifest"
 
 concurrent_writers=8
@@ -98,11 +99,13 @@ expected_list="$(
   for writer in $(seq 0 $((concurrent_writers - 1))); do
     printf 'keybay-itest/concurrent-%02d\n' "$writer"
   done
-  printf 'keybay-itest/token'
+  printf '%s' "$key"
 )"
 [[ "$list_output" == "$expected_list" ]] || \
   fail "list output did not contain the sorted test keys"
 
+# Variables in the child script must expand in that child.
+# shellcheck disable=SC2016
 concurrent_values="$(
   "$binary" run -f "$manifest" -- \
     /bin/sh -c 'for name do /usr/bin/printenv "$name"; done' \
@@ -140,5 +143,11 @@ set -e
 [[ "$missing_output" == *"Nothing was launched."* ]] || \
   fail "missing-reference output omitted atomicity notice"
 
+# Exercise protected commands through the actual provider and SDK KDF. Only
+# this test entrypoint can configure the known disposable fixture passphrase.
+printf '%s' 'disposable-value' | "$binary" set --stdin acme/key
+"$binary" --test-protect
+python3 tool/test_cli_tui.py "$binary" --real-provider
+python3 tool/test_cli_commands.py "$binary" --real-provider
 "$binary" --test-reset
 echo "CLI V2 real-store round trip passed"

@@ -5,158 +5,165 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
-import 'application.dart';
+import 'failure.dart';
+import 'terminal.dart';
 
-const int _eacces = 13;
-const int _enoent = 2;
-const int _enoexec = 8;
-const int _enotdir = 20;
+/// A launch request prepared before opening Keybay. No environment overlay
+/// participates in executable selection, and execution never searches again.
+final class PreparedCommand {
+  PreparedCommand({required this.path, required List<String> arguments})
+    : arguments = List.unmodifiable(arguments);
+  final String path;
+  final List<String> arguments;
+}
+
+abstract interface class CommandExecutor {
+  PreparedCommand prepare({
+    required String executable,
+    required List<String> arguments,
+    required Map<String, String> environment,
+  });
+  Future<int> execute({
+    required PreparedCommand command,
+    required Map<String, String> overlay,
+  });
+}
 
 abstract interface class ExecveSystem {
-  /// One exec attempt. [overlay] is the manifest-resolved variables to
-  /// materialize; the rest of the child environment is the raw process
-  /// `environ`, passed through byte-exact (see the resolution's overlay doc).
   int execve({
     required String path,
     required List<String> arguments,
     required Map<String, String> overlay,
   });
-
   int get errno;
 }
 
 final class SystemCommandExecutor implements CommandExecutor {
-  SystemCommandExecutor({required this.stderr});
-
+  SystemCommandExecutor({required this.stderr, required this.workingDirectory});
   final StringSink stderr;
+  final String workingDirectory;
   PosixCommandExecutor? _delegate;
+  PosixCommandExecutor get _executor => _delegate ??= PosixCommandExecutor(
+    system: NativeExecveSystem(),
+    stderr: stderr,
+    workingDirectory: workingDirectory,
+  );
 
   @override
-  Future<int> execute({
+  PreparedCommand prepare({
     required String executable,
     required List<String> arguments,
     required Map<String, String> environment,
+  }) => _executor.prepare(
+    executable: executable,
+    arguments: arguments,
+    environment: environment,
+  );
+
+  @override
+  Future<int> execute({
+    required PreparedCommand command,
     required Map<String, String> overlay,
-  }) {
-    final delegate = _delegate ??= PosixCommandExecutor(
-      system: NativeExecveSystem(),
-      stderr: stderr,
-    );
-    return delegate.execute(
-      executable: executable,
-      arguments: arguments,
-      environment: environment,
-      overlay: overlay,
-    );
-  }
+  }) => _executor.execute(command: command, overlay: overlay);
 }
 
 final class PosixCommandExecutor implements CommandExecutor {
-  PosixCommandExecutor({required this.system, required this.stderr});
-
+  PosixCommandExecutor({
+    required this.system,
+    required this.stderr,
+    required this.workingDirectory,
+  });
   final ExecveSystem system;
   final StringSink stderr;
+  final String workingDirectory;
+
+  static final _access = DynamicLibrary.process()
+      .lookupFunction<
+        Int32 Function(Pointer<Utf8>, Int32),
+        int Function(Pointer<Utf8>, int)
+      >('access');
 
   @override
-  Future<int> execute({
+  PreparedCommand prepare({
     required String executable,
     required List<String> arguments,
     required Map<String, String> environment,
-    required Map<String, String> overlay,
-  }) async {
-    final argv = <String>[executable, ...arguments];
-    if (executable.contains('/')) {
-      return _attemptDirect(executable, argv, overlay);
+  }) {
+    if (!Platform.isLinux && !Platform.isMacOS) {
+      throw UnsupportedError('POSIX launch required');
     }
-
-    // The search uses the resolved string-level view, so a manifest-supplied
-    // PATH governs which binary runs (pinned behavior). Corner: a parent PATH
-    // that is not valid UTF-8 is invisible here (Platform.environment drops
-    // it) and reports absent — while still passing through to the child.
+    var unusable = false;
     final path = environment['PATH'];
-    if (path == null || path.isEmpty) {
-      stderr.writeln(
-        'error: PATH is absent or empty; use an absolute command path.',
-      );
-      return 127;
-    }
-
-    var sawAccessDenied = false;
-    for (final directory in path.split(':')) {
-      if (directory.isEmpty) continue;
-      final candidate = directory.endsWith('/')
-          ? '$directory$executable'
-          : '$directory/$executable';
-      final result = system.execve(
-        path: candidate,
-        arguments: argv,
-        overlay: overlay,
-      );
-      if (result != -1) return _unexpectedReturn(executable);
-
-      switch (system.errno) {
-        case _enoent || _enotdir:
+    final candidates = executable.contains('/')
+        ? [executable]
+        : [
+            if (path != null)
+              for (final directory in path.split(':'))
+                directory.isEmpty ? executable : '$directory/$executable',
+          ];
+    for (final candidate in candidates) {
+      final absolute = candidate.startsWith('/')
+          ? candidate
+          : '$workingDirectory/$candidate';
+      try {
+        final canonical = File(absolute).resolveSymbolicLinksSync();
+        if (FileStat.statSync(canonical).type != FileSystemEntityType.file) {
+          unusable = true;
           continue;
-        case _eacces:
-          sawAccessDenied = true;
-          continue;
-        case _enoexec:
-          return _notExecutable(executable);
-        case final errno:
-          return _otherFailure(executable, errno);
+        }
+        final nativePath = canonical.toNativeUtf8();
+        try {
+          if (_access(nativePath, 1 /* X_OK */) != 0) {
+            unusable = true;
+            continue;
+          }
+        } finally {
+          malloc.free(nativePath);
+        }
+        return PreparedCommand(
+          path: canonical,
+          arguments: [executable, ...arguments],
+        );
+      } on FileSystemException catch (error) {
+        // Missing/dangling paths are distinct from inaccessible existing ones.
+        final code = error.osError?.errorCode;
+        if (code != 2 && code != 20) unusable = true;
       }
     }
-
-    if (sawAccessDenied) {
-      return _notExecutable(executable);
-    }
-    return _notFound(executable);
+    throw CliFailure(
+      exitCode: unusable ? 126 : 127,
+      lines: [
+        unusable
+            ? 'error: command is not executable: ${terminalQuoted(executable)}'
+            : 'error: command not found: ${terminalQuoted(executable)}',
+        'Check the inherited PATH or use an executable absolute command path.',
+      ],
+    );
   }
 
-  int _attemptDirect(
-    String executable,
-    List<String> arguments,
-    Map<String, String> overlay,
-  ) {
+  @override
+  Future<int> execute({
+    required PreparedCommand command,
+    required Map<String, String> overlay,
+  }) async {
     final result = system.execve(
-      path: executable,
-      arguments: arguments,
+      path: command.path,
+      arguments: command.arguments,
       overlay: overlay,
     );
-    if (result != -1) return _unexpectedReturn(executable);
-
-    return switch (system.errno) {
-      _enoent || _enotdir => _notFound(executable),
-      _eacces || _enoexec => _notExecutable(executable),
-      final errno => _otherFailure(executable, errno),
-    };
-  }
-
-  int _notFound(String executable) {
-    stderr.writeln('error: command not found: $executable');
-    stderr.writeln('Fix PATH or use an absolute command path.');
-    return 127;
-  }
-
-  int _notExecutable(String executable) {
-    stderr.writeln('error: command is not executable: $executable');
-    stderr.writeln('Check the command\'s executable permission and format.');
-    return 126;
-  }
-
-  int _otherFailure(String executable, int errno) {
+    if (result != -1) {
+      stderr.writeln('error: execve returned unexpectedly; report this bug.');
+      return 1;
+    }
+    // Resolution succeeded earlier. A disappeared/replaced target, missing
+    // interpreter or bad format is now an invocation failure, never a retry.
     stderr.writeln(
-      'error: command could not be executed: $executable (errno $errno)',
+      'error: command is not executable: ${terminalQuoted(command.path)}',
     );
-    stderr.writeln('Check the command path and local filesystem, then retry.');
-    return 126;
-  }
-
-  int _unexpectedReturn(String executable) {
     stderr.writeln(
-      'error: execve returned unexpectedly for $executable; report this bug.',
+      'Check the command format and interpreter (errno ${system.errno}).',
     );
-    return exitFailure;
+    return 126;
   }
 }
 

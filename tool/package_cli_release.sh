@@ -24,8 +24,8 @@ cp packages/keybay_cli/README.md "$tmp/README.md"
 mkdir -p "$tmp/example/quickstart"
 cp packages/keybay_cli/example/quickstart/README.md \
   "$tmp/example/quickstart/README.md"
-cp packages/keybay_cli/example/quickstart/secrets.env.example \
-  "$tmp/example/quickstart/secrets.env.example"
+cp packages/keybay_cli/example/quickstart/.env \
+  "$tmp/example/quickstart/.env"
 cp packages/keybay_cli/example/quickstart/app.sh \
   "$tmp/example/quickstart/app.sh"
 chmod 0755 "$tmp/example/quickstart/app.sh"

@@ -1,10 +1,16 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:keybay/keybay.dart';
 import 'package:keybay_cli/src/application.dart';
 import 'package:keybay_cli/src/command.dart';
 import 'package:keybay_cli/src/manifest.dart';
+import 'package:keybay_cli/src/process_executor.dart';
+import 'package:keybay_cli/src/lifetime.dart';
+import 'package:keybay_cli/src/secret_input.dart';
+import 'package:keybay_cli/src/secret_output.dart';
+import 'package:keybay_cli/src/failure.dart';
 import 'package:test/test.dart';
 
 import '../../keybay/test/support/v2_test_keybay.dart';
@@ -26,6 +32,243 @@ void main() {
     expect(harness.openCalls, 0);
   });
 
+  test('set preflight rejects a value channel before SDK access', () async {
+    final harness = _Harness();
+    final app = _application(
+      harness: harness,
+      authorizeSecretInput: ({required fromStdin}) =>
+          throw const SecretInputException('refused'),
+    );
+    await expectLater(
+      app.execute(const SetCommand(key: 'acme/key', readFromStdin: true)),
+      throwsA(isA<SecretInputException>()),
+    );
+    expect(harness.openCalls, 0);
+  });
+
+  test(
+    'launch preparation fails before authentication or secret access',
+    () async {
+      final harness = _Harness();
+      final executor = _FakeCommandExecutor()
+        ..onPrepare = () =>
+            throw CliFailure(exitCode: 127, lines: ['command not found']);
+      final app = _application(
+        harness: harness,
+        executor: executor,
+        manifest: Manifest({'TOKEN': const SecretManifestValue('acme/key')}),
+      );
+      expect(
+        await app.execute(
+          RunCommand(
+            manifestPath: 'manifest',
+            executable: 'tool',
+            arguments: [],
+          ),
+        ),
+        127,
+      );
+      expect(harness.openCalls, 0);
+      expect(executor.calls, isEmpty);
+    },
+  );
+
+  test(
+    'protected run approves frozen inherited target before the one credential attempt',
+    () async {
+      final harness = _Harness();
+      await harness.seed({'acme/key': utf8.encode('secret-sentinel')});
+      await harness.protect('correct');
+      final executor = _FakeCommandExecutor();
+      var prompts = 0;
+      final app = _application(
+        harness: harness,
+        executor: executor,
+        parentEnvironment: {'PATH': '/inherited'},
+        manifest: Manifest({
+          'TOKEN': const SecretManifestValue('acme/key'),
+          'ALIAS': const SecretManifestValue('acme/key'),
+          'PATH': const LiteralManifestValue('/manifest-secret'),
+          'LD_PRELOAD': const LiteralManifestValue('literal-sentinel'),
+        }),
+        passphraseReader: ({summary}) async {
+          prompts++;
+          expect(harness.credentialOpenCalls, 0);
+          expect(harness.getManyCalls, 0);
+          expect(executor.preparedEnvironment['PATH'], '/inherited');
+          expect(summary, contains('"/resolved/tool"'));
+          expect(summary, contains('TOKEN <- acme/key'));
+          expect(summary, contains('PATH (literal) [affects execution]'));
+          expect(summary, contains(r'\u{1b}'));
+          expect(summary, contains(r'\u{202e}'));
+          for (final secret in [
+            'secret-sentinel',
+            'literal-sentinel',
+            '/manifest-secret',
+          ]) {
+            expect(summary, isNot(contains(secret)));
+          }
+          return utf8.encode('correct');
+        },
+      );
+      expect(
+        await app.execute(
+          RunCommand(
+            manifestPath: 'manifest\u202e',
+            executable: 'tool',
+            arguments: ['arg\u001b[31m'],
+          ),
+        ),
+        0,
+      );
+      expect(prompts, 1);
+      expect(harness.credentialOpenCalls, 1);
+      expect(harness.getManyCalls, 1);
+      expect(executor.calls.single.command.path, '/resolved/tool');
+      expect(executor.calls.single.overlay['PATH'], '/manifest-secret');
+      expect(harness.allSessionsClosed, isTrue);
+    },
+  );
+
+  test(
+    'foreground loss after get clears the result and reveals nothing',
+    () async {
+      final harness = _Harness();
+      await harness.seed({'acme/key': utf8.encode('sentinel')});
+      final output = StringBuffer();
+      var checks = 0;
+      final app = _application(
+        harness: harness,
+        stdout: output,
+        authorizeSecretOutput: () {
+          if (++checks == 2) throw const SecretOutputException('lost');
+        },
+      );
+      await expectLater(
+        app.execute(const GetCommand('acme/key')),
+        throwsA(isA<SecretOutputException>()),
+      );
+      expect(output.toString(), isEmpty);
+      expect(harness.returnedValueBuffers, everyElement(_isZeroed));
+      expect(harness.allSessionsClosed, isTrue);
+    },
+  );
+
+  test(
+    'late open after interruption is awaited and closed without a record operation',
+    () async {
+      final harness = _Harness();
+      final lifetime = CommandLifetime();
+      final opened = Completer<void>();
+      final resume = Completer<void>();
+      final app = _application(
+        harness: harness,
+        lifetime: lifetime,
+        opener: ({credential}) async {
+          final session = await harness.open(credential: credential);
+          opened.complete();
+          await resume.future;
+          return session;
+        },
+      );
+      final running = app.execute(const ListCommand());
+      await opened.future;
+      lifetime.cancel();
+      var settled = false;
+      final checking = expectLater(
+        running,
+        throwsA(isA<CommandInterrupted>()),
+      ).then((_) => settled = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(settled, isFalse);
+      resume.complete();
+      await checking;
+      expect(harness.listKeysCalls, 0);
+      expect(harness.allSessionsClosed, isTrue);
+    },
+  );
+
+  test(
+    'late read after interruption clears bytes and never launches',
+    () async {
+      final harness = _Harness();
+      await harness.seed({'acme/key': utf8.encode('sentinel')});
+      final lifetime = CommandLifetime();
+      harness.afterMany = () async {
+        lifetime.cancel();
+      };
+      final executor = _FakeCommandExecutor();
+      final app = _application(
+        harness: harness,
+        lifetime: lifetime,
+        executor: executor,
+        manifest: Manifest({'TOKEN': const SecretManifestValue('acme/key')}),
+      );
+      await expectLater(
+        app.execute(
+          RunCommand(
+            manifestPath: 'manifest',
+            executable: 'tool',
+            arguments: [],
+          ),
+        ),
+        throwsA(isA<CommandInterrupted>()),
+      );
+      expect(executor.calls, isEmpty);
+      expect(harness.returnedValueBuffers, everyElement(_isZeroed));
+      expect(harness.allSessionsClosed, isTrue);
+    },
+  );
+
+  test('interruption before set prevents mutation and clears input', () async {
+    final harness = _Harness();
+    final lifetime = CommandLifetime();
+    final value = utf8.encode('sentinel');
+    final app = _application(
+      harness: harness,
+      lifetime: lifetime,
+      valueReader: ({required key, required fromStdin}) async {
+        lifetime.cancel();
+        return value;
+      },
+    );
+    await expectLater(
+      app.execute(const SetCommand(key: 'acme/key', readFromStdin: true)),
+      throwsA(isA<CommandInterrupted>()),
+    );
+    final session = await harness.store.open();
+    expect(await session.contains('acme/key'), isFalse);
+    await session.close();
+    expect(value, _isZeroed);
+    expect(harness.allSessionsClosed, isTrue);
+  });
+
+  test(
+    'interruption after submitted set waits for commit without success or retry',
+    () async {
+      final harness = _Harness();
+      final lifetime = CommandLifetime();
+      harness.afterSet = () async {
+        lifetime.cancel();
+      };
+      final errors = StringBuffer();
+      final app = _application(
+        harness: harness,
+        lifetime: lifetime,
+        stderr: errors,
+      );
+      await expectLater(
+        app.execute(const SetCommand(key: 'acme/key', readFromStdin: true)),
+        throwsA(isA<CommandInterrupted>()),
+      );
+      final session = await harness.store.open();
+      expect(await session.get('acme/key'), 'secret-value');
+      await session.close();
+      expect(errors.toString(), isNot(contains('Stored')));
+      expect(harness.allSessionsClosed, isTrue);
+    },
+  );
+
   group('run', () {
     test('literal-only manifest never opens Keybay', () async {
       final harness = _Harness();
@@ -43,7 +286,7 @@ void main() {
       expect(
         await application.execute(
           RunCommand(
-            manifestPath: '.secrets.env',
+            manifestPath: '.env',
             executable: '/usr/bin/true',
             arguments: const <String>[],
           ),
@@ -55,7 +298,7 @@ void main() {
         'URL': 'https://example.test',
         'EMPTY': '',
       });
-      expect(executor.calls.single.environment['PARENT'], 'kept');
+      expect(executor.preparedEnvironment['PARENT'], 'kept');
     });
 
     test(
@@ -82,7 +325,7 @@ void main() {
         expect(
           await application.execute(
             RunCommand(
-              manifestPath: '.secrets.env',
+              manifestPath: '.env',
               executable: '/usr/bin/true',
               arguments: const <String>[],
             ),
@@ -130,7 +373,7 @@ void main() {
       expect(
         await application.execute(
           RunCommand(
-            manifestPath: '.secrets.env',
+            manifestPath: '.env',
             executable: 'must-not-launch',
             arguments: const <String>[],
           ),
@@ -157,7 +400,7 @@ void main() {
       expect(
         await application.execute(
           RunCommand(
-            manifestPath: '.secrets.env',
+            manifestPath: '.env',
             executable: '/usr/bin/true',
             arguments: const <String>[],
           ),
@@ -176,7 +419,7 @@ void main() {
       late Uint8List supplied;
       final application = _application(
         harness: harness,
-        passphraseReader: () async {
+        passphraseReader: ({summary}) async {
           promptCalls++;
           supplied = Uint8List.fromList(
             utf8.encode('correct horse battery staple'),
@@ -200,7 +443,8 @@ void main() {
       final application = _application(
         harness: harness,
         stderr: errors,
-        passphraseReader: () async => Uint8List.fromList(utf8.encode('wrong')),
+        passphraseReader: ({summary}) async =>
+            Uint8List.fromList(utf8.encode('wrong')),
       );
 
       expect(await application.execute(const ListCommand()), exitFailure);
@@ -286,7 +530,7 @@ void main() {
         await application.execute(const GetCommand('acme/key')),
         exitSuccess,
       );
-      expect(authorizationCalls, 1);
+      expect(authorizationCalls, 2);
       expect(output.toString(), 'revealed-value\n');
       expect(output.toString(), isNot(contains('must-not-print')));
       expect(harness.getBytesCalls, 1);
@@ -377,21 +621,27 @@ CliApplication _application({
   SecretValueReader? valueReader,
   PassphraseReader? passphraseReader,
   SecretOutputAuthorizer authorizeSecretOutput = _allowSecretOutput,
+  void Function({required bool fromStdin})? authorizeSecretInput,
+  CommandLifetime? lifetime,
+  SessionOpener? opener,
 }) {
   addTearDown(harness.dispose);
   return CliApplication(
     loadManifest:
         loadManifest ??
         (_) async => manifest ?? Manifest(<String, ManifestValue>{}),
-    openSession: harness.open,
+    openSession: opener ?? harness.open,
     readSecretValue:
         valueReader ??
         ({required key, required fromStdin}) async =>
             Uint8List.fromList(utf8.encode('secret-value')),
     readPassphrase:
         passphraseReader ??
-        () async => Uint8List.fromList(utf8.encode('unused-passphrase')),
+        ({summary}) async =>
+            Uint8List.fromList(utf8.encode('unused-passphrase')),
     authorizeSecretOutput: authorizeSecretOutput,
+    authorizeSecretInput: authorizeSecretInput ?? ({required fromStdin}) {},
+    lifetime: lifetime ?? CommandLifetime(),
     commandExecutor: executor ?? _FakeCommandExecutor(),
     parentEnvironment: parentEnvironment,
     stdout: stdout ?? StringBuffer(),
@@ -411,6 +661,8 @@ final class _Harness {
   int openCalls = 0;
   int credentialOpenCalls = 0;
   int getManyCalls = 0;
+  Future<void> Function()? afterMany;
+  Future<void> Function()? afterSet;
   int getBytesCalls = 0;
   int listKeysCalls = 0;
 
@@ -499,6 +751,7 @@ final class _TrackingSession implements KeybaySession {
     owner.requestedKeys.add(requested);
     final values = await delegate.getManyBytes(requested);
     owner.returnedValueBuffers.addAll(values.values.whereType<Uint8List>());
+    await owner.afterMany?.call();
     return values;
   }
 
@@ -512,44 +765,43 @@ final class _TrackingSession implements KeybaySession {
   Future<void> set(String key, String value) => delegate.set(key, value);
 
   @override
-  Future<void> setBytes(String key, Uint8List value) =>
-      delegate.setBytes(key, value);
+  Future<void> setBytes(String key, Uint8List value) async {
+    await delegate.setBytes(key, value);
+    await owner.afterSet?.call();
+  }
 }
 
 final class _ExecutionCall {
-  _ExecutionCall({
-    required this.executable,
-    required List<String> arguments,
-    required Map<String, String> environment,
-    required Map<String, String> overlay,
-  }) : arguments = List<String>.of(arguments),
-       environment = Map<String, String>.of(environment),
-       overlay = Map<String, String>.of(overlay);
-
-  final String executable;
-  final List<String> arguments;
-  final Map<String, String> environment;
+  _ExecutionCall(this.command, Map<String, String> overlay)
+    : overlay = Map.of(overlay);
+  final PreparedCommand command;
   final Map<String, String> overlay;
 }
 
 final class _FakeCommandExecutor implements CommandExecutor {
-  final List<_ExecutionCall> calls = <_ExecutionCall>[];
-
+  final List<_ExecutionCall> calls = [];
+  Map<String, String> preparedEnvironment = {};
+  void Function()? onPrepare;
   @override
-  Future<int> execute({
+  PreparedCommand prepare({
     required String executable,
     required List<String> arguments,
     required Map<String, String> environment,
+  }) {
+    preparedEnvironment = Map.of(environment);
+    onPrepare?.call();
+    return PreparedCommand(
+      path: '/resolved/tool',
+      arguments: [executable, ...arguments],
+    );
+  }
+
+  @override
+  Future<int> execute({
+    required PreparedCommand command,
     required Map<String, String> overlay,
   }) async {
-    calls.add(
-      _ExecutionCall(
-        executable: executable,
-        arguments: arguments,
-        environment: environment,
-        overlay: overlay,
-      ),
-    );
+    calls.add(_ExecutionCall(command, overlay));
     return 0;
   }
 }

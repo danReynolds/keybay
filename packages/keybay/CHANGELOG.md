@@ -5,6 +5,9 @@
 Prepared V2 release; not yet published. This is a breaking API and storage-format
 change from 0.1.x. Existing stores are not read, migrated, or removed by V2.
 
+- Resolve Pub-activated workspace executables from their owning package's
+  declaration, without borrowing the workspace root's identity.
+
 - Correct Darwin descriptor metadata on macOS x64 and add Intel regression coverage.
 - Keep record operations and authentication listing entirely provider-free;
   cross-runtime protection changes may report `storeAuthenticationFailed`.
