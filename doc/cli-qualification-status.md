@@ -8,6 +8,30 @@ matrix; all normal jobs must pass before merge. C4 distribution evidence
 remains outstanding.
 The separate [SDK qualification](qualification-status.md) retains its scope.
 
+### CLI review remediation (2026-09-20)
+
+Hidden CLI prompts now own their controlling-terminal descriptor through
+cleanup. They use a bounded byte editor instead of the terminal's canonical
+line buffer, preserve bracketed-paste bytes (including CRLF), and restore the
+caller's configured terminal modes on completion, EOF, and handled signals.
+The pipe reader remains separate and retains its one-producer-ending rule.
+Cleanup flushes input without waiting for unrelated terminal output to drain.
+
+The revealed value viewer now excludes plaintext rows from Fleury semantics.
+The regression checks raw semantics, inspection JSON, and accessibility output
+for vault values and escaped record/passphrase previews at 40×24, 80×20, and
+120×32, including scroll and concealment. This corrects Keybay's use of an
+existing Fleury API; it does not require a framework patch.
+
+The CLI suite now has **211 tests**. New native checks cover **22** EOF,
+configured-mode restoration, byte-boundary, multibyte, exact-paste, and overflow
+cases. The signal fixture keeps a synthetic caller alive after the command
+returns; its comparison excludes only Darwin's transient PENDIN kernel state.
+Separate controlling-terminal passphrase input preserves piped stdin.
+Local receipts are retained under `build/security-remediation-20260920/`;
+these are engineering regression evidence, not an independent audit or a
+signed/notarized release qualification. The distribution gates below remain.
+
 ### Merge review (2026-09-16)
 
 The final pass reviewed the complete CLI/TUI branch, including SDK workspace

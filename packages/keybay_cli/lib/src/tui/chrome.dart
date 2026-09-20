@@ -171,11 +171,15 @@ final class _ValueViewState extends State<ValueView> {
         itemCount: wrapped.rows.length,
         itemBuilder: (_, index, _) => SizedBox(
           width: wrapped.width,
-          child: Text(
-            wrapped.rows[index],
-            allowSelect: false,
-            softWrap: false,
-            textAlign: widget.textAlign,
+          child: ExcludeSemantics(
+            // Selection policy does not redact Text's semantic label/value.
+            // Exclude only secret text; keep the viewer's scroll/focus surface.
+            child: Text(
+              wrapped.rows[index],
+              allowSelect: false,
+              softWrap: false,
+              textAlign: widget.textAlign,
+            ),
           ),
         ),
       );

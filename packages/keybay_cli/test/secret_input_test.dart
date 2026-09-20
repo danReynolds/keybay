@@ -115,6 +115,54 @@ void main() {
   );
 
   group('reader', () {
+    Future<Uint8List> hidden(List<List<int>> chunks) => SecretInputReader(
+      input: Stream.fromIterable(chunks),
+      terminal: _FakeTerminal(hasTerminal: true, echoMode: true),
+      stderr: StringBuffer(),
+      lifetime: CommandLifetime(),
+    ).read(key: 'probe/key', fromStdin: false);
+
+    test(
+      'fragmented bracketed paste preserves all bytes and trailing CRLF',
+      () async {
+        const text = 'probe\r\n🔑\x03\t\x1b[31m\r\n';
+        final wire = utf8.encode('\x1b[200~$text\x1b[201~\r');
+        for (var split = 0; split <= wire.length; split++) {
+          final value = await hidden([
+            wire.sublist(0, split),
+            wire.sublist(split),
+          ]);
+          expect(value, utf8.encode(text), reason: 'wire split $split');
+        }
+        expect(await hidden(wire.map((b) => [b]).toList()), utf8.encode(text));
+      },
+    );
+
+    test(
+      'hidden editing erases a UTF-8 code point and clears the draft',
+      () async {
+        expect(await hidden([utf8.encode('xé\x7f\r')]), utf8.encode('x'));
+        expect(
+          await hidden([utf8.encode('discard\x15kept\r')]),
+          utf8.encode('kept'),
+        );
+        expect(await hidden([utf8.encode('kept\x04')]), utf8.encode('kept'));
+        await expectLater(
+          hidden([
+            [3],
+          ]),
+          throwsA(isA<CommandInterrupted>()),
+        );
+      },
+    );
+
+    test('incomplete paste is never accepted at EOF', () async {
+      await expectLater(
+        hidden([utf8.encode('\x1b[200~not-submitted\n')]),
+        throwsA(isA<SecretInputException>()),
+      );
+    });
+
     test('--stdin reads to EOF without requiring a terminal', () async {
       final terminal = _FakeTerminal(hasTerminal: false, echoMode: true);
       final reader = SecretInputReader(

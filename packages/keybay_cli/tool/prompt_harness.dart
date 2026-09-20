@@ -1,5 +1,6 @@
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:keybay_cli/src/secret_input.dart';
 import 'package:keybay_cli/src/lifetime.dart';
@@ -10,6 +11,7 @@ typedef _DartSignal = Pointer<Void> Function(int, Pointer<Void>);
 Future<void> main(List<String> arguments) async {
   final verifyDispositions = switch (arguments) {
     <String>[] => false,
+    <String>['--verify-paste'] => false,
     <String>['--verify-dispositions'] => true,
     _ => throw ArgumentError('usage: prompt_harness [--verify-dispositions]'),
   };
@@ -25,6 +27,17 @@ Future<void> main(List<String> arguments) async {
   try {
     final value = await reader.read(key: 'test/prompt', fromStdin: false);
     stdout.writeln('read:${value.length}');
+    if (arguments.contains('--verify-paste')) {
+      final expected = utf8.encode('probe\r\n🔑\x03\t\x1b[31m\r\n');
+      if (value.length != expected.length ||
+          Iterable<int>.generate(
+            value.length,
+          ).any((i) => value[i] != expected[i])) {
+        throw StateError('synthetic paste bytes changed');
+      }
+      stdout.writeln('paste:exact');
+    }
+    value.fillRange(0, value.length, 0);
     if (dispositionProbe != null) {
       dispositionProbe.verifyAndRestore();
       stdout.writeln('signals:restored');

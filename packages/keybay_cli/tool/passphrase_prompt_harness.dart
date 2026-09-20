@@ -1,9 +1,10 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:keybay_cli/src/secret_input.dart';
 import 'package:keybay_cli/src/lifetime.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> arguments) async {
   final lifetime = CommandLifetime()..start();
   final reader = SecretInputReader.system(
     stdin: stdin,
@@ -14,6 +15,16 @@ Future<void> main() async {
   try {
     final passphrase = await reader.readPassphrase();
     final passphraseLength = passphrase.length;
+    if (arguments.contains('--verify-paste')) {
+      final expected = utf8.encode('probe\r\n🔑\x03\t\x1b[31m\r\n');
+      if (passphrase.length != expected.length ||
+          Iterable<int>.generate(
+            passphrase.length,
+          ).any((i) => passphrase[i] != expected[i])) {
+        throw StateError('synthetic paste bytes changed');
+      }
+      stdout.writeln('paste:exact');
+    }
     passphrase.fillRange(0, passphrase.length, 0);
     var stdinLength = 0;
     await for (final bytes in stdin) {

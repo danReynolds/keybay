@@ -12,6 +12,8 @@ import sys
 import termios
 import time
 
+from test_cli_hidden_input import check as check_with_surviving_terminal
+
 
 PROMPT = b"Value for test/prompt (input hidden): "
 SECRET = b"pty-secret-sentinel"
@@ -116,14 +118,10 @@ def check_disposition_restoration(executable: str) -> None:
 
 
 def check_termination(executable: str, sig: signal.Signals, status: int) -> None:
-    pid, master, output = spawn(executable)
-    os.kill(pid, sig)
-    wait_for_echo(master, True)
-    wait_exit(pid, status)
-    output += read_remaining(master)
-    if SECRET in output:
-        raise AssertionError(f"secret appeared after {sig.name}")
-    os.close(master)
+    # A prompt can now restore and exit before our next poll. Keep its caller
+    # alive so Darwin cannot revoke the PTY before we inspect all termios bits.
+    check_with_surviving_terminal(
+        executable, b'', expected_status=status, signal_number=sig)
 
 
 def check_suspend_is_fail_safe(executable: str) -> None:
