@@ -4,3 +4,4 @@ example_flutter/android/app/gradle.lockfile
 packages/keybay_cli/example/flutter/pubspec.lock
 packages/keybay_cli/example/rails/Gemfile.lock
 site/Gemfile.lock
+tool/v2_suite1_reference_go/go.mod
