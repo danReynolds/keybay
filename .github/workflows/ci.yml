@@ -100,6 +100,8 @@ jobs:
       - if: runner.os == 'Linux'
         run: dart test watchers/tests
       - if: runner.os == 'Linux'
+        run: python3 -m unittest discover -s watchers/tests -p '*_test.py'
+      - if: runner.os == 'Linux'
         run: ./tool/lint_workflows.sh
       # Exercise the SDK package archive and warning contract before a tag.
       # Keep archive-policy validation on the current-SDK Linux lane; the

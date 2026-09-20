@@ -1,0 +1,32 @@
+name: Watcher health
+
+on:
+  schedule:
+    # Independent of the Monday discovery run and the local Codex reviewer.
+    - cron: '17 12 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: watcher-health
+  cancel-in-progress: false
+
+jobs:
+  freshness:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check scans and merged assessments
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -m watchers.health --update-issue

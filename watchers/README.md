@@ -24,6 +24,26 @@ Each run pushes one generated `security-report/*` branch containing:
 
 The scheduled Codex task follows [INSTRUCTIONS.md](INSTRUCTIONS.md), verifies the generated branch, opens one PR, completes its assessment, and updates the summary. Applicable public work becomes a normal GitHub issue. A plausible undisclosed Keybay vulnerability becomes a private draft security advisory; the public report contains only a generic label and the advisory's opaque private URL. Normal CI and review gate the final squash merge to `main`.
 
+Reviewed reports are published through `python3 -m watchers.publish_assessment`.
+GitHub signs the commit, so unattended runs do not depend on an unlocked local
+SSH key. The helper checks source provenance, raw evidence identity and the
+three-file boundary, uses an exact-head lease, and leaves merging to normal PR
+checks. It defaults to a read-only plan; `--publish` enables publication.
+
+The separate **Watcher health** workflow checks daily, independently of the local
+reviewer. It flags no successful scheduled scan within eight days, a failed or
+stuck latest scan, or an assessment not merged within 48 hours. It also checks
+recent scheduled runs whose report branch may have disappeared. One stable
+public health issue is created/reopened on failure, updated only when conditions
+change, and closed on recovery. The check exits unsuccessfully while unhealthy.
+`needs_attention` with tracked follow-ups is a completed assessment, not a stuck
+review. Run `python3 -m watchers.health` for a read-only check.
+
+Exact repeated peer markers can reuse a previous assessment when Keybay's
+relevant code and assumptions have not changed. Updated sources and changed
+implementation still require review. This reduces repeat work without dropping
+raw evidence or narrowing discovery.
+
 Physical-device testing is triggered only when a finding or code change can affect an OS, hardware, entitlement, lifecycle, or provider-dependent claim. It is not a weekly chore.
 
 ## Run it
@@ -41,3 +61,8 @@ dart run watchers/watch.dart peers --json
 `platforms --backfill` inspects the fixed bootstrap window without changing its forward boundary. Do not casually advance the platform boundary or peer baseline: those are reviewed history, not routine state.
 
 GitHub may disable schedules after prolonged public-repository inactivity. The same workflow remains available through the Actions button; Dependabot and the required OSV pull-request check remain independent backstops.
+
+The local reviewer also runs the health check, but neither scheduler can prove
+its own availability if GitHub and the local machine both stop running. This is
+failure detection across the two existing execution environments, not an
+external uptime service or a substitute for security review.
