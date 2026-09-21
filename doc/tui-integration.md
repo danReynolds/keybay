@@ -8,6 +8,11 @@ and settles at most one SDK action at a time.
 
 The implementation has these internal modules:
 
+- `tui/store.dart`: the small storage contract shared by the native TUI and
+  website demo. Borrowed value and passphrase bytes are consumed or copied
+  before an adapter returns its future, so callers can immediately erase them.
+- `tui/native_model.dart`: the production SDK adapter, including redacted error
+  classification. It preserves the SDK's credential and session ownership.
 - `tui/model.dart`: session, authenticated names, selected value, operation
   serialization, mutation/protection handling and stale-result rejection.
 - `tui/screen.dart`: the root widget selecting one current Fleury view, plus
@@ -28,6 +33,18 @@ The implementation has these internal modules:
   foreground and inactivity exit, Fleury startup and cleanup.
 - `tui/clipboard.dart`: discarded field clipboard and explicit write-only
   platform transport. No secret register, shell, PATH lookup or fallback.
+- `tui/clipboard_contract.dart`: the platform-independent discarded clipboard
+  and copy failure type used by both hosts.
+
+The static website compiles `site/demo/main.dart` with Fleury's web host and
+embeds it in an iframe. It uses the same widgets, forms and model as the native
+TUI, with a website-only in-memory adapter seeded with fake values. Resetting
+or reloading restores the samples. There is no SDK, native provider, persistence
+or server in that demo; it demonstrates interactions, not storage security.
+The browser clipboard is written only after an explicit Copy action. Idle exit
+is disabled. The separate development preview below still runs a native model
+through Fleury's remote surface. Neither demo changes the production runner's
+foreground, provider or remote-output restrictions.
 
 A form owns its drafts through `SecretDraft`, which pairs one masked
 controller with its focus node and byte contract. Erasing replaces the
@@ -181,7 +198,8 @@ an ordinary local write completes without flashing a notice; the caveat that
 submitted changes may outlive the process now appears on the closing screen,
 where it is true, rather than on every save. Thirty seconds before the idle
 exit the notice says the session is closing; the deadline itself does not move,
-and any input resets both timers.
+and keyboard, paste or mouse-button activity resets both timers. Mouse motion
+alone does not extend the session.
 The model exposes message revisions; Fleury's Toaster owns notification
 lifetimes. Clipboard success is announced only after delivery. Success lasts
 three seconds; errors persist until dismissal, route invalidation or a
@@ -273,7 +291,8 @@ the exact configurations checked and the remaining release evidence.
 
 The CLI is temporarily `publish_to: none` because Fleury is Git-pinned. Native
 source/archive builds work; a reviewed hosted Fleury release is required before
-pub publishing. No SDK publication settings changed.
+pub publishing. Signed native packaging and installed upgrades are separate
+gates in [release readiness](release-readiness.md). No SDK publication settings changed.
 
 ### Notification presentation
 

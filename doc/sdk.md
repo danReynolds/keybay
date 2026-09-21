@@ -9,7 +9,8 @@ API has no application-ID, path, provider, or alternate-store selector.
 Requires Dart 3.11 or later, including when used through Flutter. CI tests the
 SDK at that floor with the reviewed dependency lockfile.
 
-Version 0.2.0 is a breaking API and storage-format change from 0.1.x. V2 neither
+Version 0.2.0 is prepared but not yet published; see [release readiness](release-readiness.md).
+It is a breaking API and storage-format change from 0.1.x. V2 neither
 reads nor migrates or removes V1 stores; do not expect an upgrade to carry old
 secrets into the new store. See the [scoped release evidence](qualification-status.md#sdk-020-release-scope),
 including deferred physical lifecycle work and Argon2 performance acceptance.
@@ -171,6 +172,12 @@ await session.auth.remove(methods.single.id);
 `update` replaces the singleton passphrase method while retaining its opaque
 method ID. `remove` takes an ID returned by `list`; this also scales to future
 hardware methods that may have more than one configured instance.
+
+Adding, changing or removing passphrase protection rotates the store key and
+re-encrypts every record. This protects the new generation; an older complete
+snapshot remains subject to its original protection when the corresponding
+platform material is available. Changing the vault passphrase does not revoke
+an API token at its issuer or securely erase external backups.
 
 ## Errors and limits
 

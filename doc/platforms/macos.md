@@ -5,6 +5,34 @@ file and one Keychain root. The process's signed application identifier selects
 the entitled profile; absence selects the ordinary unentitled profile. Keybay
 does not retry the other profile after an operation fails.
 
+## Protection at a glance
+
+**Entitled app:** <span class="protection-badge protection-app">App-bound key</span><br>
+**CLI / unentitled app:** <span class="protection-badge protection-account">Account-level</span>
+
+- **Key access:** the entitled profile uses a signed Keychain group. The ordinary
+  profile uses the login Keychain; its declared namespace does not authenticate
+  the calling application.
+- **File isolation:** entitled apps need App Sandbox for container isolation.
+  An unsandboxed app's private file permissions do not isolate it from its own user.
+- **Hardware assurance:** neither generic Keychain root carries a Secure Enclave claim.
+- **Passphrase:** optional in both profiles; recommended for high-value records
+  in the account-level profile.
+- **Main limitation:** signed-group key access and file sandboxing are separate.
+  Login-Keychain ACLs are not a portable application-isolation guarantee.
+
+These are [key-access levels](../design.md#platform-protection-levels), not
+hardware ratings or protection against a compromised host process.
+
+## Requirements
+
+For the entitled profile, the running app needs its signed application
+identifier and matching Data Protection Keychain access. Enable App Sandbox
+when the app also needs file isolation. Ordinary executables declare their
+namespace in the owning pubspec or embed it with `keybay_compile`, and need
+access to the effective account's login Keychain. Release binaries also need
+the [packaging qualification](#hardened-aot-packaging) below.
+
 ## Signed and entitled application
 
 Keybay derives the application identifier from the code signature and checks
@@ -24,6 +52,7 @@ own qualification.
 
 Explicitly authorized same-team apps may share a group. Keybay therefore makes
 no absolute per-app or Secure Enclave claim.
+See [Apple's access-group model](https://developer.apple.com/documentation/security/sharing-access-to-keychain-items-among-a-collection-of-apps).
 
 ## CLI and unentitled application
 
@@ -75,7 +104,28 @@ On Dart 3.12.2/macOS 26.2 arm64, a hardened single-file `dart compile exe`
 output is killed before startup. Its appended-image loader copies executable
 pages into anonymous memory; a separate module uses the native loader. The
 [review brief](../security-review.md) records the reproduction and source analysis.
-Product CLI packaging remains deferred.
+The product CLI reproduced the hardened single-file failure on Dart 3.13.4.
+Separate signed runtime/module fixtures passed startup and protected-store
+upgrade checks, but the production archive, installed launcher, Homebrew
+upgrade and downloaded/notarized artifact still need qualification. This is an
+active CLI release gate; see [release readiness](../release-readiness.md).
+
+## Limitations
+
+The two profiles use the same authenticated encryption. Their difference is the
+OS authority required to access the platform root. An entitled key does not
+sandbox the encrypted file, and an account-level passphrase does not create
+an OS-authenticated application identity. Both retain the shared
+[threat model](../design.md#threat-model): no protection against a compromised
+host process, plaintext after disclosure, deletion or rollback. Keybay does not
+add a per-read biometric or user-presence prompt.
+
+## Recovery
+
+If a retained root, missing file or changed identity produces a conflict, use
+the SDK's [deliberate recovery procedure](../sdk.md#errors-and-limits).
+`Keybay.reset()` intentionally abandons the managed store; it cannot recover
+values. Do not reset automatically after an access error or profile change.
 
 ## No fallback or migration
 
@@ -84,7 +134,9 @@ commitments. A missing entitlement, inaccessible group, Keychain access failure,
 changed signature, missing root, or mismatched retained item fails closed. V2
 does not probe or migrate pre-V2 state and never falls back between profiles.
 
+## Qualification
+
 Real login-Keychain integration exercises the unentitled profile. A signed
 Flutter harness exercises the entitled Data Protection profile. Exact device
 and lifecycle qualification is tracked in the
-[device security suite](../device-security-suite.md#macos).
+[qualification record](../qualification-status.md).

@@ -5,7 +5,7 @@ import 'dart:convert';
 import 'package:fleury/fleury.dart';
 import 'package:keybay/keybay.dart';
 import 'package:keybay_cli/src/tui/clipboard.dart';
-import 'package:keybay_cli/src/tui/model.dart';
+import 'package:keybay_cli/src/tui/native_model.dart';
 import 'package:keybay_cli/src/tui/screen.dart';
 
 import '../../keybay/test/support/v2_test_keybay.dart';
@@ -50,7 +50,7 @@ Future<void> main(List<String> arguments) async {
   }
   await seed.close();
 
-  final model = TuiModel(
+  final model = createNativeTuiModel(
     openSession: store.open,
     resetStore: store.reset,
     authorize: () {},

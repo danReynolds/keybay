@@ -8,10 +8,10 @@ from source integration. Pub publishing awaits a hosted Fleury release.
 - Adapt existing commands to the single-application V2 SDK and session API.
   Existing V1 stores are not migrated automatically.
 
-- Add `keybay get KEY` as an explicit human reveal path. It requires stdin and
-  stdout to be the foreground interactive TTY and refuses redirected, piped,
-  captured, or background output before opening the store or decrypting a
-  value.
+- Add `keybay get KEY` as an explicit human reveal path. Stdout must be the
+  foreground controlling terminal; stdin is untouched and may be redirected.
+  Refuse captured or background output before opening the store and check the
+  output channel again immediately before revealing a value.
 
 - Add `keybay open`: a searchable interactive vault with explicit reveal/copy,
   key editing, passphrase settings and reset recovery. Unlock stays within the
@@ -19,6 +19,12 @@ from source integration. Pub publishing awaits a hosted Fleury release.
   closes the session.
 - Preserve accepted text, selection and undo history when name, search or reset
   input is rejected, using the upstream Fleury editing policy.
+- Preserve exact secret-field text, including CRLF; render printable Unicode
+  normally and escape unsafe controls. Exclude revealed values and escaped
+  previews from semantics and accessibility output.
+- Own hidden CLI input through terminal cleanup, preserve bracketed-paste bytes,
+  support bounded input without canonical-line truncation, and restore caller
+  terminal modes after EOF, cancellation and handled signals.
 - Accept simple key names as well as slash-separated names. Resolve globally
   activated workspace identity from the CLI package's own declaration.
 - Read `.env` in the working directory by default. `-f` selects one replacement

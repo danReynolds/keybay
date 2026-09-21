@@ -1,5 +1,11 @@
 # Keybay CLI run overhead
 
+These July 2026 measurements describe the earlier CLI, before the V2 store and
+current TUI integration. They are retained as historical evidence, not current
+0.2.0 performance qualification. Rerun the maintained benchmark on the final
+artifact before making a V2 latency claim; passphrase derivation is a separate
+cost with no accepted maintained-device budget in this release scope.
+
 The Phase 2 budget is Keybay-only warm-store overhead: p50 ≤ 50 ms and p95 ≤
 100 ms for manifests with one and ten references. Measurements invoke the same
 `/usr/bin/true` child directly and through an AOT-compiled CLI harness, then

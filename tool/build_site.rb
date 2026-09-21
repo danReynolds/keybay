@@ -15,19 +15,20 @@ OUTPUT = File.expand_path(ARGV.fetch(0, "build/site"), ROOT)
 BASE_PATH = ENV.fetch("SITE_BASE_PATH", "/keybay").sub(%r{/+$}, "")
 SITE_URL = "https://danreynolds.github.io/keybay"
 REPOSITORY = "https://github.com/danReynolds/keybay"
-PUBLIC_FILES = %w[index.html styles.css 404.html robots.txt].freeze
+PUBLIC_FILES = %w[index.html styles.css 404.html robots.txt demo/index.html demo/demo.css].freeze
 PROJECT_PUBLIC_FILES = %w[assets/keybay-mark.svg].freeze
 
 DOCUMENTS = [
   {source: "packages/keybay_cli/README.md", route: "docs/cli/", label: "CLI", summary: "Commit a small manifest, store project-qualified values locally, and launch exactly one process with resolved environment variables."},
   {source: "doc/sdk.md", route: "docs/guide/", label: "Dart & Flutter SDK", summary: "Install the SDK, open the current application's store, and understand the supported runtime and threat-model boundaries."},
-  {source: "doc/platforms/ios.md", route: "docs/platforms/ios/", label: "iOS", summary: "Native Data Protection Keychain items with a fixed device-bound, non-synchronizing accessibility policy."},
-  {source: "doc/platforms/android.md", route: "docs/platforms/android/", label: "Android", summary: "An authenticated app-private file whose store key is wrapped by Android Keystore on Android 12 and newer."},
-  {source: "doc/platforms/macos.md", route: "docs/platforms/macos/", label: "macOS", summary: "Native Data Protection Keychain items for entitled apps; an authenticated file with a login-Keychain key otherwise."},
-  {source: "doc/platforms/linux.md", route: "docs/platforms/linux/", label: "Linux", summary: "An authenticated local file whose store key is kept by an unlocked Secret Service provider."},
+  {source: "doc/platforms/ios.md", route: "docs/platforms/ios/", label: "iOS", summary: "App-bound key access through the Data Protection Keychain: setup, isolation, passphrases, limitations and recovery."},
+  {source: "doc/platforms/android.md", route: "docs/platforms/android/", label: "Android", summary: "App-bound Keystore protection on Android 12 and newer, with hardware assurance and user-presence limits explained separately."},
+  {source: "doc/platforms/macos.md", route: "docs/platforms/macos/", label: "macOS", summary: "App-bound keys for entitled apps and account-level protection for the CLI, with file isolation and release requirements for each."},
+  {source: "doc/platforms/linux.md", route: "docs/platforms/linux/", label: "Linux", summary: "Account-level Secret Service protection, passphrase guidance and the separate sandbox-bound Flatpak candidate."},
   {source: "doc/architecture.md", route: "docs/architecture/", label: "Architecture", summary: "One per-application framed store, fixed platform protection, and no fallback providers."},
   {source: "doc/design.md", route: "docs/design/", label: "Security design", summary: "The V2 threat model, cryptographic construction, platform boundaries, and evidence-linked guarantees."},
   {source: "SECURITY.md", route: "docs/security/", label: "Security", summary: "Where secrets live on each platform, how releases are verified, current evidence limits, and the private vulnerability-reporting route."},
+  {source: "doc/release-readiness.md", route: "docs/releases/", label: "Release readiness", summary: "The 0.2.0 release scope, remaining publication gates, and evidence required from the final packages."},
   {source: "doc/ecosystem-comparison.md", route: "docs/comparison/", label: "Choosing Keybay", summary: "Choose the smallest tool that matches whether you need local storage, provider portability, team sharing, or encrypted files."},
 ].freeze
 
@@ -470,6 +471,7 @@ def validate_output(metadata)
   raise "Homepage does not reference the Keybay mark" unless index.include?("assets/keybay-mark.svg")
   raise "Homepage code examples were not highlighted" if index.scan(/<span class="/).length < 8
   raise "Homepage contains executable JavaScript" if index.match?(%r{<script(?! type="application/ld\+json")})
+  raise "Missing browser TUI demo" unless File.size?(File.join(OUTPUT, "demo/demo.js"))
 
   metadata.each do |item|
     path = File.join(OUTPUT, item[:document][:route], "index.html")
@@ -490,8 +492,19 @@ PUBLIC_FILES.each do |file|
   source = File.join(SITE_SOURCE, file)
   raise "Missing site source: site/#{file}" unless File.file?(source)
 
-  FileUtils.cp(source, File.join(OUTPUT, file))
+  destination = File.join(OUTPUT, file)
+  FileUtils.mkdir_p(File.dirname(destination))
+  FileUtils.cp(source, destination)
 end
+
+# The only executable site bundle is the isolated, client-side TUI demo. It
+# shares production widgets/model but imports no native SDK or process code.
+demo_bundle = File.join(OUTPUT, "demo/demo.js")
+unless system("dart", "compile", "js", "site/demo/main.dart", "-O2",
+              "--no-source-maps", "-o", demo_bundle, chdir: ROOT)
+  raise "Could not compile the browser TUI demo"
+end
+FileUtils.rm_f("#{demo_bundle}.deps")
 PROJECT_PUBLIC_FILES.each do |file|
   source = File.join(ROOT, file)
   destination = File.join(OUTPUT, file)

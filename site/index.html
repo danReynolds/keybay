@@ -52,7 +52,7 @@
             <h1>Keep secrets<br>out of Git.</h1>
             <p class="lede">Commit your non-secret config and <code>kb://</code> references. Keybay keeps the values in an OS-protected local store, then gives your app the environment it already expects. No Keybay account or hosted service. No Keybay daemon, network path, or shell hook.</p>
 
-            <p class="release-note"><strong>Keybay V2 is pre-1.0.</strong> The API and encrypted format may still change while the cross-platform provider matrix is qualified.</p>
+            <p class="release-note"><strong>Keybay 0.2.0 is in release preparation.</strong> The SDK and TUI are integrated; native CLI packaging and hosted dependencies are still being qualified. Use the <a href="./docs/cli/#install">local installation guide</a> to dogfood. The API and encrypted format remain pre-1.0.</p>
           </div>
 
           <div class="hero-example" id="cli" aria-label="Keybay CLI workflow">
@@ -68,19 +68,63 @@ OPENAI_API_KEY=kb://acme-example/openai-api-key</code></pre>
             <div class="workflow-example" role="group" aria-label="Terminal commands and output">
               <div class="example-heading">
                 <p class="example-title">Terminal</p>
-                <p class="example-context">Store, then run</p>
+                <p class="example-context">Run your app</p>
               </div>
-              <pre><code class="language-shell" data-language="shell">$ keybay set acme-example/openai-api-key
-Value for acme-example/openai-api-key (input hidden):
-Stored acme-example/openai-api-key
-
-$ keybay run -- ./app.sh
+              <pre><code class="language-shell" data-language="shell">$ keybay run -- ./app.sh
 Keybay example app started.
   API_URL: https://staging.example.com
   OPENAI_API_KEY: available (value not printed)</code></pre>
             </div>
-            <p class="terminal-note">The CLI is one application with one encrypted store. Slash-separated names organize records; they do not isolate them. When you use <code>run</code>, only referenced values are passed to the child process as environment variables.</p>
+            <p class="terminal-note"><code>run</code> reads the <code>.env</code> above, resolves its <code>kb://</code> references, and passes the values to your app. Your manifest stays safe to commit.</p>
             <a class="text-link" href="./docs/cli/">Full CLI guide →</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section cli-section" id="commands" aria-labelledby="commands-title">
+        <div class="shell sdk-strip">
+          <div class="sdk-copy">
+            <p class="eyebrow">Everyday CLI</p>
+            <h2 id="commands-title">Save it once.<br>Find it when you need it.</h2>
+            <p>Set a value, list your keys, or reveal one in your terminal. Values stay hidden while you type.</p>
+            <a class="text-link" href="./docs/cli/#commands">Explore the commands →</a>
+          </div>
+          <div class="workflow-example" role="group" aria-label="Set, list and get a sample key">
+            <div class="example-heading">
+              <p class="example-title">Terminal</p>
+              <p class="example-context">Set · list · get</p>
+            </div>
+            <pre><code class="language-shell" data-language="shell">$ keybay set acme-example/openai-api-key
+Value for acme-example/openai-api-key (input hidden):
+Stored acme-example/openai-api-key
+
+$ keybay list
+acme-example/openai-api-key
+
+$ keybay get acme-example/openai-api-key
+sk-demo-not-a-real-key</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="section tui-section" id="tui" aria-labelledby="tui-title">
+        <div class="shell">
+          <div class="compact-heading">
+            <div>
+              <p class="eyebrow">Interactive vault</p>
+              <h2 id="tui-title">Or open your vault.</h2>
+            </div>
+            <div>
+              <p>Search, reveal and edit without leaving your terminal.</p>
+              <p class="tui-command"><code>$ keybay open</code></p>
+            </div>
+          </div>
+          <div class="tui-demo-frame">
+            <iframe src="./demo/" title="Interactive Keybay TUI with temporary sample data" loading="lazy" allow="clipboard-write" referrerpolicy="no-referrer"></iframe>
+          </div>
+          <div class="tui-demo-caption">
+            <p>Try it here: select a key, press Space to reveal, or add your own. Sample data only; changes disappear when you reset or reload.</p>
+            <a class="text-link" href="./demo/" target="_blank" rel="noopener">Open demo ↗</a>
           </div>
         </div>
       </section>
@@ -111,27 +155,31 @@ try {
       <section class="section platforms" id="platforms" aria-labelledby="platforms-title">
         <div class="shell">
           <div class="compact-heading">
-            <h2 id="platforms-title">How Keybay stores data on each platform.</h2>
-            <p>Keybay makes the storage choice for you, using one documented policy for each runtime.</p>
+            <h2 id="platforms-title">Protection on each platform.</h2>
+            <p>Values live in an encrypted local file. The operating system protects the key that unlocks it.</p>
           </div>
 
           <div class="platform-table">
             <table>
               <thead>
-                <tr><th>Context</th><th>Stored as</th><th>Protected by</th></tr>
+                <tr><th scope="col">Platform</th><th scope="col">Protected by</th><th scope="col"><a href="./docs/design/#platform-protection-levels">Protection level</a></th></tr>
               </thead>
               <tbody>
-                <tr><th scope="row"><a href="./docs/platforms/ios/">SDK · iOS</a></th><td data-label="Stored as">Encrypted framed file</td><td data-label="Protected by">Root in the exact signed Data Protection Keychain group</td></tr>
-                <tr><th scope="row"><a href="./docs/platforms/android/">SDK · Android 12+</a></th><td data-label="Stored as">Encrypted framed file</td><td data-label="Protected by">One non-exportable Android Keystore key</td></tr>
-                <tr><th scope="row"><a href="./docs/platforms/macos/#signed-and-entitled-application">SDK · entitled macOS</a></th><td data-label="Stored as">Encrypted framed file</td><td data-label="Protected by">Root in the exact signed Data Protection Keychain group</td></tr>
-                <tr><th scope="row"><a href="./docs/platforms/macos/#cli-and-unentitled-application">SDK/CLI · unentitled macOS</a></th><td data-label="Stored as">Encrypted framed file</td><td data-label="Protected by">One root item in the login Keychain</td></tr>
-                <tr><th scope="row"><a href="./docs/platforms/linux/">SDK/CLI · Linux desktop</a></th><td data-label="Stored as">Encrypted framed file</td><td data-label="Protected by">One root item in an unlocked Secret Service provider</td></tr>
+                <tr><th scope="row"><a href="./docs/platforms/ios/">SDK · iOS</a></th><td data-label="Protected by">Data Protection Keychain</td><td data-label="Protection level"><span class="protection-badge protection-app">App-bound key</span></td></tr>
+                <tr><th scope="row"><a href="./docs/platforms/android/">SDK · Android 12+</a></th><td data-label="Protected by">Android Keystore</td><td data-label="Protection level"><span class="protection-badge protection-app">App-bound key</span></td></tr>
+                <tr><th scope="row"><a href="./docs/platforms/macos/#signed-and-entitled-application">SDK · entitled macOS</a></th><td data-label="Protected by">Data Protection Keychain</td><td data-label="Protection level"><span class="protection-badge protection-app">App-bound key</span></td></tr>
+                <tr><th scope="row"><a href="./docs/platforms/macos/#cli-and-unentitled-application">SDK/CLI · unentitled macOS</a></th><td data-label="Protected by">Login Keychain</td><td data-label="Protection level"><span class="protection-badge protection-account">Account-level</span></td></tr>
+                <tr><th scope="row"><a href="./docs/platforms/linux/">SDK/CLI · Linux desktop</a></th><td data-label="Protected by">Secret Service</td><td data-label="Protection level"><span class="protection-badge protection-account">Account-level</span></td></tr>
               </tbody>
             </table>
           </div>
+          <div class="protection-legend">
+            <p><strong>App-bound key</strong> — the OS restricts key access to an app or signed group.</p>
+            <p><strong>Account-level</strong> — another program under your user account may reach the key. Add a passphrase for extra protection.</p>
+          </div>
           <div class="platform-notes">
-            <p>Desktop credential stores must be available and unlocked. Keybay does not attest Apple hardware backing; on Android it reports the wrapping-key security level it actually observes.</p>
-            <p>Windows, Flatpak, Snap, and unsupported/headless configurations currently fail closed.</p>
+            <p>Levels describe key access. Record encryption is the same across platforms; file isolation and hardware backing have separate limits in each guide.</p>
+            <p><a href="./docs/platforms/linux/#flatpak-candidate">Flatpak support</a> is an SDK candidate; CLI packaging is outside this release. Windows and Snap are unsupported.</p>
           </div>
         </div>
       </section>

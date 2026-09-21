@@ -5,14 +5,21 @@ import 'dart:convert';
 
 import 'package:fleury/fleury_core.dart';
 import 'package:fleury/fleury_test_support.dart';
+import 'package:keybay/keybay.dart';
 import 'package:keybay_cli/src/tui/clipboard.dart';
 import 'package:keybay_cli/src/tui/model.dart';
+import 'package:keybay_cli/src/tui/native_model.dart';
 import 'package:keybay_cli/src/tui/screen.dart';
+import 'package:keybay_cli/src/tui/store.dart';
 import 'package:test/test.dart';
 
 import '../../keybay/test/support/v2_test_keybay.dart';
 
 void main() {
+  test('the shared TUI value limit matches the native SDK', () {
+    expect(tuiRecordValueBytes, KeybayLimits.recordValueBytes);
+  });
+
   for (final size in [
     const CellSize(40, 24),
     const CellSize(80, 20),
@@ -26,7 +33,7 @@ void main() {
         final session = await store.open();
         await session.set('probe/key', '$sentinel\n' * 30 + '\u202e\t');
         await session.close();
-        final model = TuiModel(
+        final model = createNativeTuiModel(
           openSession: store.open,
           resetStore: store.reset,
           authorize: () {},

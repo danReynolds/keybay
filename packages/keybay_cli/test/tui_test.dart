@@ -11,6 +11,7 @@ import 'package:fleury/fleury_test_support.dart';
 import 'package:keybay/keybay.dart';
 import 'package:keybay_cli/src/tui/clipboard.dart';
 import 'package:keybay_cli/src/tui/model.dart';
+import 'package:keybay_cli/src/tui/native_model.dart';
 import 'package:keybay_cli/src/tui/screen.dart';
 import 'package:test/test.dart';
 
@@ -38,7 +39,7 @@ void main() {
     await session.close();
     copied = [];
     exits = 0;
-    model = TuiModel(
+    model = createNativeTuiModel(
       openSession: store.open,
       resetStore: store.reset,
       authorize: () {},
@@ -486,7 +487,7 @@ void main() {
       await model.close();
       model.dispose();
       var opens = 0;
-      model = TuiModel(
+      model = createNativeTuiModel(
         openSession: ({credential}) {
           opens++;
           return store.open(credential: credential);
@@ -658,7 +659,7 @@ void main() {
       model.dispose();
       final gate = Completer<void>();
       exits = 0;
-      model = TuiModel(
+      model = createNativeTuiModel(
         openSession: store.open,
         resetStore: () => gate.future,
         authorize: () {},
@@ -681,7 +682,7 @@ void main() {
   test('Copy failure is redacted and leaves session usable', () async {
     await model.close();
     model.dispose();
-    model = TuiModel(
+    model = createNativeTuiModel(
       openSession: store.open,
       resetStore: store.reset,
       authorize: () {},
@@ -1498,7 +1499,7 @@ void main() {
     test('settings reports the host idle policy: ${policy.value}', () async {
       await model.close();
       model.dispose();
-      model = TuiModel(
+      model = createNativeTuiModel(
         openSession: store.open,
         resetStore: store.reset,
         authorize: () {},
@@ -1948,7 +1949,7 @@ void main() {
       await model.close();
       tester.pumpWidget(const SizedBox());
       model.dispose();
-      model = TuiModel(
+      model = createNativeTuiModel(
         openSession: store.open,
         resetStore: store.reset,
         authorize: () {},
@@ -2809,7 +2810,7 @@ void main() {
       addTearDown(() {
         if (!delivery.isCompleted) delivery.complete();
       });
-      model = TuiModel(
+      model = createNativeTuiModel(
         openSession: store.open,
         resetStore: store.reset,
         authorize: () {},
@@ -2894,7 +2895,7 @@ void main() {
       await model.close();
       model.dispose();
       final delivery = Completer<void>();
-      model = TuiModel(
+      model = createNativeTuiModel(
         openSession: store.open,
         resetStore: store.reset,
         authorize: () {},
@@ -3239,7 +3240,7 @@ void main() {
     await model.close();
     model.dispose();
     var opens = 0;
-    model = TuiModel(
+    model = createNativeTuiModel(
       openSession: ({credential}) {
         opens++;
         return store.open(credential: credential);

@@ -19,8 +19,9 @@ language-neutral quickstart keeps its terminal output redacted.
 
 ## Choose the executable first
 
-Use an official V2 native release when available. Generic `dart install` is
-deferred because it does not yet embed Keybay's declared application identity.
+Use an official V2 native release when available. Hosted `dart install` has
+not yet been qualified for this CLI release; the SDK's support for retained
+Dart install metadata does not establish CLI signing or upgrade behavior.
 
 For this source checkout, activate the CLI once from the repository root:
 
