@@ -12,7 +12,7 @@ import 'package:fleury/fleury_core.dart';
 import 'package:fleury/fleury_test_support.dart';
 import 'package:fleury_widgets/fleury_widgets.dart'
     show Form, FormController, FormField;
-import 'package:keybay_cli/src/tui/model.dart';
+import 'package:keybay_cli/src/tui/native_model.dart';
 import 'package:keybay_cli/src/tui/screen.dart';
 
 import '../../../packages/keybay/test/support/v2_test_keybay.dart';
@@ -27,7 +27,7 @@ Future<void> main(List<String> arguments) async {
       await seed.set('service/${i.toString().padLeft(2, '0')}', 'example-$i');
     }
     await seed.close();
-    final model = TuiModel(
+    final model = createNativeTuiModel(
       openSession: store.open,
       resetStore: store.reset,
       authorize: () {},

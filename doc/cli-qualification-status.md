@@ -1,12 +1,55 @@
 # CLI qualification status
 
-Reviewed **2026-09-16**. The approved TUI is locked in. C0–C3 are implemented.
-The lock-in revision passed clean-checkout `core`, `macos` and Docker `linux`
-qualification. The final input and `.env` changes passed local `core` again.
-[PR #69](https://github.com/danReynolds/keybay/pull/69) records the final CI
-matrix; all normal jobs must pass before merge. C4 distribution evidence
-remains outstanding.
+Reviewed **2026-09-21**. The approved TUI is locked in; C0–C3 are integrated.
+[PR #69](https://github.com/danReynolds/keybay/pull/69) merged as `6b867f2`.
+The latest [engineering audit](security-review.md#engineering-audit-2026-09-21)
+at `7965a5e` passed **211 CLI tests**, **36 native TUI PTY cases**, **22
+hidden-input cases**, and private-pasteboard/archive/identity checks on macOS
+ARM64 / Dart 3.12.2. It did not renew real-provider or distribution evidence.
+C4 installed-artifact qualification and hosted Fleury dependencies remain
+outstanding; [release readiness](release-readiness.md) defines those gates.
 The separate [SDK qualification](qualification-status.md) retains its scope.
+The dated sections below retain earlier checks and their original scope.
+
+### Desktop provider follow-up (2026-09-21)
+
+After recovering local Docker, the macOS CLI provider lane and Docker Linux
+`core`/provider lanes passed against `7965a5e` plus documentation changes.
+macOS used ARM64 / Dart 3.12.2; the Ubuntu container used Linux ARM64 / Dart
+3.13.3. Both CLI receipts record source digest
+`274bbc685db74d095d23ac08ace93fa5cbf5fcd751764c04decdfe5961759017`.
+
+Linux passed 211 Dart tests, 36 native TUI PTY cases, 22 hidden-input cases,
+isolated X11 clipboard, child execution, archive/formula checks, protected
+real-store command/TUI flows and locked-provider guidance. macOS passed its
+protected real-store command/TUI flows. Test stores were disposable, and the
+Docker containers were removed. Logs and copied receipts are retained locally
+in `build/release-qualification-20260921/`.
+
+These renew the named desktop regressions. They do not establish Linux x64,
+Wayland, final installed-package upgrades, Homebrew or notarized distribution.
+
+### Website TUI follow-up (2026-09-21)
+
+The website demo now mounts the production Fleury widgets and model with a
+temporary sample-data adapter. Native storage and SDK error classification
+live in a separate TUI adapter; the SDK, providers and encryption are unchanged.
+
+After that separation, `./tool/test_cli.sh all` passed core, macOS and Docker
+Linux lanes in `build/regression/run-RcMgHf/report.json`, source digest
+`364447bf1f5403de95825f14c875c65a808c277d96e3ea63b9cc6a28e5137480`.
+Each core lane passed the existing 211 tests and native terminal/archive checks.
+A subsequent focused run passed the three disclosure-redaction tests plus a
+new assertion keeping the portable TUI's size limit equal to the SDK limit.
+Three website adapter/lifecycle tests, whole-workspace analysis and workflow
+lint also passed. Browser checks exercised search, reveal, edit/save, creation,
+reset and quit/restart, with desktop and 375-pixel layouts inspected.
+
+This is local regression evidence for an uncommitted working tree, not an
+independent review or final release qualification. Logs and receipts are under
+`build/release-qualification-20260921/`. The browser uses fake in-memory data;
+it does not qualify native custody. The host's initial-focus adjustment and
+remaining Fleury API gap are recorded in the [site guide](../site/README.md).
 
 ### CLI review remediation (2026-09-20)
 
@@ -575,17 +618,18 @@ nested Linux host/ABI when Docker is used. CI invokes the same selectors.
 
 ## Remaining qualification
 
-- The macOS x64, Linux x64 and Dart 3.11 source checks are part of the
-  [PR #69 merge gate](https://github.com/danReynolds/keybay/pull/69), separate
-  from the installed-artifact qualification below.
+- Rerun the full configured CI matrix on the final release candidate, including
+  macOS x64, Linux x64 and minimum Dart. These source checks are separate from
+  installed-artifact qualification.
 - Qualify native Wayland clipboard delivery before advertising that path as
   qualified.
 - Qualify actual installed artifacts and upgrades. Hardened macOS distribution
   still needs the signed runtime/module form and signing/notarization evidence.
   Structural checks on an ad-hoc copy do not establish launchability.
-- Reconcile release/version/install documentation, then publish through the
-  release process. The CLI is temporarily `publish_to: none` while Fleury is
-  Git-pinned; pub publishing requires a reviewed hosted Fleury release.
+- Replace Git-pinned Fleury with reviewed hosted releases and restore CLI Pub
+  validation before publication. The CLI remains `publish_to: none` meanwhile.
+- Follow the [release closeout](release-readiness.md#final-publication-checks)
+  for final security triage, version/install claims and channel verification.
 
 Flatpak CLI packaging, Snap, Windows and mobile CLI distribution remain outside
 this release scope. These CLI changes do not broaden the SDK's security claims.

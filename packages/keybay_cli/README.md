@@ -2,8 +2,10 @@
 
 The in-tree V2 CLI provides run-scoped secret injection and a foreground
 Fleury vault with `keybay open` on ordinary macOS and Linux desktop. CLI 0.2.0
-is not yet published; final distribution qualification remains ahead. No account, Keybay server, resident Keybay process, network access,
-or shell hook. Keybay writes no plaintext secret file.
+is not yet published; see [release readiness](../../doc/release-readiness.md)
+for the native packaging and hosted-dependency gates. No account, Keybay server,
+resident Keybay process, network access, or shell hook. Keybay writes no
+plaintext secret file.
 
 Keybay keeps non-secret configuration literal in a committed manifest and
 stores secret values behind explicit `kb://` references:
@@ -29,9 +31,11 @@ Use an official V2 native release when available. Its embedded application ID
 and stable packaging establish the intended SDK identity and provider behavior.
 Hardened macOS distribution must qualify a dedicated signed Dart AOT runtime
 and signed module; a local single-file build below is a development artifact,
-not evidence that hardened distribution works. Generic
-`dart install keybay_cli` is intentionally deferred: Dart does not currently
-carry the package's `keybay.application_id` declaration into that AOT build.
+not evidence that hardened distribution works. Hosted
+`dart install keybay_cli` remains unqualified for this CLI release. The SDK can
+resolve identity from a recognized Dart install bundle's retained pubspec, but
+that identity fixture does not qualify the CLI's hosted installation, signing
+or upgrade behavior.
 
 Contributors can build the in-tree executable from the repository root:
 
@@ -137,10 +141,11 @@ Cancel at Unlock exits.
 Plain letters typed into a field edit that field. Down or Enter from search, or a
 click on a result, returns to the key list and its shortcuts. Values and
 passphrases are masked. Reveal/Hide applies to both passphrase inputs together,
-including confirmation. A field containing control or non-ASCII characters uses
-an escaped preview; Hide returns to editing without changing the draft.
-Existing text is preserved exactly on an unchanged
-edit. Pasted multiline editor input uses LF line endings. Values must be UTF-8
+including confirmation. A field containing unsafe control or formatting
+characters uses an escaped preview; ordinary printable Unicode stays readable.
+Hide returns to editing without changing the draft.
+Existing text and pasted bytes, including CRLF, are preserved in secret fields.
+Values must be UTF-8
 without NUL, up to 1 MiB; passphrases contain 1–1024 UTF-8 bytes and require an
 exact confirmation when configured. An oversized draft is discarded.
 Escape first hides a revealed value without changing the selected key or
@@ -225,6 +230,12 @@ release is available. Source and native archive builds remain supported.
 
 ### Local browser UX preview
 
+The [website demo](https://danreynolds.github.io/keybay/#tui) runs the same TUI
+screens entirely in the browser with temporary fake data. Reset or reload to
+restore the samples. It does not connect to your Keybay store or demonstrate
+native storage protection. See the [site build guide](../../site/README.md)
+to run it from a checkout.
+
 Run the same TUI widgets and model in Fleury's browser surface from the workspace
 root:
 
@@ -276,6 +287,7 @@ keybay rm acme-example/openai-api-key
 ## Commands
 
 ```text
+keybay open
 keybay run [-f FILE] -- COMMAND [ARGS...]
 keybay set [--stdin] KEY
 keybay get KEY
@@ -341,6 +353,11 @@ is no automatic retry, background unlock agent, or cache between commands.
 A value pipe remains separate from the passphrase, and `run` leaves stdin for
 the child. Help, version, and literal-only `run` never open Keybay.
 
+Use a passphrase for high-value credentials on ordinary desktop hosts. Their
+declared application namespace does not isolate the store from every other
+program running as the same user. The passphrase adds protection even when
+that program can obtain the platform root and encrypted file.
+
 For protected `run`, the terminal shows the canonical executable, arguments,
 and every manifest environment name before requesting the passphrase. References
 show their key names; literal values and secret values are omitted. Paths and
@@ -395,8 +412,8 @@ replacing the executable later.
 ## Security boundary
 
 Keybay keeps referenced values out of repositories, argv, routine output, and
-interactive shell state. The deliberately requested, foreground-only `get`
-command is the sole direct-output exception. It preserves the parent
+interactive shell state. Explicit `get` and TUI reveal actions show the
+selected value; Copy sends it to the system clipboard. It preserves the parent
 environment **byte-exact** —
 variables the manifest does not name pass through from the raw process
 `environ`, including values that are not valid UTF-8 — overlays only variables

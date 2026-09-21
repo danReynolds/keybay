@@ -1,12 +1,34 @@
 # Latest platform qualification
 
-Evidence reviewed **2026-09-07**. This is a dated, reviewed summary of retained
-local evidence, not release certification or an automatically refreshed dashboard.
+Status reviewed **2026-09-21**. The latest [engineering audit](security-review.md#engineering-audit-2026-09-21)
+passed SDK/CLI core and terminal regressions and a 20,000-case tamper canary.
+It did not renew native provider, physical-device or signed-distribution proof.
+The SDK 0.2.0 scope below is unchanged; [release readiness](release-readiness.md)
+tracks current packaging and publication work.
+
+The older platform evidence retains its **2026-09-07** review date; later
+follow-ups are dated separately below. This is a summary of retained local
+evidence, not release certification or an automatically refreshed dashboard.
 New regression runs write individual JSON reports; update this summary after
 reviewing their results and source applicability. Times below are UTC.
 
 CLI command and terminal regressions are recorded separately in
 [CLI qualification status](cli-qualification-status.md).
+
+## Desktop provider follow-up, 2026-09-21
+
+The SDK Linux provider lane passed six focused checks: POSIX ABI/no-follow
+behavior, clean-account directory creation, three real Secret Service flows,
+and locked-provider failure without store changes. It ran in the pinned Ubuntu
+24.04 ARM64 Docker image with Dart 3.13.3 and private disposable keyrings.
+The source was `7965a5e` plus documentation changes; no SDK runtime changed.
+The runner receipt is `build/regression/run-yE6dlT/report.json`; copied receipts
+and logs are in `build/release-qualification-20260921/`.
+
+The CLI macOS provider and Linux core/provider lanes also passed, as recorded
+in the [CLI follow-up](cli-qualification-status.md#desktop-provider-follow-up-2026-09-21).
+This does not renew physical-device, Flatpak, native Linux x64 or signed-package
+qualification. The following September 7 records retain their original scope.
 
 ## Local Pub activation follow-up
 

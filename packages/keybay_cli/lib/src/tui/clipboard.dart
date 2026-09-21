@@ -4,24 +4,8 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
-import 'package:fleury/fleury_core.dart';
-
-/// Clipboard is deliberately separate from the framework's text editing
-/// clipboard. No selected field text or secret is retained in its register.
-final class DiscardClipboard extends InProcessClipboard {
-  @override
-  String? readInProcess() => null;
-
-  @override
-  Future<ClipboardWriteReport> writeWithReport(
-    String text, {
-    ClipboardWritePolicy policy = ClipboardWritePolicy.standard,
-  }) => super.writeWithReport('', policy: ClipboardWritePolicy.inProcessOnly);
-}
-
-final class TuiCopyException implements Exception {
-  const TuiCopyException();
-}
+import 'clipboard_contract.dart';
+export 'clipboard_contract.dart';
 
 /// Resolve one explicit write-only transport before reading any record. There
 /// is no PATH lookup, shell, OSC 52 fallback, or clipboard read API.

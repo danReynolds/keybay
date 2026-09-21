@@ -4,12 +4,9 @@ import 'dart:typed_data';
 
 import 'package:characters/characters.dart';
 import 'package:fleury/fleury_core.dart';
-import 'package:keybay/keybay.dart';
-
-import '../application.dart' show SessionOpener;
-import '../failure.dart';
 import '../key.dart';
-import 'clipboard.dart' show TuiCopyException;
+import 'clipboard_contract.dart' show TuiCopyException;
+import 'store.dart';
 
 enum TuiView {
   opening,
@@ -46,7 +43,7 @@ const tuiIdleWarning = Duration(seconds: 30);
 /// rather than flashing a notice on every save.
 const tuiBusyDelay = Duration(milliseconds: 150);
 
-/// Presentation state and one invocation-owned SDK session. Widgets never own
+/// Presentation state and one invocation-owned storage session. Widgets never own
 /// sessions or initiate background reads. A dismissed read must match _intent
 /// before it may disclose its result; submitted mutations are always awaited.
 final class TuiModel extends ChangeNotifier {
@@ -59,7 +56,7 @@ final class TuiModel extends ChangeNotifier {
     this.idleTimeout = tuiIdleTimeout,
   });
 
-  final SessionOpener openSession;
+  final TuiSessionOpener openSession;
   final Future<void> Function() resetStore;
   final void Function() authorize;
   final Future<void> Function(String)? copyText;
@@ -68,8 +65,8 @@ final class TuiModel extends ChangeNotifier {
   /// The host's idle-exit policy, for display. Null means it is disabled.
   /// The native runner owns enforcement; the annotation preview has no timer.
   final Duration? idleTimeout;
-  KeybaySession? _session;
-  PassphraseMethod? _passphrase;
+  TuiSession? _session;
+  String? _passphrase;
   Uint8List? _value;
   String? _valueText;
   int? _valueDisplayWidth;
@@ -224,14 +221,10 @@ final class TuiModel extends ChangeNotifier {
     resetFromFailure = false;
     return _perform(
       (token) async {
-        KeybaySession opened;
+        TuiSession opened;
         try {
           authorize();
-          final opening = openSession(
-            credential: phrase == null
-                ? null
-                : PassphraseCredential(phrase: phrase),
-          );
+          final opening = openSession(phrase: phrase);
           clearBytes(phrase);
           opened = await opening;
         } finally {
@@ -255,10 +248,10 @@ final class TuiModel extends ChangeNotifier {
   Future<void> _refresh() async {
     final session = _session!;
     final names = (await session.listKeys()).toList()..sort();
-    final methods = await session.auth.list();
+    final passphrase = await session.passphraseId();
     if (_ending || !identical(session, _session)) return;
     keys = List.unmodifiable(names);
-    _passphrase = methods.whereType<PassphraseMethod>().firstOrNull;
+    _passphrase = passphrase;
     final matches = visibleKeys;
     if (!matches.contains(selectedKey)) selectedKey = matches.firstOrNull;
   }
@@ -434,10 +427,10 @@ final class TuiModel extends ChangeNotifier {
     return _perform(
       (token) async {
         try {
-          final credential = PassphraseCredential(phrase: phrase);
-          final changing = protected
-              ? _session!.auth.update(credential)
-              : _session!.auth.add(credential);
+          final changing = _session!.changePassphrase(
+            phrase,
+            replacing: protected,
+          );
           clearBytes(phrase);
           await changing;
         } finally {
@@ -459,7 +452,7 @@ final class TuiModel extends ChangeNotifier {
       return Future.value();
     }
     return _perform((token) async {
-      await _session!.auth.remove(_passphrase!.id);
+      await _session!.removePassphrase(_passphrase!);
       await _refresh();
       if (_current(token)) {
         view = TuiView.security;
@@ -511,41 +504,25 @@ final class TuiModel extends ChangeNotifier {
       try {
         authorize();
         await operation(token);
-      } on KeybayException catch (failure) {
+      } on TuiStoreException catch (failure) {
         if (_ending) return;
         _clearValue();
-        var text = failureForKeybay(failure).lines.join('\n');
+        var text = failure.message;
         if (resetting) {
           await _closeSession();
           view = TuiView.failed;
-          resetFromFailure = failure.code == KeybayErrorCode.resetIncomplete;
+          resetFromFailure = failure.resetIncomplete;
         } else if (opening) {
           await _closeSession();
-          view = switch (failure.code) {
-            KeybayErrorCode.authRequired ||
-            KeybayErrorCode.unlockFailed => TuiView.unlock,
-            _ => TuiView.failed,
-          };
+          view = failure.unlock == null ? TuiView.failed : TuiView.unlock;
           if (view == TuiView.unlock) {
-            unlockError = failure.code == KeybayErrorCode.unlockFailed
+            unlockError = failure.unlock == TuiUnlockFailure.incorrect
                 ? 'Could not unlock. Check your passphrase and try again.'
                 : null;
             text = '';
           }
-          resetFromFailure = const {
-            KeybayErrorCode.platformKeyInvalidated,
-            KeybayErrorCode.storeAuthenticationFailed,
-            KeybayErrorCode.storeStateConflict,
-          }.contains(failure.code);
-        } else if (protection ||
-            const {
-              KeybayErrorCode.staleSession,
-              KeybayErrorCode.storeAuthenticationFailed,
-              KeybayErrorCode.storeStateConflict,
-              KeybayErrorCode.sessionClosed,
-              KeybayErrorCode.storageOperationFailed,
-              KeybayErrorCode.platformOperationFailed,
-            }.contains(failure.code)) {
+          resetFromFailure = failure.canReset;
+        } else if (protection || failure.invalidatesSession) {
           await _closeSession();
           view = TuiView.failed;
           resetFromFailure = false;
@@ -634,7 +611,7 @@ final class TuiModel extends ChangeNotifier {
 void clearBytes(Uint8List? bytes) => bytes?.fillRange(0, bytes.length, 0);
 
 String decodeTuiValue(Uint8List bytes) {
-  if (bytes.length > KeybayLimits.recordValueBytes || bytes.contains(0)) {
+  if (bytes.length > tuiRecordValueBytes || bytes.contains(0)) {
     throw const FormatException();
   }
   return utf8.decode(bytes, allowMalformed: false);

@@ -71,6 +71,8 @@ removes the encrypted store and staging but retains nonsecret coordination
 locks and the portal-owned application secret.
 The next successful open creates a fresh store key; restoring an old complete
 encrypted store can nevertheless restore access under its old protection.
+Changing a passphrase rotates the current store key and re-encrypts every
+record; it does not revoke older snapshots or credentials at their issuer.
 
 A passphrase does not prevent denial of service by an actor that can delete or
 replace both provider state and application files. Best-effort clearing narrows
@@ -101,6 +103,13 @@ review and follow-up accepted the five remediations; that review phase is
 closed. Findings, retained evidence and remaining qualification gates are
 recorded in the [review record](doc/security-review.md).
 It is an AI model review, not a human external audit; Keybay has one maintainer.
+
+The [September 21 engineering audit](doc/security-review.md#engineering-audit-2026-09-21)
+found no new confirmed vulnerability in the reviewed SDK/CLI source and passed
+fresh core, terminal and deterministic tamper checks. That result does not
+replace ongoing advisory triage or qualify a signed native release. The
+[release-readiness record](doc/release-readiness.md) separates the remaining
+distribution gates from completed source checks and retained platform evidence.
 
 For SDK 0.2.0, remaining physical lock/reboot, auth-change interruption and
 actual backup/restore/transfer work is deferred until devices are available.

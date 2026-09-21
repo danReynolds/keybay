@@ -9,6 +9,7 @@ import '../secret_output.dart';
 import '../terminal.dart';
 import 'clipboard.dart';
 import 'model.dart';
+import 'native_model.dart';
 import 'screen.dart';
 
 bool tuiForeground() =>
@@ -62,7 +63,7 @@ Future<int> runTui({
     idle = Timer(idleTimeout, stop);
   }
 
-  model = TuiModel(
+  model = createNativeTuiModel(
     openSession: openSession,
     resetStore: resetStore,
     authorize: authorizeTui,

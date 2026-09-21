@@ -1,5 +1,33 @@
 # Keybay on Linux
 
+The ordinary desktop profile uses the user's Secret Service keyring. The
+separate [Flatpak candidate](#flatpak-candidate) adds a sandbox-bound portal path.
+
+## Protection at a glance
+
+<span class="protection-badge protection-account">Account-level</span>
+
+- **Key access:** an item in the user's unlocked Secret Service provider.
+  The application's declared namespace is not an OS-authenticated identity.
+- **File isolation:** private directories and files restrict other users,
+  but do not isolate programs running under the same user account.
+- **Hardware assurance:** no hardware-backed key guarantee from Secret Service.
+- **Passphrase:** recommended for high-value records; adds a requirement alongside
+  the platform root.
+- **Main limitation:** another authorized same-user program may reach the root
+  and encrypted file. It may also delete or replace them.
+
+This is a [key-access level](../design.md#platform-protection-levels), not a
+hardware rating or protection against a compromised host process.
+
+## Requirements
+
+Use an available session D-Bus and Secret Service provider with an unlocked
+default collection. The ordinary executable declares its namespace in its
+owning pubspec or embeds it with `keybay_compile`. Keybay does not unlock or
+create a keyring on your behalf, and headless environments without the required
+provider fail closed.
+
 ## Ordinary desktop profile
 
 An unsandboxed Dart executable declares its stable namespace in the owning
@@ -27,22 +55,57 @@ winner. Reset deletes only the already-derived item and file state. Secret
 Service has no atomic compare-and-delete, so a same-user actor may still race
 reset as denial of service.
 
-## Security boundary
+<a id="security-boundary"></a>
+
+## Limitations
 
 This profile is `namespaceOnly`. Secret Service attributes do not authenticate
 the declaring application, so another authorized same-user process may claim
 the same namespace and reach the root item; it may also modify the user's
 files. Authenticated encryption detects modification but cannot stop deletion.
+The [Secret Service specification](https://specifications.freedesktop.org/secret-service/latest-single/)
+leaves additional access-control policy to the provider; lookup attributes
+are not authenticated application identities.
 
 Add a Keybay passphrase for passwords and high-value credentials. It prevents
 the Secret Service root item and encrypted file alone from yielding the store
 key. It cannot defend plaintext already returned to a compromised process or
 prevent same-user denial of service.
 
+The shared [threat model](../design.md#threat-model) also excludes root/kernel
+compromise, keylogging, plaintext after disclosure and rollback.
+
+## Recovery
+
+A locked or unavailable keyring is an access failure, not an empty store.
+Restore access to the existing provider and retry. If required key material is
+lost and the data is intentionally abandoned, `Keybay.reset()` is the explicit
+destructive recovery. It cannot reconstruct lost values. Do not create another
+root or switch providers to conceal the failure.
+
+## Qualification
+
 The retained real-provider evidence uses gnome-keyring in a disposable D-Bus
 session. It does not claim to qualify every Secret Service implementation.
+Current source applicability is recorded in the
+[qualification report](../qualification-status.md).
 
 ## Flatpak candidate
+
+<span class="protection-badge protection-app">App-bound key</span> · SDK candidate
+
+- **Key access:** the Secret Portal supplies an application secret for the
+  authenticated sandbox caller.
+- **File isolation:** the Flatpak's private data directory under the documented
+  confinement and filesystem-grant constraints.
+- **Hardware assurance:** provider-managed secret; no hardware-backing claim.
+- **Passphrase:** optional, in addition to the portal-derived root.
+- **Main limitation:** broad host grants can weaken confinement. The portal
+  secret survives Keybay reset, so restoring an old store can restore access.
+
+This level is conditional on the confinement below. Candidate status and
+qualification are separate from the key-access label; Flatpak CLI packaging
+is outside the current release.
 
 The candidate profile `linux.flatpak.secret-portal-file.v1` takes the application
 ID from `[Application] name` in the fixed `/.flatpak-info`. It requires a valid

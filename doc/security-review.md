@@ -1,4 +1,31 @@
-# SDK security review handoff
+# Keybay security review record
+
+## Engineering audit, 2026-09-21
+
+The latest engineering audit reviewed clean source
+`7965a5ea02e848a4de7216b094563cba5a0c40ee`. It found no new confirmed
+vulnerability or runtime security fix required before release preparation.
+Review covered encryption and authenticated contexts, passphrase/key rotation,
+provider and filesystem boundaries, and CLI/TUI secret handling. This was an
+engineering review by the implementing assistant, not an independent external
+audit or a guarantee that vulnerabilities are absent.
+
+On macOS ARM64 / Dart 3.12.2, fresh checks passed **505 SDK tests** (three
+D-Bus-dependent skips), **211 CLI tests**, **36 native TUI PTY cases**, **22
+hidden-input boundary/mode-restoration cases**, and **20,000 deterministic
+tamper mutations** with seed `20260921`. Private-pasteboard and archive/identity
+checks also passed. The report, source manifest, logs and validation hashes are
+retained locally in `build/security-audit-20260921/`; that directory is not a
+public download.
+
+This pass did not renew native provider, physical-device or signed-distribution
+qualification, or perform a fresh dependency-advisory scan. Best-effort memory
+clearing, complete-snapshot rollback and ordinary-desktop isolation limits
+remain as documented in [SECURITY.md](../SECURITY.md). Native CLI packaging and
+installed-upgrade proof remain release gates; see [release readiness](release-readiness.md).
+The dated sections below preserve earlier review scope and evidence.
+
+## Independent AI review, September 2026
 
 The [independent Claude report](reviews/2026-09-06-claude.md), supplied by the
 maintainer, reviews commit `88c9cb5e…`. It is a separate AI model review, not a
@@ -13,8 +40,9 @@ Both reports and the available reviewer receipts are retained byte-for-byte in
 the [acceptance evidence](../build/qualification/claude-review-acceptance-20260907/README.md)
 with a hash manifest. They are reviewer executions, separately attributed from
 project CI/device runs; null or scratch-commit receipt identities have not been
-relabelled as clean-source runs. CLI/TUI, Snap, Windows, migration, hardware
-credentials and rollback anchors remain deferred.
+relabelled as clean-source runs. CLI/TUI were outside that review and were
+implemented and reviewed later. Snap, Windows, migration, hardware credentials
+and rollback anchors remain deferred.
 
 ## Remediation of the Claude findings
 

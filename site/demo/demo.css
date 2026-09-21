@@ -1,0 +1,14 @@
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { display: flex; flex-direction: column; background: #10131a; color: #cbd5e1; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 46px; padding: 8px 16px; border-bottom: 1px solid #2d343d; font: 12px/1.5 system-ui, sans-serif; color: #9ba6b4; }
+button { cursor: pointer; border: 1px solid #47515c; border-radius: 4px; padding: 4px 10px; background: transparent; color: #e6ebe2; font: inherit; }
+button:hover { background: #253229; }
+button:focus-visible { outline: 2px solid #b8ed72; outline-offset: 3px; }
+button:disabled { opacity: .5; cursor: default; }
+#demo { position: relative; flex: 1; min-height: 0; width: 100%; overflow: hidden; font: 14px/1.4 "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+#demo:focus-within { outline: 1px solid #6c8f5c; outline-offset: -1px; }
+#placeholder, noscript { margin: auto; padding: 24px; font: 14px/1.6 system-ui, sans-serif; }
+[hidden] { display: none !important; }
+@media (max-width: 420px) { #demo { font-size: 12px; } .toolbar { padding-inline: 10px; } }

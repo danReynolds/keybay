@@ -354,6 +354,21 @@ footer a:hover,
   border-top: 1px solid var(--line);
 }
 
+.cli-section { background: var(--panel); }
+.cli-section .workflow-example { min-width: 0; }
+.tui-section { padding-bottom: 48px; }
+.tui-command { margin-top: 14px; color: var(--ink) !important; }
+.tui-command code { display: inline-block; padding: 6px 12px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }
+.tui-demo-frame { overflow: hidden; border: 1px solid var(--dark-line); border-radius: 6px; background: #10131a; }
+.tui-demo-frame iframe { display: block; width: 100%; height: 560px; border: 0; }
+.tui-demo-caption { display: flex; justify-content: space-between; align-items: baseline; gap: 24px; margin-top: 14px; }
+.tui-demo-caption p { max-width: 680px; margin: 0; color: var(--muted); font-size: .8rem; }
+.tui-demo-caption a { flex-shrink: 0; }
+@media (max-width: 600px) {
+  .tui-demo-caption { flex-direction: column; gap: 8px; }
+  .tui-demo-frame iframe { height: 560px; }
+}
+
 .compact-heading {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
@@ -419,6 +434,60 @@ footer a:hover,
 
 .platform-table code {
   font-size: 0.78rem;
+}
+
+.protection-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px 9px;
+  border: 1px solid;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 650;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.protection-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.protection-app {
+  color: #24603d;
+  background: #e8f2e5;
+  border-color: #c3d8bd;
+}
+
+.protection-account {
+  color: #80520d;
+  background: #fcf0d6;
+  border-color: #e4c995;
+}
+
+.protection-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+  margin-top: 18px;
+}
+
+.protection-legend p {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.protection-legend strong {
+  color: var(--ink);
 }
 
 .platform-notes {
@@ -560,7 +629,7 @@ footer {
   min-height: 72px;
 }
 
-/* Build-time syntax highlighting. The site ships no executable JavaScript. */
+/* Build-time syntax highlighting. Executable JavaScript stays in the TUI iframe. */
 .highlight .c,
 .highlight .c1,
 .highlight .cm,
@@ -1198,7 +1267,8 @@ pre .err {
     gap: 12px;
   }
 
-  .platform-notes {
+  .platform-notes,
+  .protection-legend {
     grid-template-columns: 1fr;
     gap: 8px;
   }
@@ -1246,7 +1316,7 @@ pre .err {
 
   .platform-table tbody td {
     display: grid;
-    grid-template-columns: 96px minmax(0, 1fr);
+    grid-template-columns: 100px minmax(0, 1fr);
     gap: 10px;
     padding-top: 4px;
   }

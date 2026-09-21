@@ -78,8 +78,9 @@ matching executable or retained qualification evidence.
 ## Cryptographic construction
 
 Each store has a random 256-bit `Kstore`. Domain-separated HKDF-SHA256 outputs
-are used for the manifest, record frames, commitments, and authenticated
-contexts; `Kstore` is not used directly as an AEAD key.
+derive separate manifest and record-frame keys; `Kstore` is not used directly
+as an AEAD key. Authenticated contexts use distinct labels and length-delimited
+fields.
 
 The file is one bounded framed snapshot:
 
@@ -94,8 +95,10 @@ provider, credential item, or destruction target.
 The manifest is XChaCha20-Poly1305 authenticated ciphertext. Its plaintext lists
 canonical record names, serialized-frame lengths, and SHA-256 digests in
 physical order. Offsets are derived rather than persisted. Each value is a
-separate XChaCha20-Poly1305 frame whose authenticated data binds the file
-format, storage domain, key epoch, and exact record name.
+separate XChaCha20-Poly1305 frame whose authenticated data binds the V2 frame
+context, store ID, key epoch, frame type, and exact record name. The platform
+package and manifest bind the resolved storage domain and public prefix at
+their respective authenticated layers.
 
 An ordinary read authenticates the manifest and decrypts only requested record
 frames. An ordinary write authenticates the source, copies unchanged frames as
@@ -146,6 +149,38 @@ Dart executables on Linux and unentitled macOS use the declaration in their
 owning pubspec or an AOT value embedded by the Keybay compile wrapper. Source
 paths, working directories, executable names, and environment variables are
 not durable application identity.
+
+## Platform protection levels
+
+These documentation labels describe the OS boundary around the platform key
+before an optional Keybay passphrase. They are not security scores, runtime
+attestations, hardware ratings or release-qualification results. Every profile
+uses the same authenticated file encryption.
+
+| Level | Meaning | Profiles |
+| --- | --- | --- |
+| <span class="protection-badge protection-app">App-bound key</span> | The OS or sandbox authenticates the application or signed group before granting key access. | iOS, Android, entitled macOS; the separately qualified Flatpak candidate under its documented confinement. |
+| <span class="protection-badge protection-account">Account-level</span> | The application namespace organizes the store but does not provide a portable OS-enforced application boundary. Another authorized same-user process may reach the platform root. | Unentitled macOS and ordinary Linux desktop. |
+
+App-bound key access does not imply identical file isolation. iOS and Android
+normally isolate both the application's file and key; entitled macOS still
+needs App Sandbox for file isolation. Apple access groups can intentionally
+include more than one authorized app. Hardware backing is also separate:
+Android reports a device-specific security level, while generic Apple Keychain
+items carry no Keybay Secure Enclave claim.
+
+For account-level profiles, a Keybay passphrase prevents the root and encrypted
+file alone from yielding the store key. It does not authenticate the calling
+application, change its platform level, prevent deletion, or protect values
+already returned to a compromised process. The [threat model](#threat-model)
+applies to both levels.
+
+The platform guides use the same protection summary: key access, file isolation,
+hardware assurance, passphrase policy and main limitation, followed by setup,
+recovery and qualification details. Provider behavior is grounded in
+[Apple's access-group model](https://developer.apple.com/documentation/security/sharing-access-to-keychain-items-among-a-collection-of-apps),
+[Android Keystore](https://developer.android.com/privacy-and-security/keystore)
+and the [Secret Service specification](https://specifications.freedesktop.org/secret-service/latest-single/).
 
 ## Platform policy
 

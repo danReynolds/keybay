@@ -69,7 +69,8 @@ path, provider, application, credential item, or deletion target.
 The authenticated manifest contains canonical record names, exact serialized
 frame lengths, and SHA-256 digests. Offsets are derived from physical order.
 Each record value is independently AEAD-sealed with context binding it to the
-store domain, key epoch, format, and exact record key.
+store ID, key epoch, V2 frame context/type, and exact record key. The platform
+package and manifest bind the resolved storage domain and public prefix.
 
 The format is a framed snapshot, not an in-place database. Ordinary reads are
 selective; ordinary writes still stage and replace one whole file but do not
@@ -87,8 +88,9 @@ platform protection AND (passphrase OR future hardware method A OR ...)
 
 V2 implements zero or one passphrase. Methods are alternatives, not implicit
 multi-factor authentication. Adding, updating, or removing a method is an
-authenticated transaction that rewrites the key package and preserves the
-record set.
+authenticated transaction that generates a new store key and epoch, rewrites
+the key package, and re-encrypts every record while preserving the record set.
+It does not invalidate complete historical snapshots under their old protection.
 
 Provider calls carry an internal interaction policy fixed by the operation.
 Open, authentication changes, and reset may invoke trusted OS/provider UI;

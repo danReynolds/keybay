@@ -2,10 +2,10 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:fleury/fleury_core.dart';
-import 'package:keybay/keybay.dart' show KeybayLimits;
 
 import 'chrome.dart';
 import 'model.dart';
+import 'store.dart';
 
 /// One operation-owned masked draft: its controller, focus node and byte
 /// contract. Erasing empties and disposes the controller, then creates a fresh
@@ -20,11 +20,7 @@ final class SecretDraft {
 
   /// A record value editor: multiline, and NUL is outside the value contract.
   SecretDraft.record()
-    : this(
-        limit: KeybayLimits.recordValueBytes,
-        allowNewlines: true,
-        allowNul: false,
-      );
+    : this(limit: tuiRecordValueBytes, allowNewlines: true, allowNul: false);
 
   /// A passphrase field: single line, and any byte the user can type is
   /// accepted so an existing passphrase stays enterable.
