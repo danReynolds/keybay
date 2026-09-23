@@ -8,6 +8,23 @@ from source integration. Pub publishing awaits a hosted Fleury release.
 - Adapt existing commands to the single-application V2 SDK and session API.
   Existing V1 stores are not migrated automatically.
 
+- Disable core files for every command and make the process non-dumpable on
+  Linux, so a crash cannot persist an open session's store key or a revealed
+  value. `run` restores the caller's core-file limit for the launched program.
+- Ignore SIGTSTP, SIGTTIN, SIGTTOU and SIGQUIT while the vault owns the
+  terminal, so it is never stopped or core-dumped with a value on screen.
+- Fix hidden input on macOS, which ignored SIGCHLD instead of SIGTSTP: Dart's
+  `ProcessSignal` numbers use Linux numbering, so the prompt now passes native
+  signal numbers to libc.
+- Copy on macOS stays on this Mac (no Universal Clipboard) and is marked
+  concealed and transient for clipboard managers.
+- Escape every Unicode format and default-ignorable character, and any text
+  that would be drawn in zero cells, in revealed values; `get` refuses the same
+  characters.
+- Show a platform-only `run` its launch summary on an attached terminal, flag
+  more execution-affecting variables, and state plainly that without a
+  passphrase any program running as you can read every value.
+
 - Add `keybay get KEY` as an explicit human reveal path. Stdout must be the
   foreground controlling terminal; stdin is untouched and may be redirected.
   Refuse captured or background output before opening the store and check the

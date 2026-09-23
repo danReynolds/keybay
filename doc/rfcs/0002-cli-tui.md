@@ -335,8 +335,10 @@ rules are part of the command contract, not an exact byte-export API.
 
 `get` is deliberately human rendering. It preserves the stored text and adds a
 final newline for terminal display; it is not a lossless serialization channel.
-It refuses every embedded C0/C1 control and Unicode bidirectional control,
-including tab, carriage return, and newline. Multiline or structured values are
+It refuses every character the TUI would escape (C0/C1 controls, line and
+paragraph separators, bidirectional controls and other invisible format or
+default-ignorable characters) and the newline, including tab and carriage
+return. Multiline or structured values are
 shown only in the TUI's unmistakably framed, escaped value view. Programs
 receive values through `run` or the SDK rather than by parsing `get` output.
 
@@ -581,15 +583,18 @@ has at least one reference; a platform-only open skips steps 5 and 6.
    its environment-name mapping, and collect the distinct referenced-key set.
 4. If references exist, first attempt `Keybay.open()` without a credential. A
    platform-only open succeeds, emits the conservative warning after
-   `session.auth.list()` confirms no additional method, and retains that
-   session. `authRequired` releases no record data and continues to the
-   attended path below; every other failure launches nothing.
+   `session.auth.list()` confirms no additional method, shows the step 5
+   summary on the controlling terminal when one is attached (best effort,
+   without asking), and retains that session. `authRequired` releases no
+   record data and continues to the attended path below; every other failure
+   launches nothing.
 5. After `authRequired`, safely render the selected manifest,
    resolved executable and arguments, and every environment-variable name on
    the controlling terminal. References display as `ENV_NAME <- key-name`;
    literals display as `ENV_NAME (literal)` without echoing their values.
-   Execution-affecting names such as `PATH`, `LD_PRELOAD`, and `DYLD_*` are
-   highlighted. Untrusted path and argument text is escaped rather than
+   Execution-affecting names such as `PATH`, `LD_PRELOAD`, `DYLD_*`,
+   `NODE_OPTIONS`, `BASH_ENV`, `PYTHON*` and `GIT_*` are highlighted; the list
+   is a review aid, not a complete one. Untrusted path and argument text is escaped rather than
    interpreted as terminal controls.
 6. Prompt once through that terminal and open one authenticated
    `KeybaySession`. Entering the passphrase approves release of the displayed
@@ -622,9 +627,13 @@ environment overlay in that case.
 A platform-only invocation has no additional Keybay approval step. Its selected
 manifest and command are the caller's authority, including in an unattended
 run. This is the automation-friendly mode's explicit trust boundary: on a
-`namespaceOnly` platform, any same-user program able to invoke the CLI may be
-able to request those references. Users who require attended authorization use
-passphrase protection.
+`namespaceOnly` platform, any same-user program can invoke the CLI to list
+every name and request every value, without a terminal or prompt. On macOS
+this also bypasses the Keychain prompt that an unrelated program reading the
+item directly would meet. A terminal requirement would not change that, since a
+program can supply its own pseudo-terminal. The summary shown on an attached
+terminal makes a launch visible, not approved. Users who require attended
+authorization use passphrase protection.
 
 The approval summary binds secret release to the parsed manifest and launch
 request, not to a cryptographic identity for the executable. Keybay does not
@@ -931,6 +940,12 @@ unavailability without reading the value. An unacknowledged terminal write
 must not be reported as confirmed clipboard delivery. Do not use an
 in-process-only fallback as a successful Copy.
 
+On macOS the write is restricted to the current host
+(`NSPasteboardContentsCurrentHostOnly`, so Universal Clipboard does not sync it)
+and carries the nspasteboard.org concealed and transient marker types, which
+clipboard managers commonly honor by not recording the item. The Linux helpers
+serve one type per copy and cannot carry a sensitivity hint.
+
 The CLI documentation explains that copied values leave Keybay and may remain
 in the system clipboard or clipboard history after the TUI exits. There is no automatic
 clipboard-clear timer or claim of remote erasure. This explicit action is the
@@ -943,10 +958,12 @@ The TUI does not display every value merely because the store is open. Selection
 reveals metadata; revealing a value is a separate deliberate action. Unsafe
 terminal text is never emitted as raw control bytes. A multiline or structured
 value appears inside a bounded value column: line breaks are layout; C0/C1
-controls, DEL, bidirectional overrides and isolates, joiners, zero-width and
-other invisible format characters, and lone surrogates are visibly escaped;
-ordinary printable text, including accented, CJK and emoji characters, renders
-as itself. Width is measured in terminal cells through the framework's width
+controls, DEL, line and paragraph separators, lone surrogates, and every
+Unicode format or other default-ignorable character (bidirectional overrides and
+isolates, joiners, zero-width marks, prepended concatenation marks, tags and
+fillers) are visibly escaped, as is any other cluster text the renderer would
+draw in zero cells, such as a stray combining mark; ordinary printable text,
+including accented, CJK and emoji characters, renders as itself. Width is measured in terminal cells through the framework's width
 resolver and wrapping never splits a grapheme cluster, so a wide glyph cannot
 overflow its column. Text is clipped or scrolled inside that view without
 overwriting UI controls.
@@ -978,12 +995,18 @@ decrypts only the selected record frame under RFC 0001.
 
 The TUI keeps one authenticated `KeybaySession` for its foreground lifetime. It
 calls `session.close()` in its top-level `finally` path on normal exit,
-cancellation, handled errors, and catchable signals. On a catchable job-control
-event, or when it
-detects that it no longer owns the foreground terminal, it clears sensitive
-screen state, closes the session, and terminates before surrendering the
-terminal where possible.
-`SIGSTOP`, `SIGKILL`, power loss, and runtime crashes cannot be handled.
+cancellation, handled errors, and the signals Dart can observe (SIGINT,
+SIGTERM and SIGHUP). Dart cannot run code for SIGTSTP, SIGTTIN, SIGTTOU or
+SIGQUIT, so while the TUI owns the terminal it ignores them: an external stop
+request or quit signal can neither suspend it with a value on screen nor
+core-dump it. In raw mode Ctrl+Z and Ctrl+\ arrive as input, and Ctrl+Z
+closes the session. When it detects that it no longer owns the foreground
+terminal, it clears sensitive screen state, closes the session, and terminates
+before surrendering the terminal where possible.
+`SIGSTOP`, `SIGKILL`, power loss, and runtime crashes cannot be handled. Every
+command disables its own core files, and on Linux makes its process
+non-dumpable, so a crash does not persist the session's store key or a revealed
+value; `run` restores the caller's core-file limit for the launched program.
 On an observed resume after suspension, clear sensitive state and exit through
 the close path instead of resuming the old authenticated screen. This avoids a
 second resume/epoch protocol or SDK inspection API. Terminal restoration and
@@ -1456,7 +1479,7 @@ providers for the advertised deployment configurations.
   work; check before input/reveal and recheck immediately before output
 
 - **Display:** No names before authentication; list emits only sorted names; `get` missing
-  status versus empty stored value; C0/C1/bidirectional controls rejected by `get` and
+  status versus empty stored value; controls and invisible format characters rejected by `get` and
   escaped/confined in TUI; no raw provider/manifest/value text in failures
 
 - **Authentication:** `authRequired` alone triggers retry; one passphrase attempt per
@@ -1494,7 +1517,8 @@ providers for the advertised deployment configurations.
   dangling symlinks, directories and `126/127`; approval target equals execution target;
   no post-auth search or fallback
 
-- **Launch disclosure:** Protected summary precedes passphrase/secret read; every
+- **Launch disclosure:** Summary precedes passphrase/secret read (platform-only: shown
+  when a terminal is attached, without approval); every
   environment name/class shown without literal values; one `getManyBytes` for distinct
   referenced keys; all-or-nothing reference resolution from one generation; no child on
   missing/invalid data, authentication/cancellation/prelaunch failure

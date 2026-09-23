@@ -159,7 +159,7 @@ final class KeybayTui extends StatelessWidget {
         'Your Keybay store is ready',
         [
           const Text(
-            'Platform protection is active. Other programs running as you may still open this store. Add a passphrase to require it when opening the store.',
+            'Platform protection is active. Without a passphrase, any program running as you can read these values through Keybay. Add one to require it when opening the store.',
           ),
         ],
         [
@@ -205,7 +205,7 @@ final class KeybayTui extends StatelessWidget {
         'Remove passphrase protection?',
         [
           const Text(
-            'This reduces protection. Programs running as you may be able to open the store with platform protection alone.',
+            'This reduces protection. Any program running as you will be able to read these values through Keybay.',
           ),
         ],
         action: 'Remove passphrase',

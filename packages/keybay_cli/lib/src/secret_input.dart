@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:keybay/keybay.dart';
 
+import 'ignored_signals.dart';
 import 'terminal.dart';
 import 'lifetime.dart';
 
@@ -130,6 +131,26 @@ final class SecretInputReader {
         maximumBytes: maxPassphraseInputBytes,
       );
 
+  /// Shows [summary] on the controlling terminal when this process owns it in
+  /// the foreground. Best effort: without an attended terminal, it shows
+  /// nothing and never prevents the command.
+  void showSummary(String summary) {
+    if (!_nativeInput) return;
+    _ControllingTerminalAttachment? attachment;
+    try {
+      attachment = _ControllingTerminalAttachment.open();
+      attachment.write(summary);
+    } on SecretInputException {
+      // No attended terminal to show it on.
+    } finally {
+      try {
+        attachment?.close();
+      } on SecretInputException {
+        // Closing a best-effort display descriptor cannot affect the command.
+      }
+    }
+  }
+
   Future<Uint8List> _readControllingTerminal({
     String? summary,
     required String prompt,
@@ -181,12 +202,7 @@ final class SecretInputReader {
     }
 
     final signalGuard = managePosixSignals
-        ? _IgnoredSignalGuard([
-            ProcessSignal.sigquit.signalNumber,
-            ProcessSignal.sigtstp.signalNumber,
-            _sigTtin,
-            _sigTtou,
-          ])
+        ? IgnoredSignals.terminalOwnership()
         : null;
     void Function()? restore;
     Uint8List? result;
@@ -959,48 +975,6 @@ final class _LinuxTerminalAttributes extends Struct {
   external int outputSpeed;
 }
 
-typedef _NativeSignal = Pointer<Void> Function(Int32, Pointer<Void>);
-typedef _DartSignal = Pointer<Void> Function(int, Pointer<Void>);
 final DynamicLibrary _libc = DynamicLibrary.process();
-
-// POSIX job-control signal numbers are 21/22 on every supported host
-// (Darwin, Linux/glibc, and Android/bionic).
-const int _sigTtin = 21;
-const int _sigTtou = 22;
-
-/// Dart does not expose SIGQUIT or job-control signal streams on macOS.
-/// Ignoring them only while the prompt owns the terminal is the fail-safe
-/// temporary behavior: neither can strand echo disabled. The owner ratified
-/// this austere contract instead of adding a native signal bridge solely for
-/// the short hidden-input window (implementation plan §15).
-final class _IgnoredSignalGuard {
-  _IgnoredSignalGuard(this.signalNumbers);
-
-  final List<int> signalNumbers;
-  _DartSignal? _signal;
-  final Map<int, Pointer<Void>> _previous = <int, Pointer<Void>>{};
-
-  void start() {
-    final signal = _libc.lookupFunction<_NativeSignal, _DartSignal>('signal');
-    _signal = signal;
-    for (final signalNumber in signalNumbers) {
-      _previous[signalNumber] = signal(
-        signalNumber,
-        Pointer<Void>.fromAddress(1),
-      );
-    }
-  }
-
-  void close() {
-    final signal = _signal;
-    if (signal != null) {
-      for (final entry in _previous.entries) {
-        signal(entry.key, entry.value);
-      }
-    }
-    _signal = null;
-    _previous.clear();
-  }
-}
 
 void _clear(Uint8List bytes) => bytes.fillRange(0, bytes.length, 0);

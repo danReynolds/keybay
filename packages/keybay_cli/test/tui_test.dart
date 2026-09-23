@@ -151,6 +151,14 @@ void main() {
       0x1f600,
       0x10ffff,
       0x4e2d,
+      // Format, default-ignorable and zero-width cluster cases.
+      0x0600,
+      0x0301,
+      0xfe0f,
+      0x200c,
+      0x3164,
+      0xad,
+      0xe0041,
     ];
     for (var trial = 0; trial < 2000; trial++) {
       final text = String.fromCharCodes([
@@ -837,6 +845,27 @@ void main() {
     expect(safeTuiText('a\rb'), r'a\u{d}b');
     expect(safeTuiText('\ufeff'), r'\u{feff}');
     expect(safeTuiText('a\\b'), r'a\\b');
+    // Format characters, including a prepended concatenation mark that would
+    // otherwise fold the next character into an unpainted cluster.
+    expect(safeTuiText('g\u0600TAIL'), r'g\u{600}TAIL');
+    expect(safeTuiText('a\u200cb'), r'a\u{200c}b');
+    expect(safeTuiText('a\u00adb'), r'a\u{ad}b');
+    expect(safeTuiText('\u3164'), r'\u{3164}');
+    expect(safeTuiText('tag\u{e0041}'), r'tag\u{e0041}');
+    // Text that would be drawn in zero cells is shown escaped; combining
+    // accents and emoji selectors on a base keep rendering as themselves.
+    expect(safeTuiText('\u0301a'), r'\u{301}a');
+    expect(
+      safeTuiText('a\n\u0301'),
+      'a\n'
+      r'\u{301}',
+    );
+    expect(safeTuiText('\ufe0f'), r'\u{fe0f}');
+    expect(safeTuiText('e\u0301'), 'e\u0301');
+    expect(safeTuiText('\u2764\ufe0f'), '\u2764\ufe0f');
+    expect(needsTuiEscaping('\u0301x', allowNewlines: true), isTrue);
+    expect(needsTuiEscaping('e\u0301', allowNewlines: true), isFalse);
+    expect(needsTuiEscaping('g\u0600T', allowNewlines: true), isTrue);
     // Width is measured in cells, not code units, so a wide glyph cannot
     // overflow the column it was laid out in.
     expect(longestEscapedLine('中文'), 4);

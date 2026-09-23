@@ -6,6 +6,7 @@ import 'application.dart';
 import 'command.dart';
 import 'manifest.dart';
 import 'process_executor.dart';
+import 'process_hardening.dart';
 import 'secret_input.dart';
 import 'secret_output.dart';
 import 'lifetime.dart';
@@ -19,6 +20,7 @@ Future<int> runKeybay(
   Duration idleTimeout = tuiIdleTimeout,
   Duration idleWarning = tuiIdleWarning,
 }) async {
+  ProcessHardening.apply();
   final lifetime = CommandLifetime();
   try {
     final workingDirectory = Directory.current.path;
@@ -55,6 +57,7 @@ Future<int> runKeybay(
       parentEnvironment: Platform.environment,
       stdout: stdout,
       stderr: stderr,
+      showLaunchSummary: input.showSummary,
     );
     return await application.execute(command);
   } on CommandInterrupted catch (error) {

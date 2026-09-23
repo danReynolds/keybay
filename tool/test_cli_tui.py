@@ -6,12 +6,15 @@ import errno
 import fcntl
 import os
 import re
+import resource
 import signal
 import struct
 import subprocess
 import sys
+import tempfile
 import threading
 import termios
+import time
 
 from test_cli_commands import Invocation
 
@@ -407,6 +410,85 @@ def main():
             os.kill(p.pid, sig)
             p.finish(128 + sig)
         check(['--platform-only'], terminate)
+
+    # A crash while a value is revealed must not leave a core file. Only hosts
+    # whose kernel writes plain `core` files into the working directory can
+    # observe this; elsewhere a regression could produce a very large file.
+    core_pattern = ''
+    if sys.platform.startswith('linux'):
+        with open('/proc/sys/kernel/core_pattern') as source:
+            core_pattern = source.read().strip()
+    if core_pattern.startswith('core'):
+        def crash_leaves_no_core(p):
+            p.receive(b'acme/key')
+            os.write(p.master, b' ')
+            p.receive(b'disposable-value')
+            os.kill(p.pid, signal.SIGABRT)
+            p.receive()
+            assert p.status == -signal.SIGABRT, p.status
+        previous_directory = os.getcwd()
+        previous_limit = resource.getrlimit(resource.RLIMIT_CORE)
+        with tempfile.TemporaryDirectory(prefix='keybay-core-') as crash_dir:
+            os.chdir(crash_dir)
+            resource.setrlimit(resource.RLIMIT_CORE, (previous_limit[1], previous_limit[1]))
+            try:
+                check(['--platform-only'], crash_leaves_no_core)
+            finally:
+                resource.setrlimit(resource.RLIMIT_CORE, previous_limit)
+                os.chdir(previous_directory)
+            cores = [name for name in os.listdir(crash_dir) if name.startswith('core')]
+            assert not cores, f'crash left core files: {cores}'
+
+    # Dart cannot run cleanup for SIGQUIT or SIGTSTP, so the TUI ignores them
+    # rather than dying or stopping with a revealed value on screen.
+    def quit_signal_is_ignored(p):
+        p.receive(b'acme/key')
+        os.write(p.master, b' ')
+        p.receive(b'disposable-value')
+        os.kill(p.pid, signal.SIGQUIT)
+        time.sleep(.5)
+        os.write(p.master, b'q')
+        p.finish(0)
+    check(['--platform-only'], quit_signal_is_ignored)
+
+    # SIGTSTP stops only a job of an interactive shell; a direct PTY child's
+    # process group is orphaned, and the kernel discards the signal there.
+    def stop_signal_is_ignored(p):
+        p.receive(b'$ ')
+        # The split quotes keep the typed echo from matching the prompt.
+        os.write(p.master, f"PS1='KB''-DONE$ '; set -m; '{cli}' --platform-only open\n".encode())
+        p.receive(b'acme/key')
+        tui = int(subprocess.check_output(['pgrep', '-P', str(p.pid)], text=True).split()[0])
+        os.write(p.master, b' ')
+        p.receive(b'disposable-value')
+        os.kill(tui, signal.SIGTSTP)
+        time.sleep(.5)
+        state = subprocess.check_output(['ps', '-o', 'stat=', '-p', str(tui)], text=True)
+        assert 'T' not in state, f'TUI stopped with a revealed value: {state!r}'
+        os.write(p.master, b'q')
+        p.receive(b'KB-DONE$ ')
+        os.write(p.master, b'exit\n')
+        p.receive()
+    if not real:
+        shell = Invocation('/bin/bash', ['--norc', '--noprofile', '-i'])
+        fcntl.ioctl(shell.master, termios.TIOCSWINSZ, struct.pack('HHHH', 24, 80, 0, 0))
+        try:
+            stop_signal_is_ignored(shell)
+            passed += 1
+        finally:
+            # A macOS session leader drains its terminal while exiting, so a
+            # failed case keeps reading while it reaps instead of blocking.
+            if shell.status is None:
+                children = subprocess.run(['pgrep', '-P', str(shell.pid)],
+                                          capture_output=True, text=True).stdout.split()
+                for child in children:
+                    os.kill(int(child), signal.SIGKILL)
+                os.kill(shell.pid, signal.SIGKILL)
+                try:
+                    shell.receive(timeout=5)
+                except AssertionError:
+                    pass
+            shell.close()
 
     def pending(p):
         p.receive(b'test:opening')

@@ -1,3 +1,4 @@
+import 'display_safety.dart';
 import 'terminal.dart';
 
 final class SecretOutputException implements Exception {
@@ -42,22 +43,13 @@ final class SecretOutputGuard {
   }
 }
 
-/// Refuses terminal control characters that could alter the display rather
-/// than represent the value literally.
-///
-/// Every C0/C1 and Unicode bidirectional control is unsafe to emit as raw
-/// terminal text. Multiline values belong in the future framed TUI view.
+/// Refuses anything that could alter the display rather than represent the
+/// value literally: every character the TUI escapes (controls, separators,
+/// invisible format characters), plus the line feed, which `get` never prints.
+/// Such values belong in the TUI's framed, escaped value view.
 bool secretIsSafeForTerminal(String value) {
   for (final rune in value.runes) {
-    final unsafeC0 = rune < 0x20;
-    final unsafeC1 = rune >= 0x7f && rune <= 0x9f;
-    final bidiControl =
-        rune == 0x061c ||
-        rune == 0x200e ||
-        rune == 0x200f ||
-        (rune >= 0x202a && rune <= 0x202e) ||
-        (rune >= 0x2066 && rune <= 0x2069);
-    if (unsafeC0 || unsafeC1 || bidiControl) return false;
+    if (rune == 0x0a || mustEscapeRune(rune)) return false;
   }
   return true;
 }

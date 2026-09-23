@@ -49,6 +49,10 @@ void main() {
 
   test('terminal value validation allows plain text but rejects controls', () {
     expect(secretIsSafeForTerminal('plain unicode text é'), isTrue);
+    expect(
+      secretIsSafeForTerminal('accent e\u0301 and emoji \u2764\ufe0f'),
+      isTrue,
+    );
     for (final value in <String>[
       'line one\nline two',
       'tab\tvalue',
@@ -56,6 +60,12 @@ void main() {
       'backspace\b',
       'c1\u009b31m',
       'bidi\u202eoverride',
+      'zero\u200bwidth',
+      'soft\u00adhyphen',
+      'prepend\u0600mark',
+      'bom\ufeff',
+      'tag\u{e0041}',
+      'separator\u2028line',
     ]) {
       expect(secretIsSafeForTerminal(value), isFalse, reason: value);
     }

@@ -73,6 +73,16 @@ Future<void> Function(String)? systemCopy() {
   };
 }
 
+/// `NSPasteboardContentsCurrentHostOnly`: no Continuity/Universal Clipboard.
+const int _currentHostOnly = 1;
+
+/// The nspasteboard.org markers asking clipboard managers not to show or
+/// record an item. They are conventions each manager chooses to honor.
+const List<String> _sensitiveMarkers = [
+  'org.nspasteboard.ConcealedType',
+  'org.nspasteboard.TransientType',
+];
+
 /// AppKit's typed string API avoids pbcopy's RTF/EPS type inference. Temporary
 /// native UTF-8 buffers are cleared, and an autorelease pool scopes NSStrings.
 /// The optional named board is only for isolated native qualification.
@@ -111,10 +121,10 @@ final class MacPasteboard {
         ),
         int Function(Pointer<Void>, Pointer<Void>, Pointer<Void>, Pointer<Void>)
       >('objc_msgSend');
-  static final _integer = _objc
+  static final _prepare = _objc
       .lookupFunction<
-        IntPtr Function(Pointer<Void>, Pointer<Void>),
-        int Function(Pointer<Void>, Pointer<Void>)
+        IntPtr Function(Pointer<Void>, Pointer<Void>, UintPtr),
+        int Function(Pointer<Void>, Pointer<Void>, int)
       >('objc_msgSend');
   static final _void = _objc
       .lookupFunction<
@@ -168,7 +178,22 @@ final class MacPasteboard {
       if (board == nullptr) throw const TuiCopyException();
       final text = _string(value);
       if (text == nullptr) throw const TuiCopyException();
-      _integer(board, _sel('clearContents'));
+      // Keep the value off other devices (Universal Clipboard) and mark it with
+      // the nspasteboard.org concealed/transient conventions that clipboard
+      // history tools honor. Markers precede the value, so a failure leaves no
+      // unmarked secret on the board.
+      _prepare(
+        board,
+        _sel('prepareForNewContentsWithOptions:'),
+        _currentHostOnly,
+      );
+      final empty = _string('');
+      for (final marker in _sensitiveMarkers) {
+        if (_set(board, _sel('setString:forType:'), empty, _string(marker)) ==
+            0) {
+          throw const TuiCopyException();
+        }
+      }
       if (_set(
             board,
             _sel('setString:forType:'),

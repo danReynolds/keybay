@@ -91,6 +91,8 @@ runtime security fix required before release preparation. Fresh checks passed
 505 SDK tests (three D-Bus skips), 211 CLI tests, native terminal regressions and
 20,000 deterministic tamper mutations. See the [review record](security-review.md#engineering-audit-2026-09-21).
 This was not an independent external audit or renewed physical qualification.
+The September 22 pre-release assessment then covered the CLI/TUI. Its findings
+and resolutions are in the [review record](security-review.md#pre-release-assessment-2026-09-22).
 
 Known limits remain: best-effort memory clearing, no complete-snapshot rollback
 protection, and namespace-only isolation for ordinary desktop applications.

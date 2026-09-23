@@ -235,6 +235,12 @@ not modify the user's active Fleury development checkout.
 Keybay filters native events before Fleury widget dispatch and checks the
 foreground terminal again before every output frame. Ctrl+C, Ctrl+Z, handled
 signals, terminal loss and five-minute inactivity initiate session cleanup.
+Dart cannot run code for SIGTSTP, SIGTTIN, SIGTTOU or SIGQUIT, and Fleury
+documents external SIGTSTP as unsupported, so the runner ignores those four
+while it owns the terminal (the hidden-input prompt shares the same guard).
+An external stop or quit signal therefore neither suspends the vault with a
+value on screen nor core-dumps it. Every command also disables its own core
+files and, on Linux, makes the process non-dumpable.
 Reported focus loss and resize conceal values while preserving masked drafts
 in the active form. A conceal revision makes any previous form reveal expire;
 it does not invalidate an accepted form write. Below the minimum size, the form
@@ -257,11 +263,15 @@ dismissal and exit invalidate pending disclosures. Submitted writes still
 settle. Secret input controllers are emptied, disposed and replaced, releasing
 undo/redo/composition history. UTF-8 copies passed to SDK operations are cleared
 after synchronous snapshotting. Immutable strings and terminal/OS copies cannot
-be guaranteed erased. Shown values escape C0/C1 controls, DEL and the invisible
-or format code points that can make the display disagree with the stored bytes
-— bidi overrides and isolates, joiners and zero-width marks, line/paragraph
-separators, annotation and tag characters, and lone surrogates — plus the
-backslash that introduces an escape. Ordinary printable text, including
+be guaranteed erased. Shown values escape C0/C1 controls, DEL, line/paragraph
+separators, lone surrogates and every Unicode 16 format (Cf) or other
+default-ignorable code point that can make the display disagree with the stored
+bytes: bidi overrides and isolates, joiners and zero-width marks, prepended
+concatenation marks, annotation and tag characters, and fillers. Variation
+selectors are kept so emoji render. Any remaining cluster text that Fleury would
+draw in zero cells, such as a stray combining mark, is escaped as well, plus the
+backslash that introduces an escape. `get` refuses the same set. The shared
+predicate lives in `display_safety.dart`. Ordinary printable text, including
 accented, CJK and emoji characters, renders as itself. Display width is
 measured in terminal cells through Fleury's width resolver and wrapping never
 splits a grapheme cluster, so a wide glyph cannot overflow its column;
@@ -276,10 +286,17 @@ masked, revealed, scrolled, and concealed states at three viewport sizes.
 
 macOS Copy uses AppKit's typed string API, avoiding `pbcopy` type inference.
 The native boundary follows Apple's [NSPasteboard API](https://developer.apple.com/documentation/appkit/nspasteboard).
+It prepares the pasteboard with `NSPasteboardContentsCurrentHostOnly`, so
+Universal Clipboard does not sync the value, and publishes the
+`org.nspasteboard.ConcealedType` and `org.nspasteboard.TransientType` markers
+before the value, so a failure leaves no unmarked secret. Clipboard managers
+choose whether to honor the markers.
 Linux chooses one absolute helper based on the desktop environment before any
 record read; X11 requires a local `:display` address. It sends UTF-8 only through
 stdin, uses a restricted environment,
-discards helper output and bounds completion. Clipboard ownership may outlive
+discards helper output and bounds completion. `wl-copy` and `xclip` serve one
+type per copy, so Linux copies cannot carry KDE's password-manager hint and
+clipboard managers may record them. Clipboard ownership may outlive
 the Keybay process. A failure after submission cannot prove the clipboard was
 unchanged. No automatic clearing or clipboard-history erasure is claimed.
 

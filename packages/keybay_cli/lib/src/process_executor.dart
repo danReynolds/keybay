@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import 'failure.dart';
+import 'process_hardening.dart';
 import 'terminal.dart';
 
 /// A launch request prepared before opening Keybay. No environment overlay
@@ -260,6 +261,9 @@ final class NativeExecveSystem implements ExecveSystem {
     final previousMask = calloc<Uint8>(_sigsetBytes);
     final previousSigpipe = _signal(_sigpipe, _sigDfl);
     _pthreadSigmask(_sigSetmask, emptyMask.cast(), previousMask.cast());
+    // The program gets the caller's core-file limit; Keybay's zero limit is
+    // process hardening, not child policy. execve restores dumpability.
+    ProcessHardening.restoreForExec();
     try {
       final result = _execve(
         pathPointer,
@@ -278,6 +282,7 @@ final class NativeExecveSystem implements ExecveSystem {
       // unavoidable Dart heap copies remain documented by SR-7. Inherited
       // environ entry pointers are libc's memory holding only parent values:
       // neither scrubbed nor freed.
+      ProcessHardening.reapplyAfterFailedExec();
       _pthreadSigmask(_sigSetmask, previousMask.cast(), nullptr);
       _signal(_sigpipe, previousSigpipe);
       calloc

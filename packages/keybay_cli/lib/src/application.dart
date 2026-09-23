@@ -25,6 +25,9 @@ typedef SecretValueReader =
     Future<Uint8List> Function({required String key, required bool fromStdin});
 typedef PassphraseReader = Future<Uint8List> Function({String? summary});
 typedef SecretOutputAuthorizer = void Function();
+typedef LaunchSummaryWriter = void Function(String summary);
+
+void _discardSummary(String summary) {}
 
 final class CliApplication {
   CliApplication({
@@ -39,6 +42,7 @@ final class CliApplication {
     required Map<String, String> parentEnvironment,
     required this.stdout,
     required this.stderr,
+    this.showLaunchSummary = _discardSummary,
   }) : parentEnvironment = Map<String, String>.unmodifiable(parentEnvironment);
 
   final ManifestLoader loadManifest;
@@ -52,6 +56,10 @@ final class CliApplication {
   final Map<String, String> parentEnvironment;
   final StringSink stdout;
   final StringSink stderr;
+
+  /// Shows a platform-only `run` its summary on the controlling terminal, if
+  /// one is attached. It is visibility, not approval: nothing is awaited.
+  final LaunchSummaryWriter showLaunchSummary;
 
   Future<int> execute(CliCommand command) async {
     try {
@@ -195,7 +203,8 @@ final class CliApplication {
         if (!secretIsSafeForTerminal(value)) {
           throw StoredValueException(
             command.key,
-            'contains terminal control characters that cannot be revealed safely',
+            'contains control or invisible characters that get cannot show '
+            'faithfully; view it with keybay open',
           );
         }
         authorizeSecretOutput();
@@ -238,6 +247,9 @@ final class CliApplication {
           'warning: platform protection only; no additional credential is '
           'configured.',
         );
+        // A protected run showed this before its passphrase prompt; show a
+        // platform-only run the same summary before any value is read.
+        if (summary != null) showLaunchSummary(summary);
       }
       lifetime.check();
       return await operation(session);
@@ -315,10 +327,7 @@ String launchSummary(
     ..writeln('Manifest: ${terminalQuoted(manifestPath)}')
     ..writeln('Environment:');
   for (final entry in manifest.values.entries) {
-    final affectsExecution =
-        entry.key == 'PATH' ||
-        entry.key.startsWith('LD_') ||
-        entry.key.startsWith('DYLD_');
+    final affectsExecution = affectsExecutionName(entry.key);
     final kind = switch (entry.value) {
       LiteralManifestValue() => '(literal)',
       SecretManifestValue(:final key) => '<- $key',
@@ -329,3 +338,40 @@ String launchSummary(
   }
   return text.toString();
 }
+
+/// Variables that can make the launched program, or one it runs, execute other
+/// code. A highlight for review, not a complete list or a sandbox.
+bool affectsExecutionName(String name) =>
+    _executionNames.contains(name) ||
+    _executionPrefixes.any(name.startsWith) ||
+    name.toLowerCase().startsWith('npm_config_');
+
+const Set<String> _executionNames = {
+  'PATH',
+  'BASH_ENV',
+  'ENV',
+  'ZDOTDIR',
+  'PROMPT_COMMAND',
+  'SHELLOPTS',
+  'IFS',
+  'NODE_OPTIONS',
+  'NODE_PATH',
+  'PERL5OPT',
+  'PERL5LIB',
+  'PERLLIB',
+  'RUBYOPT',
+  'RUBYLIB',
+  'JAVA_TOOL_OPTIONS',
+  '_JAVA_OPTIONS',
+  'JDK_JAVA_OPTIONS',
+  'CLASSPATH',
+  'EDITOR',
+  'VISUAL',
+  'PAGER',
+  'LESSOPEN',
+  'SSH_ASKPASS',
+  'SUDO_ASKPASS',
+  'GCONV_PATH',
+};
+
+const List<String> _executionPrefixes = ['LD_', 'DYLD_', 'PYTHON', 'GIT_'];

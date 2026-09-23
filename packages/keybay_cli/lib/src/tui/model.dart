@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:characters/characters.dart';
 import 'package:fleury/fleury_core.dart';
+import '../display_safety.dart';
 import '../key.dart';
 import 'clipboard_contract.dart' show TuiCopyException;
 import 'store.dart';
@@ -617,76 +618,87 @@ String decodeTuiValue(Uint8List bytes) {
   return utf8.decode(bytes, allowMalformed: false);
 }
 
-/// Code points that must never reach the terminal as themselves: C0 and C1
-/// controls, DEL, and the invisible or format characters that can make what is
-/// displayed disagree with what is stored — bidi overrides and isolates, joiners
-/// and zero-width marks, line/paragraph separators, annotation and tag
-/// characters, and lone surrogates. LF is layout and survives.
-///
-/// Everything else printable — accents, CJK, emoji — renders as itself. The
-/// display is width-measured rather than assumed to be one cell per code unit,
-/// so a wide glyph cannot overflow the column it was laid out in.
-bool mustEscapeRune(int rune) =>
-    rune < 0x20 && rune != 0x0a ||
-    rune >= 0x7f && rune <= 0x9f ||
-    rune == 0xad ||
-    rune == 0x61c ||
-    rune == 0x180e ||
-    rune >= 0x200b && rune <= 0x200f ||
-    rune >= 0x2028 && rune <= 0x202e ||
-    rune >= 0x2060 && rune <= 0x206f ||
-    rune >= 0xd800 && rune <= 0xdfff ||
-    rune == 0xfeff ||
-    rune >= 0xfff9 && rune <= 0xfffb ||
-    rune >= 0x1d173 && rune <= 0x1d17a ||
-    rune >= 0xe0000 && rune <= 0xe007f;
-
-/// A backslash is rewritten too, so an escape can never be confused with
-/// literal text that happens to look like one.
-bool _rewrites(int rune) => rune == 0x5c || mustEscapeRune(rune);
-
 /// Whether [text] contains anything [safeTuiText] would rewrite, i.e. whether a
 /// live editor has to be replaced by a read-only escaped preview. A backslash
 /// alone does not require that.
 bool needsTuiEscaping(String text, {required bool allowNewlines}) {
-  for (final rune in text.runes) {
-    if (rune == 0x0a) {
-      if (!allowNewlines) return true;
-    } else if (mustEscapeRune(rune)) {
-      return true;
+  for (final cluster in text.characters) {
+    for (final rune in cluster.runes) {
+      if (rune == 0x0a) {
+        if (!allowNewlines) return true;
+      } else if (mustEscapeRune(rune)) {
+        return true;
+      }
     }
+    if (_hidesKeptText(cluster)) return true;
   }
   return false;
 }
 
 const _widths = DefaultWidthResolver();
 
-/// Cells one grapheme cluster occupies once escaped. Clusters with nothing to
-/// rewrite are measured whole, so presentation selectors and combining marks
-/// keep the width the renderer will give them.
+/// Cells one grapheme cluster occupies once escaped: exactly what the
+/// renderer draws for [_escapeCluster]'s output.
 int _clusterWidth(String cluster) {
-  var rewritten = false;
+  final escaped = _escapeCluster(cluster);
+  return identical(escaped, cluster)
+      ? _widths.widthOfGrapheme(cluster, CellWidthPolicy.spec)
+      : _drawnWidth(escaped);
+}
+
+int _drawnWidth(String text) {
+  var width = 0;
+  for (final cluster in text.characters) {
+    width += _widths.widthOfGrapheme(cluster, CellWidthPolicy.spec);
+  }
+  return width;
+}
+
+/// The runes of [cluster] that are shown as themselves would occupy no cells:
+/// a stray combining mark or selector, for example. Show them escaped so no
+/// stored code point silently disappears from the display.
+bool _hidesKeptText(String cluster) {
+  if (_isPlainAscii(cluster)) return false;
+  final kept = StringBuffer();
   for (final rune in cluster.runes) {
-    if (_rewrites(rune)) {
-      rewritten = true;
+    if (rune != 0x0a && !mustEscapeRune(rune)) kept.writeCharCode(rune);
+  }
+  return kept.isNotEmpty && _drawnWidth(kept.toString()) == 0;
+}
+
+/// A single printable ASCII character other than backslash: the common case,
+/// which is always drawn as itself in one cell.
+bool _isPlainAscii(String cluster) {
+  if (cluster.length != 1) return false;
+  final unit = cluster.codeUnitAt(0);
+  return unit >= 0x20 && unit < 0x7f && unit != 0x5c;
+}
+
+/// Rewrites one grapheme cluster. Returns [cluster] itself when unchanged.
+String _escapeCluster(String cluster) {
+  if (_isPlainAscii(cluster)) return cluster;
+  var changed = false;
+  for (final rune in cluster.runes) {
+    if (rune == 0x0a || rune == 0x5c || mustEscapeRune(rune)) {
+      changed = true;
       break;
     }
   }
-  if (!rewritten) {
-    return _widths.widthOfGrapheme(cluster, CellWidthPolicy.spec);
-  }
-  var width = 0;
+  final hideKept = _hidesKeptText(cluster);
+  if (!changed && !hideKept) return cluster;
+  final out = StringBuffer();
   for (final rune in cluster.runes) {
-    width += rune == 0x5c
-        ? 2
-        : mustEscapeRune(rune)
-        ? 4 + rune.toRadixString(16).length
-        : _widths.widthOfGrapheme(
-            String.fromCharCode(rune),
-            CellWidthPolicy.spec,
-          );
+    if (rune == 0x0a) {
+      out.writeln();
+    } else if (rune == 0x5c) {
+      out.write(r'\\');
+    } else if (hideKept || mustEscapeRune(rune)) {
+      out.write('\\u{${rune.toRadixString(16)}}');
+    } else {
+      out.writeCharCode(rune);
+    }
   }
-  return width;
+  return out.toString();
 }
 
 /// Cells the escaped form of one line occupies. The line must not contain LF.
@@ -730,21 +742,14 @@ List<String> wrapEscapedLine(String line, int width) {
   return rows;
 }
 
-/// Rewrites only what [mustEscapeRune] identifies, preserving the exact source
-/// separately for Copy/Edit. No stored byte can become a terminal command, and
+/// Rewrites only what [mustEscapeRune] identifies, plus any cluster text that
+/// would be drawn in zero cells, preserving the exact source separately for
+/// Copy/Edit. No stored byte can become a terminal command or vanish, and
 /// ordinary international text stays readable.
 String safeTuiText(String text) {
   final out = StringBuffer();
-  for (final rune in text.runes) {
-    if (rune == 0x0a) {
-      out.writeln();
-    } else if (rune == 0x5c) {
-      out.write(r'\\');
-    } else if (mustEscapeRune(rune)) {
-      out.write('\\u{${rune.toRadixString(16)}}');
-    } else {
-      out.writeCharCode(rune);
-    }
+  for (final cluster in text.characters) {
+    out.write(_escapeCluster(cluster));
   }
   return out.toString();
 }
