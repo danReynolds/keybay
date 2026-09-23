@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:characters/characters.dart';
@@ -618,118 +619,54 @@ String decodeTuiValue(Uint8List bytes) {
   return utf8.decode(bytes, allowMalformed: false);
 }
 
-/// Whether [text] contains anything [safeTuiText] would rewrite, i.e. whether a
-/// live editor has to be replaced by a read-only escaped preview. A backslash
-/// alone does not require that.
-bool needsTuiEscaping(String text, {required bool allowNewlines}) {
-  for (final cluster in text.characters) {
-    for (final rune in cluster.runes) {
-      if (rune == 0x0a) {
-        if (!allowNewlines) return true;
-      } else if (mustEscapeRune(rune)) {
-        return true;
-      }
-    }
-    if (_hidesKeptText(cluster)) return true;
-  }
-  return false;
-}
-
 const _widths = DefaultWidthResolver();
 
-/// Cells one grapheme cluster occupies once escaped: exactly what the
-/// renderer draws for [_escapeCluster]'s output.
-int _clusterWidth(String cluster) {
-  final escaped = _escapeCluster(cluster);
-  return identical(escaped, cluster)
-      ? _widths.widthOfGrapheme(cluster, CellWidthPolicy.spec)
-      : _drawnWidth(escaped);
-}
-
-int _drawnWidth(String text) {
+/// Cells [escaped] text occupies as the renderer draws it: each grapheme
+/// cluster of the text as displayed, including clusters that escaping forms
+/// across what were separate stored characters.
+int _drawnWidth(String escaped, CellWidthPolicy policy) {
+  if (isPrintableAscii(escaped)) return escaped.length;
   var width = 0;
-  for (final cluster in text.characters) {
-    width += _widths.widthOfGrapheme(cluster, CellWidthPolicy.spec);
+  for (final cluster in escaped.characters) {
+    width += _widths.widthOfGrapheme(cluster, policy);
   }
   return width;
-}
-
-/// The runes of [cluster] that are shown as themselves would occupy no cells:
-/// a stray combining mark or selector, for example. Show them escaped so no
-/// stored code point silently disappears from the display.
-bool _hidesKeptText(String cluster) {
-  if (_isPlainAscii(cluster)) return false;
-  final kept = StringBuffer();
-  for (final rune in cluster.runes) {
-    if (rune != 0x0a && !mustEscapeRune(rune)) kept.writeCharCode(rune);
-  }
-  return kept.isNotEmpty && _drawnWidth(kept.toString()) == 0;
-}
-
-/// A single printable ASCII character other than backslash: the common case,
-/// which is always drawn as itself in one cell.
-bool _isPlainAscii(String cluster) {
-  if (cluster.length != 1) return false;
-  final unit = cluster.codeUnitAt(0);
-  return unit >= 0x20 && unit < 0x7f && unit != 0x5c;
-}
-
-/// Rewrites one grapheme cluster. Returns [cluster] itself when unchanged.
-String _escapeCluster(String cluster) {
-  if (_isPlainAscii(cluster)) return cluster;
-  var changed = false;
-  for (final rune in cluster.runes) {
-    if (rune == 0x0a || rune == 0x5c || mustEscapeRune(rune)) {
-      changed = true;
-      break;
-    }
-  }
-  final hideKept = _hidesKeptText(cluster);
-  if (!changed && !hideKept) return cluster;
-  final out = StringBuffer();
-  for (final rune in cluster.runes) {
-    if (rune == 0x0a) {
-      out.writeln();
-    } else if (rune == 0x5c) {
-      out.write(r'\\');
-    } else if (hideKept || mustEscapeRune(rune)) {
-      out.write('\\u{${rune.toRadixString(16)}}');
-    } else {
-      out.writeCharCode(rune);
-    }
-  }
-  return out.toString();
 }
 
 /// Cells the escaped form of one line occupies. The line must not contain LF.
-int escapedLineWidth(String line) {
-  var width = 0;
-  for (final cluster in line.characters) {
-    width += _clusterWidth(cluster);
-  }
-  return width;
-}
+int escapedLineWidth(String line) =>
+    _drawnWidth(safeTuiText(line), CellWidthPolicy.spec);
 
-/// Width of the widest escaped display line. Layout decisions ask this before
-/// the value is escaped, so it never builds the escaped form to measure it.
+/// Width of the widest escaped display line.
 int longestEscapedLine(String text) {
   var longest = 0;
-  for (final line in text.split('\n')) {
-    final width = escapedLineWidth(line);
+  for (final line in safeTuiText(text).split('\n')) {
+    final width = _drawnWidth(line, CellWidthPolicy.spec);
     if (width > longest) longest = width;
   }
   return longest;
 }
 
-/// Splits one escaped line into rows of at most [width] cells, never breaking a
-/// grapheme cluster. A cluster wider than the whole row still gets its own row.
-List<String> wrapEscapedLine(String line, int width) {
+/// Splits one escaped line into rows of at most [width] cells under [policy],
+/// never breaking a grapheme cluster. A cluster wider than the whole row still
+/// gets its own row. [policy] must be the one the rows are painted with.
+List<String> wrapEscapedLine(
+  String line,
+  int width, {
+  CellWidthPolicy policy = CellWidthPolicy.spec,
+}) {
   if (line.isEmpty) return const [''];
+  if (isPrintableAscii(line)) {
+    return [
+      for (var start = 0; start < line.length; start += width)
+        line.substring(start, min(start + width, line.length)),
+    ];
+  }
   final rows = <String>[];
   final row = StringBuffer();
   var used = 0;
   for (final cluster in line.characters) {
-    final cells = _widths.widthOfGrapheme(cluster, CellWidthPolicy.spec);
+    final cells = _widths.widthOfGrapheme(cluster, policy);
     if (used > 0 && used + cells > width) {
       rows.add(row.toString());
       row.clear();
@@ -742,14 +679,16 @@ List<String> wrapEscapedLine(String line, int width) {
   return rows;
 }
 
-/// Rewrites only what [mustEscapeRune] identifies, plus any cluster text that
-/// would be drawn in zero cells, preserving the exact source separately for
-/// Copy/Edit. No stored byte can become a terminal command or vanish, and
+/// Rewrites what [escapeCluster] hides, preserving the exact source separately
+/// for Copy/Edit. No stored byte can become a terminal command or vanish, and
 /// ordinary international text stays readable.
 String safeTuiText(String text) {
+  if (isPrintableAscii(text, allowNewlines: true)) {
+    return text.contains(r'\') ? text.replaceAll(r'\', r'\\') : text;
+  }
   final out = StringBuffer();
   for (final cluster in text.characters) {
-    out.write(_escapeCluster(cluster));
+    out.write(escapeCluster(cluster));
   }
   return out.toString();
 }

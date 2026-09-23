@@ -428,10 +428,17 @@ def main():
             assert p.status == -signal.SIGABRT, p.status
         previous_directory = os.getcwd()
         previous_limit = resource.getrlimit(resource.RLIMIT_CORE)
-        with tempfile.TemporaryDirectory(prefix='keybay-core-') as crash_dir:
+        with tempfile.TemporaryDirectory(prefix='keybay-core-') as crash_dir, \
+                tempfile.TemporaryDirectory(prefix='keybay-core-control-') as control_dir:
             os.chdir(crash_dir)
             resource.setrlimit(resource.RLIMIT_CORE, (previous_limit[1], previous_limit[1]))
             try:
+                # Positive control: an ordinary crash under the same limit and
+                # core pattern does leave a core file, so this check can fail.
+                subprocess.run([sys.executable, '-c', 'import os; os.abort()'],
+                               cwd=control_dir, check=False)
+                assert any(name.startswith('core') for name in os.listdir(control_dir)), \
+                    'an unhardened crash left no core file, so the check would prove nothing'
                 check(['--platform-only'], crash_leaves_no_core)
             finally:
                 resource.setrlimit(resource.RLIMIT_CORE, previous_limit)

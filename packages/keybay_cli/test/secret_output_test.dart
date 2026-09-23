@@ -53,6 +53,7 @@ void main() {
       secretIsSafeForTerminal('accent e\u0301 and emoji \u2764\ufe0f'),
       isTrue,
     );
+    expect(secretIsSafeForTerminal('keycap 1\ufe0f\u20e3 \\ ok'), isTrue);
     for (final value in <String>[
       'line one\nline two',
       'tab\tvalue',
@@ -66,6 +67,13 @@ void main() {
       'bom\ufeff',
       'tag\u{e0041}',
       'separator\u2028line',
+      // Exactly what the TUI shows escaped: marks and selectors that would
+      // draw nothing or hide behind a character, and prepended letters.
+      '\u0301abc',
+      '\ufe0fabc',
+      'pa\ufe0ess',
+      'a\u{e0100}',
+      '\u0d4esecret',
     ]) {
       expect(secretIsSafeForTerminal(value), isFalse, reason: value);
     }

@@ -44,15 +44,12 @@ final class SecretOutputGuard {
 }
 
 /// Refuses anything that could alter the display rather than represent the
-/// value literally: every character the TUI escapes (controls, separators,
-/// invisible format characters), plus the line feed, which `get` never prints.
-/// Such values belong in the TUI's framed, escaped value view.
-bool secretIsSafeForTerminal(String value) {
-  for (final rune in value.runes) {
-    if (rune == 0x0a || mustEscapeRune(rune)) return false;
-  }
-  return true;
-}
+/// value literally: exactly what the TUI shows escaped (controls, separators,
+/// invisible and prepended characters, stray selectors and marks), plus the
+/// line feed, which `get` never prints. Such values belong in the TUI's framed,
+/// escaped value view.
+bool secretIsSafeForTerminal(String value) =>
+    !needsTuiEscaping(value, allowNewlines: false);
 
 final class _SystemSecretOutputTerminal implements SecretOutputTerminal {
   const _SystemSecretOutputTerminal();

@@ -223,9 +223,9 @@ pasteboard write restricted to this Mac, so Universal Clipboard does not send it
 to your other devices, and marks it concealed and transient
 ([nspasteboard.org](http://nspasteboard.org) conventions that most clipboard
 managers honor by not recording the item). Linux selects a fixed
-`/usr/bin/wl-copy` (Wayland) or `/usr/bin/xclip` (X11) when available; each
-serves one type per copy, so the value cannot be marked sensitive and clipboard
-managers may record it. There is no PATH lookup or transport fallback. Clipboard
+`/usr/bin/wl-copy` (Wayland) or `/usr/bin/xclip` (X11) when available. Keybay
+does not mark Linux copies sensitive (`xclip` cannot; `wl-copy` 2.3 and later
+could, with `--sensitive`), so clipboard managers may record them. There is no PATH lookup or transport fallback. Clipboard
 services, clipboard managers and other apps may retain copied values after exit;
 Keybay does not promise clipboard erasure. Generic
 field copy/cut never exports a secret. Native transport qualification is scoped
@@ -345,10 +345,11 @@ That value may remain in terminal scrollback, so reveal it only when needed:
 keybay get acme-api/openai-api-key
 ```
 
-Values containing control, line-break, bidirectional or other invisible
-formatting characters are refused rather than rendered, because the terminal
-would not show them faithfully; view them escaped in `keybay open`, or pass
-them to their consumer with `run`.
+Values containing anything `keybay open` would show escaped (control,
+line-break, bidirectional, invisible or prepended characters, and selectors or
+marks that would draw nothing) are refused rather than rendered, because the
+terminal would not show them faithfully; view them escaped in `keybay open`, or
+pass them to their consumer with `run`.
 
 The TTY check prevents casual disclosure; it is not an access-control boundary.
 A program launched with `run` necessarily receives its selected secrets and can
@@ -443,8 +444,8 @@ exec boundary), so pipelines behave as they would from a shell.
 
 Every Keybay command disables its own core files, and on Linux makes its process
 non-dumpable, so a crash cannot persist an open session's store key or a
-revealed value. The launched command gets the caller's original core-file
-limit back.
+revealed value. A command that cannot do so exits before opening the store. The
+launched command gets the caller's original core-file limit back.
 
 After injection, values are normal child environment variables. They can be
 inherited by descendants and may be visible to same-user process inspection,

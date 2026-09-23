@@ -15,19 +15,17 @@ import 'package:ffi/ffi.dart';
 abstract final class ProcessHardening {
   static int? _callerSoftCoreLimit;
 
-  /// Applies the process policy once and remembers the caller's soft limit.
-  static void apply() {
-    if (!Platform.isMacOS && !Platform.isLinux) return;
-    final limit = calloc<_Rlimit>();
-    try {
-      if (_getrlimit(_rlimitCore, limit) != 0) return;
-      _callerSoftCoreLimit ??= limit.ref.current;
-      limit.ref.current = 0;
-      _setrlimit(_rlimitCore, limit);
-    } finally {
-      calloc.free(limit);
-    }
+  /// Applies the process policy, remembering the caller's soft limit once,
+  /// and reports whether a crash can no longer write a core file. Callers
+  /// must not handle secrets when it returns false.
+  static bool apply() {
+    if (!Platform.isMacOS && !Platform.isLinux) return true;
     if (Platform.isLinux) _prctl(_prSetDumpable, 0, 0, 0, 0);
+    _callerSoftCoreLimit ??= softCoreLimit;
+    _setSoftCoreLimit(0);
+    // Linux never dumps a non-dumpable process, even through a core-pattern
+    // pipe, which ignores the size limit. macOS honours the limit.
+    return Platform.isLinux ? dumpable == 0 : softCoreLimit == 0;
   }
 
   /// Gives an exec'd program the caller's original soft core limit.

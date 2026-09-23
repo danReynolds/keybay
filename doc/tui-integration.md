@@ -266,15 +266,20 @@ after synchronous snapshotting. Immutable strings and terminal/OS copies cannot
 be guaranteed erased. Shown values escape C0/C1 controls, DEL, line/paragraph
 separators, lone surrogates and every Unicode 16 format (Cf) or other
 default-ignorable code point that can make the display disagree with the stored
-bytes: bidi overrides and isolates, joiners and zero-width marks, prepended
-concatenation marks, annotation and tag characters, and fillers. Variation
-selectors are kept so emoji render. Any remaining cluster text that Fleury would
-draw in zero cells, such as a stray combining mark, is escaped as well, plus the
-backslash that introduces an escape. `get` refuses the same set. The shared
-predicate lives in `display_safety.dart`. Ordinary printable text, including
-accented, CJK and emoji characters, renders as itself. Display width is
-measured in terminal cells through Fleury's width resolver and wrapping never
-splits a grapheme cluster, so a wide glyph cannot overflow its column;
+bytes: bidi overrides and isolates, joiners and zero-width marks, annotation
+and tag characters, and fillers. Every Prepend character is escaped too, since
+it would fold the next character, or an escape's backslash, into its own cell.
+A variation selector is kept only where it chooses an emoji's text or emoji
+presentation (one VS15/VS16 after an Extended_Pictographic or keycap base);
+elsewhere it would hide data behind the character it follows. Any remaining
+cluster text that Fleury would draw in zero cells, such as a stray combining
+mark, is escaped as well, plus the backslash that introduces an escape. `get`
+refuses exactly the same set: one predicate in `display_safety.dart` serves
+both. Ordinary printable text, including accented, CJK and emoji characters,
+renders as itself. Display width is measured in terminal cells through Fleury's
+width resolver, under the width policy the terminal is painted with, and
+wrapping never splits a grapheme cluster, so a wide glyph cannot overflow or be
+clipped from its column;
 Copy, Edit and passphrase entry preserve the original bytes, including pasted
 controls and CRLF. Secret controllers opt into Fleury's `preserveText` policy;
 name/search fields retain ordinary canonicalization. Existing clipboard and
@@ -294,9 +299,10 @@ choose whether to honor the markers.
 Linux chooses one absolute helper based on the desktop environment before any
 record read; X11 requires a local `:display` address. It sends UTF-8 only through
 stdin, uses a restricted environment,
-discards helper output and bounds completion. `wl-copy` and `xclip` serve one
-type per copy, so Linux copies cannot carry KDE's password-manager hint and
-clipboard managers may record them. Clipboard ownership may outlive
+discards helper output and bounds completion. `xclip` serves one type per
+copy, so X11 copies cannot carry KDE's password-manager hint. `wl-copy` 2.3 and
+later can offer that hint with `--sensitive`; Keybay does not use it yet, so
+clipboard managers may record Linux copies. Clipboard ownership may outlive
 the Keybay process. A failure after submission cannot prove the clipboard was
 unchanged. No automatic clearing or clipboard-history erasure is claimed.
 

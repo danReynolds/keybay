@@ -86,26 +86,42 @@ final class ResizePrompt extends StatelessWidget {
 }
 
 /// One escape-and-wrap of a value. Escaping allocates a full copy and wrapping
-/// allocates every row, so both are computed once per (value, geometry) pair
-/// and reused across layout passes instead of once per frame.
+/// allocates every row, so both are computed once per (value, geometry,
+/// policy) and reused across layout passes instead of once per frame. Rows are
+/// measured with the width policy the terminal is painted with, so a row never
+/// overflows and has its tail clipped.
 final class _WrappedValue {
-  factory _WrappedValue(String source, int available, int? limit) {
+  factory _WrappedValue(
+    String source,
+    int available,
+    int? limit,
+    CellWidthPolicy policy,
+  ) {
     final lines = safeTuiText(source).split('\n');
     List<String> wrap(int width) => [
-      for (final line in lines) ...wrapEscapedLine(line, width),
+      for (final line in lines) ...wrapEscapedLine(line, width, policy: policy),
     ];
     var rows = wrap(available);
     // Reserve a gutter only when scrolling is necessary, then re-wrap into it.
     final scrolling = limit != null && rows.length > limit;
     final width = scrolling ? (available - 1).clamp(1, 10000) : available;
     if (scrolling) rows = wrap(width);
-    return _WrappedValue._(source, available, limit, scrolling, width, rows);
+    return _WrappedValue._(
+      source,
+      available,
+      limit,
+      policy,
+      scrolling,
+      width,
+      rows,
+    );
   }
 
   _WrappedValue._(
     this.source,
     this.available,
     this.limit,
+    this.policy,
     this.scrolling,
     this.width,
     this.rows,
@@ -114,14 +130,21 @@ final class _WrappedValue {
   final String source;
   final int available;
   final int? limit;
+  final CellWidthPolicy policy;
   final bool scrolling;
   final int width;
   final List<String> rows;
 
-  bool matches(String source, int available, int? limit) =>
+  bool matches(
+    String source,
+    int available,
+    int? limit,
+    CellWidthPolicy policy,
+  ) =>
       identical(this.source, source) &&
       this.available == available &&
-      this.limit == limit;
+      this.limit == limit &&
+      this.policy == policy;
 }
 
 /// Build only the visible rows of a bounded, escaped value view. The wrap is
@@ -145,19 +168,24 @@ final class ValueView extends StatefulWidget {
 final class _ValueViewState extends State<ValueView> {
   _WrappedValue? _cache;
 
-  _WrappedValue _wrap(int available, int? limit) {
+  _WrappedValue _wrap(int available, int? limit, CellWidthPolicy policy) {
     final cached = _cache;
-    if (cached != null && cached.matches(widget.text, available, limit)) {
+    if (cached != null &&
+        cached.matches(widget.text, available, limit, policy)) {
       return cached;
     }
-    return _cache = _WrappedValue(widget.text, available, limit);
+    return _cache = _WrappedValue(widget.text, available, limit, policy);
   }
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (_, size) {
       final available = (size.maxCols ?? 40).clamp(1, 10000);
-      final wrapped = _wrap(available, widget.maxRows ?? size.maxRows);
+      final wrapped = _wrap(
+        available,
+        widget.maxRows ?? size.maxRows,
+        MediaQuery.textPolicyOf(context).widths,
+      );
       final list = ListView.builder(
         // This is scrollable text, not a menu of selectable lines. Leaving
         // selection enabled adds a second highlight and overrides disclosure

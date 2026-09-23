@@ -188,20 +188,14 @@ final class MacPasteboard {
         _currentHostOnly,
       );
       final empty = _string('');
-      for (final marker in _sensitiveMarkers) {
-        if (_set(board, _sel('setString:forType:'), empty, _string(marker)) ==
+      for (final (string, type) in [
+        for (final marker in _sensitiveMarkers) (empty, marker),
+        (text, 'public.utf8-plain-text'),
+      ]) {
+        if (_set(board, _sel('setString:forType:'), string, _string(type)) ==
             0) {
           throw const TuiCopyException();
         }
-      }
-      if (_set(
-            board,
-            _sel('setString:forType:'),
-            text,
-            _string('public.utf8-plain-text'),
-          ) ==
-          0) {
-        throw const TuiCopyException();
       }
     } finally {
       _void(pool, _sel('drain'));

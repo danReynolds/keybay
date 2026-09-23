@@ -335,10 +335,10 @@ rules are part of the command contract, not an exact byte-export API.
 
 `get` is deliberately human rendering. It preserves the stored text and adds a
 final newline for terminal display; it is not a lossless serialization channel.
-It refuses every character the TUI would escape (C0/C1 controls, line and
-paragraph separators, bidirectional controls and other invisible format or
-default-ignorable characters) and the newline, including tab and carriage
-return. Multiline or structured values are
+It refuses exactly what the TUI would escape (C0/C1 controls, line and
+paragraph separators, bidirectional controls and other invisible format,
+default-ignorable or prepended characters, stray variation selectors and marks
+that would draw nothing) and the newline, including tab and carriage return. Multiline or structured values are
 shown only in the TUI's unmistakably framed, escaped value view. Programs
 receive values through `run` or the SDK rather than by parsing `get` output.
 
@@ -943,8 +943,9 @@ in-process-only fallback as a successful Copy.
 On macOS the write is restricted to the current host
 (`NSPasteboardContentsCurrentHostOnly`, so Universal Clipboard does not sync it)
 and carries the nspasteboard.org concealed and transient marker types, which
-clipboard managers commonly honor by not recording the item. The Linux helpers
-serve one type per copy and cannot carry a sensitivity hint.
+clipboard managers commonly honor by not recording the item. `xclip` serves one
+type per copy and cannot carry a sensitivity hint; `wl-copy` 2.3 and later can
+(`--sensitive`), which Keybay does not use yet.
 
 The CLI documentation explains that copied values leave Keybay and may remain
 in the system clipboard or clipboard history after the TUI exits. There is no automatic
@@ -959,13 +960,15 @@ reveals metadata; revealing a value is a separate deliberate action. Unsafe
 terminal text is never emitted as raw control bytes. A multiline or structured
 value appears inside a bounded value column: line breaks are layout; C0/C1
 controls, DEL, line and paragraph separators, lone surrogates, and every
-Unicode format or other default-ignorable character (bidirectional overrides and
-isolates, joiners, zero-width marks, prepended concatenation marks, tags and
-fillers) are visibly escaped, as is any other cluster text the renderer would
+Unicode format, other default-ignorable or Prepend character (bidirectional
+overrides and isolates, joiners, zero-width marks, prepended marks and letters,
+tags and fillers) are visibly escaped, as are variation selectors that do not
+choose an emoji's presentation and any other cluster text the renderer would
 draw in zero cells, such as a stray combining mark; ordinary printable text,
-including accented, CJK and emoji characters, renders as itself. Width is measured in terminal cells through the framework's width
-resolver and wrapping never splits a grapheme cluster, so a wide glyph cannot
-overflow its column. Text is clipped or scrolled inside that view without
+including accented, CJK and emoji characters, renders as itself. Width is
+measured in terminal cells through the framework's width resolver, under the
+width policy the terminal is painted with, and wrapping never splits a grapheme
+cluster, so a wide glyph cannot overflow its column or be clipped. Text is clipped or scrolled inside that view without
 overwriting UI controls.
 This is safe terminal rendering, not proof that arbitrary text cannot mislead
 a reader. The explicit Copy action above is separate from terminal rendering;
@@ -1006,7 +1009,8 @@ before surrendering the terminal where possible.
 `SIGSTOP`, `SIGKILL`, power loss, and runtime crashes cannot be handled. Every
 command disables its own core files, and on Linux makes its process
 non-dumpable, so a crash does not persist the session's store key or a revealed
-value; `run` restores the caller's core-file limit for the launched program.
+value; a command that cannot do so exits before opening the store, and `run`
+restores the caller's core-file limit for the launched program.
 On an observed resume after suspension, clear sensitive state and exit through
 the close path instead of resuming the old authenticated screen. This avoids a
 second resume/epoch protocol or SDK inspection API. Terminal restoration and

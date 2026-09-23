@@ -338,7 +338,7 @@ final class _VaultState extends State<Vault> {
                                   : CellStyle.none;
                               final value = selected ? revealed : null;
                               final name = safeTuiText(names[i]);
-                              final nameCells = escapedLineWidth(name);
+                              final nameCells = escapedLineWidth(names[i]);
                               var nameWidth = nameCells.clamp(
                                 1,
                                 value == null ? width - 12 : (width - 4) ~/ 2,

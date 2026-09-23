@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:convert';
 
+import 'package:keybay_cli/src/ignored_signals.dart';
 import 'package:keybay_cli/src/secret_input.dart';
 import 'package:keybay_cli/src/lifetime.dart';
 
@@ -67,25 +68,19 @@ final class _SignalDispositionProbe {
   var _restored = false;
 
   void installDistinctBaselines() {
-    _original[ProcessSignal.sigquit.signalNumber] = _signal(
-      ProcessSignal.sigquit.signalNumber,
+    _original[NativeSignal.quit] = _signal(
+      NativeSignal.quit,
       _ignoredDisposition,
     );
-    _original[ProcessSignal.sigtstp.signalNumber] = _signal(
-      ProcessSignal.sigtstp.signalNumber,
+    _original[NativeSignal.tstp] = _signal(
+      NativeSignal.tstp,
       _defaultDisposition,
     );
   }
 
   void verifyAndRestore() {
-    final currentQuit = _signal(
-      ProcessSignal.sigquit.signalNumber,
-      _ignoredDisposition,
-    );
-    final currentSuspend = _signal(
-      ProcessSignal.sigtstp.signalNumber,
-      _ignoredDisposition,
-    );
+    final currentQuit = _signal(NativeSignal.quit, _ignoredDisposition);
+    final currentSuspend = _signal(NativeSignal.tstp, _ignoredDisposition);
     restoreOriginal();
     if (currentQuit.address != _ignoredDisposition.address ||
         currentSuspend.address != _defaultDisposition.address) {

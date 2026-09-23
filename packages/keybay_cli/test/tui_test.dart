@@ -6,9 +6,11 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:characters/characters.dart';
 import 'package:fleury/fleury_core.dart';
 import 'package:fleury/fleury_test_support.dart';
 import 'package:keybay/keybay.dart';
+import 'package:keybay_cli/src/display_safety.dart';
 import 'package:keybay_cli/src/tui/clipboard.dart';
 import 'package:keybay_cli/src/tui/model.dart';
 import 'package:keybay_cli/src/tui/native_model.dart';
@@ -118,17 +120,23 @@ void main() {
   });
 
   test('longestEscapedLine matches the width of the escaped value', () {
-    // The vault sizes a revealed row from this instead of materialising the
-    // escaped value on every frame; the two must not drift apart.
+    // The vault sizes a revealed row from this; it must match what the
+    // renderer paints: every grapheme cluster of the escaped text, including
+    // clusters an escape forms with a neighbouring mark.
     int reference(String text) => safeTuiText(text)
         .split('\n')
         .fold(
           0,
           (widest, line) => max(
             widest,
-            const DefaultWidthResolver().widthOfText(
-              line,
-              CellWidthPolicy.spec,
+            line.characters.fold(
+              0,
+              (width, cluster) =>
+                  width +
+                  const DefaultWidthResolver().widthOfGrapheme(
+                    cluster,
+                    CellWidthPolicy.spec,
+                  ),
             ),
           ),
         );
@@ -159,6 +167,14 @@ void main() {
       0x3164,
       0xad,
       0xe0041,
+      // Prepend letters, spacing marks, selectors and emoji they can follow.
+      0x0d4e,
+      0x0e33,
+      0x0903,
+      0xfe0e,
+      0xe0100,
+      0x2764,
+      0x20e3,
     ];
     for (var trial = 0; trial < 2000; trial++) {
       final text = String.fromCharCodes([
@@ -866,11 +882,58 @@ void main() {
     expect(needsTuiEscaping('\u0301x', allowNewlines: true), isTrue);
     expect(needsTuiEscaping('e\u0301', allowNewlines: true), isFalse);
     expect(needsTuiEscaping('g\u0600T', allowNewlines: true), isTrue);
+    // A prepended letter would fold the next character, or an escape's
+    // backslash, into its own cell.
+    expect(safeTuiText('\u0d4esecret'), r'\u{d4e}secret');
+    expect(safeTuiText('\u0d4e\t'), r'\u{d4e}\u{9}');
+    // A presentation selector shows only where it chooses an emoji's
+    // presentation; anywhere else it would hide data behind a character.
+    expect(safeTuiText('\u2764\ufe0e'), '\u2764\ufe0e');
+    expect(safeTuiText('1\ufe0f\u20e3'), '1\ufe0f\u20e3');
+    expect(safeTuiText('pa\ufe0ess'), r'pa\u{fe0e}ss');
+    expect(safeTuiText('pa\ufe0fss'), r'pa\u{fe0f}ss');
+    expect(safeTuiText('\u2764\ufe0f\ufe0f'), '\u2764\ufe0f\\u{fe0f}');
+    expect(
+      safeTuiText('中\ufe0f'),
+      '中'
+      r'\u{fe0f}',
+    );
+    expect(safeTuiText('a\u{e0100}\u{e0101}'), r'a\u{e0100}\u{e0101}');
+    expect(needsTuiEscaping('pa\ufe0fss', allowNewlines: true), isTrue);
+    expect(needsTuiEscaping('\u2764\ufe0f ok', allowNewlines: true), isFalse);
+    // Widths are what the renderer paints, even where an escape and a
+    // following spacing mark form one cluster.
+    expect(
+      escapedLineWidth('\u200b\u0903'),
+      longestEscapedLine('\u200b\u0903'),
+    );
     // Width is measured in cells, not code units, so a wide glyph cannot
     // overflow the column it was laid out in.
     expect(longestEscapedLine('中文'), 4);
     expect(longestEscapedLine('ab'), 2);
     expect(wrapEscapedLine('中文中', 4), ['中文', '中']);
+    // Rows are wrapped under the policy they are painted with: a terminal
+    // that draws ambiguous-width letters wide gets narrower rows, not
+    // clipped ones.
+    expect(wrapEscapedLine('ééé', 2), ['éé', 'é']);
+    expect(wrapEscapedLine('ééé', 2, policy: CellWidthPolicy.cjk), [
+      'é',
+      'é',
+      'é',
+    ]);
+    expect(wrapEscapedLine('abcde', 2), ['ab', 'cd', 'e']);
+  });
+
+  test('every prepended character is escaped', () {
+    // A Prepend code point joins whatever follows it into one cluster, so
+    // shown as itself it could swallow the next character or an escape's
+    // backslash. Derived from the segmenter the renderer uses.
+    for (var rune = 0x80; rune <= 0x10ffff; rune++) {
+      if (rune >= 0xd800 && rune <= 0xdfff) continue;
+      if ('${String.fromCharCode(rune)}x'.characters.length == 1) {
+        expect(mustEscapeRune(rune), isTrue, reason: rune.toRadixString(16));
+      }
+    }
   });
 
   test(

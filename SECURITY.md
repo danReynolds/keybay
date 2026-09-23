@@ -82,7 +82,8 @@ Changing a passphrase rotates the current store key and re-encrypts every
 record; it does not revoke older snapshots or credentials at their issuer.
 
 The CLI disables its own core files, and on Linux makes itself non-dumpable,
-because an open session's store key would otherwise persist in a crash dump.
+because an open session's store key would otherwise persist in a crash dump. It
+exits before opening the store if it cannot.
 SDK applications hold the same key while a session is open; whether to disable
 crash dumps is a process-wide choice left to the host application.
 

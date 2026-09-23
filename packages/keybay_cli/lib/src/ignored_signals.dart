@@ -1,15 +1,17 @@
 import 'dart:ffi';
 import 'dart:io';
 
-// Native numbers for libc. Dart's ProcessSignal.signalNumber is Dart's own
-// identifier in Linux numbering, which the runtime translates only for its own
-// APIs: on Darwin SIGTSTP is 18, and Dart's 20 would name SIGCHLD there.
-// SIGQUIT, SIGTTIN and SIGTTOU share their numbers on every supported host
-// (Darwin, Linux/glibc, and Android/bionic).
-const int _sigQuit = 3;
-final int _sigTstp = Platform.isMacOS ? 18 : 20;
-const int _sigTtin = 21;
-const int _sigTtou = 22;
+/// Native signal numbers for libc. Dart's `ProcessSignal.signalNumber` is its
+/// own identifier in Linux numbering, which the runtime translates only for its
+/// own APIs: on Darwin SIGTSTP is 18, and Dart's 20 would name SIGCHLD there.
+/// SIGQUIT, SIGTTIN and SIGTTOU share their numbers on every supported host
+/// (Darwin, Linux/glibc, and Android/bionic).
+abstract final class NativeSignal {
+  static const int quit = 3;
+  static final int tstp = Platform.isMacOS ? 18 : 20;
+  static const int ttin = 21;
+  static const int ttou = 22;
+}
 
 /// Ignores signals Dart cannot observe while Keybay owns the terminal.
 ///
@@ -22,36 +24,33 @@ const int _sigTtou = 22;
 /// This extends the contract the owner ratified for hidden input (implementation
 /// plan §15) instead of adding a native signal bridge.
 final class IgnoredSignals {
-  IgnoredSignals.terminalOwnership()
-    : signalNumbers = [_sigQuit, _sigTstp, _sigTtin, _sigTtou];
+  IgnoredSignals.terminalOwnership();
 
-  final List<int> signalNumbers;
-  _DartSignal? _signal;
   final Map<int, Pointer<Void>> _previous = <int, Pointer<Void>>{};
 
   void start() {
-    final signal = DynamicLibrary.process()
-        .lookupFunction<_NativeSignal, _DartSignal>('signal');
-    _signal = signal;
-    for (final signalNumber in signalNumbers) {
-      _previous[signalNumber] = signal(
-        signalNumber,
-        Pointer<Void>.fromAddress(1), // SIG_IGN
+    for (final number in [
+      NativeSignal.quit,
+      NativeSignal.tstp,
+      NativeSignal.ttin,
+      NativeSignal.ttou,
+    ]) {
+      // A second start keeps the dispositions from before the first.
+      _previous.putIfAbsent(
+        number,
+        () => _signal(number, Pointer<Void>.fromAddress(1)), // SIG_IGN
       );
     }
   }
 
   void close() {
-    final signal = _signal;
-    if (signal != null) {
-      for (final entry in _previous.entries) {
-        signal(entry.key, entry.value);
-      }
-    }
-    _signal = null;
+    _previous.forEach(_signal);
     _previous.clear();
   }
 }
 
-typedef _NativeSignal = Pointer<Void> Function(Int32, Pointer<Void>);
-typedef _DartSignal = Pointer<Void> Function(int, Pointer<Void>);
+final Pointer<Void> Function(int, Pointer<Void>) _signal =
+    DynamicLibrary.process().lookupFunction<
+      Pointer<Void> Function(Int32, Pointer<Void>),
+      Pointer<Void> Function(int, Pointer<Void>)
+    >('signal');

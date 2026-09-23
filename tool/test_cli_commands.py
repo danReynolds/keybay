@@ -206,6 +206,29 @@ def main():
         finally:
             p.close()
 
+    # A platform-only run shows its summary on the controlling terminal without
+    # waiting for input. A summary larger than the terminal's output buffer
+    # (1 KiB on a macOS pty) still arrives whole when the reader is slow.
+    if not real:
+        with tempfile.TemporaryDirectory(prefix='keybay-command-') as directory:
+            manifest = Path(directory) / 'manifest.env'
+            names = [f'LITERAL_{index:03d}' for index in range(80)]
+            manifest.write_text(
+                'TOKEN=kb://acme/key\n' + ''.join(f'{name}=value\n' for name in names))
+            probe = 'import os;print(os.environ["TOKEN"])'
+            p = Invocation(cli, ['--platform-only', 'run', '-f', str(manifest), '--',
+                                 sys.executable, '-c', probe], capture=True)
+            try:
+                time.sleep(.5)
+                p.receive()
+                assert p.status == 0, bytes(p.output)
+                assert b'TOKEN <- acme/key' in p.output
+                assert f'{names[-1]} (literal)'.encode() in p.output, bytes(p.output)
+                assert b'disposable-value' not in p.output
+                assert p.capture == b'disposable-value\n', bytes(p.capture)
+            finally:
+                p.close()
+
     def remove(p):
         p.authenticate()
         p.finish(0)

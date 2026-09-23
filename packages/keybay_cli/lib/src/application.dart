@@ -27,8 +27,6 @@ typedef PassphraseReader = Future<Uint8List> Function({String? summary});
 typedef SecretOutputAuthorizer = void Function();
 typedef LaunchSummaryWriter = void Function(String summary);
 
-void _discardSummary(String summary) {}
-
 final class CliApplication {
   CliApplication({
     required this.loadManifest,
@@ -42,7 +40,7 @@ final class CliApplication {
     required Map<String, String> parentEnvironment,
     required this.stdout,
     required this.stderr,
-    this.showLaunchSummary = _discardSummary,
+    required this.showLaunchSummary,
   }) : parentEnvironment = Map<String, String>.unmodifiable(parentEnvironment);
 
   final ManifestLoader loadManifest;

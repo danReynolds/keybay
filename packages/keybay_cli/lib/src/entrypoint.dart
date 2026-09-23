@@ -20,7 +20,10 @@ Future<int> runKeybay(
   Duration idleTimeout = tuiIdleTimeout,
   Duration idleWarning = tuiIdleWarning,
 }) async {
-  ProcessHardening.apply();
+  if (!ProcessHardening.apply()) {
+    stderr.writeln('error: could not disable core dumps for this process.');
+    return exitFailure;
+  }
   final lifetime = CommandLifetime();
   try {
     final workingDirectory = Directory.current.path;

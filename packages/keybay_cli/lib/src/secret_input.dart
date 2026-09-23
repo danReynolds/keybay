@@ -136,18 +136,15 @@ final class SecretInputReader {
   /// nothing and never prevents the command.
   void showSummary(String summary) {
     if (!_nativeInput) return;
-    _ControllingTerminalAttachment? attachment;
     try {
-      attachment = _ControllingTerminalAttachment.open();
-      attachment.write(summary);
+      final attachment = _ControllingTerminalAttachment.open();
+      try {
+        attachment.write(summary);
+      } finally {
+        attachment.close();
+      }
     } on SecretInputException {
       // No attended terminal to show it on.
-    } finally {
-      try {
-        attachment?.close();
-      } on SecretInputException {
-        // Closing a best-effort display descriptor cannot affect the command.
-      }
     }
   }
 
@@ -700,24 +697,45 @@ final class _ControllingTerminalAttachment {
     try {
       buffer.asTypedList(bytes.length).setAll(0, bytes);
       var offset = 0;
+      var stalled = Duration.zero;
       while (offset < bytes.length) {
         final written = _write(
           _terminalFd,
           (buffer + offset).cast<Void>(),
           bytes.length - offset,
         );
-        if (written <= 0) {
+        if (written > 0) {
+          offset += written;
+          stalled = Duration.zero;
+          continue;
+        }
+        // The descriptor is non-blocking, and a terminal accepts only what it
+        // has room for (1 KiB on a macOS pty) until its reader drains it. Wait
+        // for room rather than drop the rest of a summary or prompt.
+        final error = written < 0 ? _errnoLocation().value : 0;
+        if (error != 4 && error != (Platform.isMacOS ? 35 : 11) ||
+            stalled >= _writeStallLimit) {
           throw const SecretInputException(
             'the controlling terminal became unavailable during passphrase input',
             interactionUnavailable: true,
           );
         }
-        offset += written;
+        if (!terminal.isForeground) {
+          throw const SecretInputException(
+            'the controlling terminal lost foreground ownership',
+            interactionUnavailable: true,
+          );
+        }
+        sleep(_writeRetryDelay);
+        stalled += _writeRetryDelay;
       }
     } finally {
       calloc.free(buffer);
     }
   }
+
+  static const _writeRetryDelay = Duration(milliseconds: 5);
+  static const _writeStallLimit = Duration(seconds: 5);
 
   void close() {
     if (_closed) return;

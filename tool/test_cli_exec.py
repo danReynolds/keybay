@@ -23,11 +23,13 @@ def run(
     *command: str,
     cwd: Path | None = None,
     env: dict[str, str] | None = None,
+    preexec_fn=None,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [cli, "run", *([] if manifest is None else ["-f", str(manifest)]), "--", *command],
         cwd=cwd,
         env=env,
+        preexec_fn=preexec_fn,
         text=True,
         capture_output=True,
         check=False,
@@ -185,16 +187,15 @@ def main() -> int:
         _, hard_core = resource.getrlimit(resource.RLIMIT_CORE)
         caller_core = 4096 if hard_core == resource.RLIM_INFINITY else min(hard_core, 4096)
         if caller_core > 0:
-            core_limit = subprocess.run(
-                [cli, "run", "-f", str(empty), "--", sys.executable, "-c",
-                 "import resource;print(resource.getrlimit(resource.RLIMIT_CORE)[0])"],
+            core_limit = run(
+                cli,
+                empty,
+                sys.executable,
+                "-c",
+                "import resource;print(resource.getrlimit(resource.RLIMIT_CORE)[0])",
                 preexec_fn=lambda: resource.setrlimit(
                     resource.RLIMIT_CORE, (caller_core, hard_core)
                 ),
-                text=True,
-                capture_output=True,
-                check=False,
-                timeout=10,
             )
             assert_result(core_limit, 0, stdout=f"{caller_core}\n")
 
