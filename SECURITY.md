@@ -26,6 +26,13 @@ important for high-value records on ordinary Linux and unentitled macOS, where
 another same-user process may claim the same declared namespace and reach
 login-bound storage.
 
+For the CLI this is concrete: without a passphrase, any program running as you
+can read every value through `keybay list` and `keybay run`, with no terminal or
+prompt. On macOS those requests do not meet the Keychain prompt that an
+unrelated program reading the item directly would. A terminal check would not
+change this, because a program can supply its own pseudo-terminal; only a
+passphrase separates you from other programs running as you.
+
 The Flatpak candidate uses authenticated sandbox identity and XDG Secret Portal
 protection. Two installed application IDs passed isolation checks in the
 recorded native Linux and nested Docker configurations. The [qualification
@@ -74,6 +81,12 @@ encrypted store can nevertheless restore access under its old protection.
 Changing a passphrase rotates the current store key and re-encrypts every
 record; it does not revoke older snapshots or credentials at their issuer.
 
+The CLI disables its own core files, and on Linux makes itself non-dumpable,
+because an open session's store key would otherwise persist in a crash dump. It
+exits before opening the store if it cannot.
+SDK applications hold the same key while a session is open; whether to disable
+crash dumps is a process-wide choice left to the host application.
+
 A passphrase does not prevent denial of service by an actor that can delete or
 replace both provider state and application files. Best-effort clearing narrows
 the lifetime of Keybay-owned mutable buffers but cannot prove erasure of every
@@ -110,6 +123,11 @@ fresh core, terminal and deterministic tamper checks. That result does not
 replace ongoing advisory triage or qualify a signed native release. The
 [release-readiness record](doc/release-readiness.md) separates the remaining
 distribution gates from completed source checks and retained platform evidence.
+
+The [September 22 pre-release assessment](doc/security-review.md#pre-release-assessment-2026-09-22)
+was the first review of the CLI/TUI and the Fleury paths it reaches. It found
+three Medium and six Low issues, including one pre-existing; each is resolved
+or explicitly accepted in that record.
 
 For SDK 0.2.0, remaining physical lock/reboot, auth-change interruption and
 actual backup/restore/transfer work is deferred until devices are available.

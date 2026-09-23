@@ -1,5 +1,48 @@
 # Keybay security review record
 
+## Pre-release assessment, 2026-09-22
+
+This assessment targeted the CLI and TUI, which no independent review had
+covered, at clean source `08baf901d3acbe9e34eacb0e1be6abbb786124c2`. It also
+covered the Fleury paths reachable from Keybay's configuration and the SDK
+changes since the September 6 review. Claude (Opus 5.5) performed it in
+Claude Code at the maintainer's request. It is an AI engineering assessment,
+not an independent human audit.
+
+**Method:**
+- a full read of `packages/keybay_cli`;
+- a reachability review of Fleury, confirmed by a syscall census of a real
+  session;
+- proofs of concept in real terminals and in Docker with a real Secret Service;
+- fresh advisory, cross-language vector and 200,000-case tamper-fuzz runs.
+
+No confirmed issue lets an attacker outside the documented trust boundary read
+stored values. The findings below are resolved or explicitly accepted:
+
+| ID | Severity | Finding | Resolution |
+|---|---|---|---|
+| KB-SA-01 | Medium (design) | Without a passphrase, `keybay list` and `keybay run` answer any same-user program with no terminal or prompt. On macOS this sidesteps the Keychain prompt an unrelated program would meet. | Accepted: only a passphrase separates same-user programs. The exposure is documented plainly, a platform-only `run` shows its launch summary on an attached terminal, and more execution-affecting variables are flagged. |
+| KB-SA-02 | Medium | A crash could write an open session's store key and a revealed value into a core file. | Fixed: every command disables core files, and on Linux the process is non-dumpable. A command that cannot do so exits before opening the store. |
+| KB-SA-03 | Medium | macOS Copy was eligible for Universal Clipboard and clipboard-history recording. | Fixed on macOS: the copy is current-host-only and carries the concealed and transient markers. On Linux, `xclip` cannot carry a sensitivity hint; `wl-copy` 2.3+ can (`--sensitive`), which is follow-up work. Documented. |
+| KB-SA-04 | Low | In JIT development builds, SIGQUIT can start the Dart VM service mid-session, and the Keychain item trusts the Dart toolchain's signature. | Accepted: release AOT builds have neither. |
+| KB-SA-05 | Low | An external SIGTSTP or SIGQUIT stopped or killed the TUI without cleanup. | Fixed: ignored while the vault owns the terminal. |
+| KB-SA-06 | Low | With `login.keychain-db` missing, a root add fell through to the default Keychain. | Fixed: presence check before every pinned operation. |
+| KB-SA-07 | Low | Some Unicode format characters were not escaped, and a prepend cluster could vanish from the display. | Fixed in Keybay: format, default-ignorable and Prepend characters, stray variation selectors and zero-width clusters are escaped, and `get` refuses exactly the same set. Fleury width fix: [danReynolds/fleury#269](https://github.com/danReynolds/fleury/pull/269). |
+| KB-SA-08 | Low | Store substitution is less visible in the TUI than in the CLI. | Accepted as a UX decision. |
+| KB-SA-09 | Low (pre-existing) | The macOS hidden-input prompt ignored SIGCHLD instead of SIGTSTP, because Dart's signal numbers use Linux numbering. | Fixed: native signal numbers. |
+
+**Verification:**
+- SDK core: 505 tests.
+- CLI: 220 unit tests, 38 macOS and 39 Linux terminal cases, and 22
+  hidden-input cases.
+- The macOS Keychain lane with a disposable fixture.
+- A Docker crash probe: no core files, where previously the core held 7 copies
+  of the revealed value.
+- The web demo build.
+
+Physical-device checks of the clipboard changes follow in the device
+qualification pass.
+
 ## Engineering audit, 2026-09-21
 
 The latest engineering audit reviewed clean source

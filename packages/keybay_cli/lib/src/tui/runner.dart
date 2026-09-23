@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:fleury/fleury.dart';
 
 import '../application.dart' show SessionOpener, exitFailure;
+import '../ignored_signals.dart';
 import '../secret_output.dart';
 import '../terminal.dart';
 import 'clipboard.dart';
@@ -118,6 +119,8 @@ Future<int> runTui({
   final foreground = Timer.periodic(const Duration(milliseconds: 250), (_) {
     if (!tuiForeground()) stop(1);
   });
+  // No stop or core dump while the screen or session may hold a secret.
+  final unobservable = IgnoredSignals.terminalOwnership()..start();
   try {
     await runApp(
       KeybayTui(model: model),
@@ -136,8 +139,12 @@ Future<int> runTui({
     warning?.cancel();
     foreground.cancel();
     await hangup.cancel();
-    await model.close();
-    model.dispose();
+    try {
+      await model.close();
+      model.dispose();
+    } finally {
+      unobservable.close();
+    }
   }
 }
 

@@ -210,16 +210,24 @@ If the terminal becomes too small, a resize prompt replaces the inputs until
 they fit again. Returning never reveals a draft automatically. Drafts stay in
 the active form's memory and are cleared on cancellation, accepted submission,
 session invalidation or exit; there is no saved draft cache.
+While the vault owns the terminal, SIGTSTP, SIGTTIN, SIGTTOU and SIGQUIT are
+ignored, so it is never stopped or core-dumped with a value on screen; Ctrl+Z
+and Ctrl+\ arrive as input in the vault's raw mode.
 Five minutes without input exits the session. Submitted SDK operations are
 settled before orderly exit; they may complete after dismissal. External
 SIGSTOP/SIGKILL cannot guarantee immediate cleanup. Terminal captures and
 immutable Dart strings cannot be reliably erased.
 
 Copy is an explicit disclosure separate from Reveal. macOS uses a typed
-pasteboard write; Linux selects a fixed `/usr/bin/wl-copy` (Wayland) or
-`/usr/bin/xclip` (X11) when available. There is no PATH lookup or transport
-fallback. Clipboard services, clipboard managers and other apps may retain
-copied values after exit; Keybay does not promise clipboard erasure. Generic
+pasteboard write restricted to this Mac, so Universal Clipboard does not send it
+to your other devices, and marks it concealed and transient
+([nspasteboard.org](http://nspasteboard.org) conventions that most clipboard
+managers honor by not recording the item). Linux selects a fixed
+`/usr/bin/wl-copy` (Wayland) or `/usr/bin/xclip` (X11) when available. Keybay
+does not mark Linux copies sensitive (`xclip` cannot; `wl-copy` 2.3 and later
+could, with `--sensitive`), so clipboard managers may record them. There is no PATH lookup or transport fallback. Clipboard
+services, clipboard managers and other apps may retain copied values after exit;
+Keybay does not promise clipboard erasure. Generic
 field copy/cut never exports a secret. Native transport qualification is scoped
 in the [qualification report](../../doc/cli-qualification-status.md).
 
@@ -337,8 +345,11 @@ That value may remain in terminal scrollback, so reveal it only when needed:
 keybay get acme-api/openai-api-key
 ```
 
-Values containing terminal control or bidirectional-control characters are
-refused rather than rendered; pass those values to their consumer with `run`.
+Values containing anything `keybay open` would show escaped (control,
+line-break, bidirectional, invisible or prepended characters, and selectors or
+marks that would draw nothing) are refused rather than rendered, because the
+terminal would not show them faithfully; view them escaped in `keybay open`, or
+pass them to their consumer with `run`.
 
 The TTY check prevents casual disclosure; it is not an access-control boundary.
 A program launched with `run` necessarily receives its selected secrets and can
@@ -358,11 +369,20 @@ declared application namespace does not isolate the store from every other
 program running as the same user. The passphrase adds protection even when
 that program can obtain the platform root and encrypted file.
 
-For protected `run`, the terminal shows the canonical executable, arguments,
-and every manifest environment name before requesting the passphrase. References
-show their key names; literal values and secret values are omitted. Paths and
-arguments are quoted with terminal controls escaped. `PATH`, `LD_*`, and
-`DYLD_*` assignments are marked because they can affect execution.
+Before `run` reads any referenced value, the terminal shows the canonical
+executable, arguments, and every manifest environment name. For a protected
+store this precedes the passphrase prompt, which is the approval. Without a
+passphrase the summary is shown whenever a terminal is attached, but nothing is
+asked: it makes a launch visible, not approved. References show their key names;
+literal values and secret values are omitted. Paths and arguments are quoted
+with terminal controls escaped. Assignments that can make the program run other
+code, such as `PATH`, `LD_*`, `DYLD_*`, `NODE_OPTIONS`, `BASH_ENV`, `PYTHON*`
+and `GIT_*`, are marked; the marking is a review aid, not a complete list.
+
+Without a passphrase, any program running as you can use `keybay list` and
+`keybay run` to read every value, without a terminal or prompt. On macOS that
+also bypasses the Keychain prompt an unrelated program would otherwise meet.
+Add a passphrase in `keybay open` → Settings → Security when that matters.
 
 Passphrase setup/change/removal is available in `keybay open` → Settings → Security;
 these standalone commands do not add a second management interface. Opening the
@@ -421,6 +441,11 @@ named by the selected manifest, resolves all references before launch, and has
 no network code. The launched command starts with shell-default signal state
 (the Dart VM's ignored SIGPIPE and blocked job-control signals are reset at the
 exec boundary), so pipelines behave as they would from a shell.
+
+Every Keybay command disables its own core files, and on Linux makes its process
+non-dumpable, so a crash cannot persist an open session's store key or a
+revealed value. A command that cannot do so exits before opening the store. The
+launched command gets the caller's original core-file limit back.
 
 After injection, values are normal child environment variables. They can be
 inherited by descendants and may be visible to same-user process inspection,

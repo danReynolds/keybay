@@ -163,6 +163,7 @@ final class AppleKeychainApi {
   _secItemCopyMatching;
   late final int Function(Pointer<Void>) _secItemDelete;
   int Function(Pointer<Utf8>, Pointer<Pointer<Void>>)? _secKeychainOpen;
+  int Function(Pointer<Void>, Pointer<Uint32>)? _secKeychainGetStatus;
 
   // Constant CFStringRef / CFBooleanRef symbols.
   late final Pointer<Void> _keyCallbacks;
@@ -278,6 +279,11 @@ final class AppleKeychainApi {
             Int32 Function(Pointer<Utf8>, Pointer<Pointer<Void>>),
             int Function(Pointer<Utf8>, Pointer<Pointer<Void>>)
           >('SecKeychainOpen');
+      _secKeychainGetStatus = _sec
+          .lookupFunction<
+            Int32 Function(Pointer<Void>, Pointer<Uint32>),
+            int Function(Pointer<Void>, Pointer<Uint32>)
+          >('SecKeychainGetStatus');
     }
     _keyCallbacks = _cf.lookup<Void>('kCFTypeDictionaryKeyCallBacks');
     _valueCallbacks = _cf.lookup<Void>('kCFTypeDictionaryValueCallBacks');
@@ -474,6 +480,7 @@ final class AppleKeychainApi {
     if (_fixedFileKeychainPath == null) return const [];
 
     final keychain = _fixedFileKeychain!;
+    _requirePinnedKeychainPresent(keychain);
     if (forAdd) {
       return [(_kSecUseKeychain!, keychain)];
     }
@@ -490,6 +497,20 @@ final class AppleKeychainApi {
       return [(_kSecMatchSearchList!, searchList)];
     } finally {
       malloc.free(values);
+    }
+  }
+
+  /// `SecKeychainOpen` does not verify that its file exists, and an add
+  /// directed at a missing file Keychain is stored in the user's default
+  /// Keychain instead. Every pinned operation first confirms that the exact
+  /// file is present, so Keybay never writes to or reads from another one.
+  void _requirePinnedKeychainPresent(Pointer<Void> keychain) {
+    final state = malloc<Uint32>();
+    try {
+      final status = _secKeychainGetStatus!(keychain, state);
+      if (status != _errSecSuccess) _fail(status, 'fixed file Keychain');
+    } finally {
+      malloc.free(state);
     }
   }
 

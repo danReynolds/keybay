@@ -59,7 +59,11 @@ See [Apple's access-group model](https://developer.apple.com/documentation/secur
 An ordinary executable declares its namespace in the owning pubspec or embeds
 it with `keybay_compile`. The encrypted file lives in a restrictive derived
 Application Support directory. One identity-derived root item lives in the
-effective account's explicit login Keychain.
+effective account's explicit login Keychain,
+`~/Library/Keychains/login.keychain-db`. Keybay never uses the default
+Keychain or search list instead: if that file is missing, as for an SSH-only
+account, root, or a CI host with a custom default Keychain, opening fails with
+`platformProtectorUnavailable` before any Keychain item is read or written.
 
 Classic file Keychains cannot reliably suppress UI for one native call.
 Opening, changing authentication, and resetting may therefore show trusted

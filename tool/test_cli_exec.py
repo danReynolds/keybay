@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import errno
 import pty
+import resource
 import select
 import signal
 import stat
@@ -22,11 +23,13 @@ def run(
     *command: str,
     cwd: Path | None = None,
     env: dict[str, str] | None = None,
+    preexec_fn=None,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [cli, "run", *([] if manifest is None else ["-f", str(manifest)]), "--", *command],
         cwd=cwd,
         env=env,
+        preexec_fn=preexec_fn,
         text=True,
         capture_output=True,
         check=False,
@@ -178,6 +181,23 @@ def main() -> int:
             cli, mixed, "printenv", "KEYBAY_LITERAL", env=raw_overlay_env
         )
         assert_result(result, 0, stdout="from-manifest\n")
+
+        # Keybay disables its own core files, but the launched program keeps
+        # the caller's soft core-file limit.
+        _, hard_core = resource.getrlimit(resource.RLIMIT_CORE)
+        caller_core = 4096 if hard_core == resource.RLIM_INFINITY else min(hard_core, 4096)
+        if caller_core > 0:
+            core_limit = run(
+                cli,
+                empty,
+                sys.executable,
+                "-c",
+                "import resource;print(resource.getrlimit(resource.RLIMIT_CORE)[0])",
+                preexec_fn=lambda: resource.setrlimit(
+                    resource.RLIMIT_CORE, (caller_core, hard_core)
+                ),
+            )
+            assert_result(core_limit, 0, stdout=f"{caller_core}\n")
 
         # The child starts with shell-default signal state: the VM's ignored
         # SIGPIPE is reset (a pipeline member dies 141, not an EPIPE error) and

@@ -52,6 +52,28 @@ void main() {
     skip: skip,
   );
 
+  test('V2 read and delete refuse a missing pinned login Keychain', () async {
+    // SecKeychainOpen accepts a missing file, and an add aimed at one is
+    // stored in the default Keychain. Only non-mutating operations run here
+    // so a regressed pin cannot write to the developer's own Keychain; add
+    // shares the same presence check.
+    final missing = AppleMacOSLoginKeychainRootStore(
+      accountHome: '${macOSIntegrationAccountHome()}-missing',
+    );
+    await expectLater(
+      missing.exists(address),
+      throwsA(isA<KeystoreUnreachable>()),
+    );
+    await expectLater(
+      missing.read(address),
+      throwsA(isA<KeystoreUnreachable>()),
+    );
+    await expectLater(
+      missing.delete(address),
+      throwsA(isA<KeystoreUnreachable>()),
+    );
+  }, skip: skip);
+
   test(
     'V2 read rejects a provider value above its fixed allocation bound',
     () async {

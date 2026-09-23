@@ -269,6 +269,91 @@ void main() {
     },
   );
 
+  test(
+    'platform-only run shows its launch summary before reading values',
+    () async {
+      final harness = _Harness();
+      await harness.seed({'acme/key': utf8.encode('secret-sentinel')});
+      final shown = <String>[];
+      var readsBeforeSummary = -1;
+      final app = _application(
+        harness: harness,
+        manifest: Manifest({
+          'TOKEN': const SecretManifestValue('acme/key'),
+          'NODE_OPTIONS': const LiteralManifestValue('--require=./x.js'),
+        }),
+        showLaunchSummary: (summary) {
+          shown.add(summary);
+          readsBeforeSummary = harness.getManyCalls;
+        },
+      );
+      expect(
+        await app.execute(
+          RunCommand(
+            manifestPath: 'manifest',
+            executable: 'tool',
+            arguments: [],
+          ),
+        ),
+        exitSuccess,
+      );
+      expect(shown, hasLength(1));
+      expect(readsBeforeSummary, 0);
+      expect(shown.single, contains('TOKEN <- acme/key'));
+      expect(
+        shown.single,
+        contains('NODE_OPTIONS (literal) [affects execution]'),
+      );
+      expect(shown.single, isNot(contains('secret-sentinel')));
+      expect(shown.single, isNot(contains('./x.js')));
+    },
+  );
+
+  test('protected run shows its summary only with the prompt', () async {
+    final harness = _Harness();
+    await harness.seed({'acme/key': utf8.encode('secret-sentinel')});
+    await harness.protect('correct');
+    final shown = <String>[];
+    var prompted = 0;
+    final app = _application(
+      harness: harness,
+      manifest: Manifest({'TOKEN': const SecretManifestValue('acme/key')}),
+      passphraseReader: ({summary}) async {
+        prompted++;
+        expect(summary, contains('TOKEN <- acme/key'));
+        return Uint8List.fromList(utf8.encode('correct'));
+      },
+      showLaunchSummary: shown.add,
+    );
+    expect(
+      await app.execute(
+        RunCommand(manifestPath: 'manifest', executable: 'tool', arguments: []),
+      ),
+      exitSuccess,
+    );
+    expect(prompted, 1);
+    expect(shown, isEmpty);
+  });
+
+  test('execution-affecting names cover common injection variables', () {
+    for (final name in [
+      'PATH',
+      'LD_PRELOAD',
+      'DYLD_INSERT_LIBRARIES',
+      'NODE_OPTIONS',
+      'BASH_ENV',
+      'PYTHONSTARTUP',
+      'GIT_SSH_COMMAND',
+      'npm_config_node_options',
+      'JAVA_TOOL_OPTIONS',
+    ]) {
+      expect(affectsExecutionName(name), isTrue, reason: name);
+    }
+    for (final name in ['API_URL', 'OPENAI_API_KEY', 'PORT', 'HOME']) {
+      expect(affectsExecutionName(name), isFalse, reason: name);
+    }
+  });
+
   group('run', () {
     test('literal-only manifest never opens Keybay', () async {
       final harness = _Harness();
@@ -624,6 +709,7 @@ CliApplication _application({
   void Function({required bool fromStdin})? authorizeSecretInput,
   CommandLifetime? lifetime,
   SessionOpener? opener,
+  LaunchSummaryWriter? showLaunchSummary,
 }) {
   addTearDown(harness.dispose);
   return CliApplication(
@@ -646,6 +732,7 @@ CliApplication _application({
     parentEnvironment: parentEnvironment,
     stdout: stdout ?? StringBuffer(),
     stderr: stderr ?? StringBuffer(),
+    showLaunchSummary: showLaunchSummary ?? (_) {},
   );
 }
 

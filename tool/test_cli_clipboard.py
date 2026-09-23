@@ -19,12 +19,18 @@ def main():
             script.write_text('''import AppKit
 let board = NSPasteboard(name: NSPasteboard.Name(CommandLine.arguments[1]))
 defer { board.releaseGlobally() }
+// Clipboard managers skip items carrying these nspasteboard.org markers.
+let types = Set((board.types ?? []).map { $0.rawValue })
+guard types.contains("org.nspasteboard.ConcealedType"),
+      types.contains("org.nspasteboard.TransientType") else { exit(2) }
 guard let value = board.string(forType: .string) else { exit(1) }
 FileHandle.standardOutput.write(Data(value.utf8))
 ''')
-            result = subprocess.run(['/usr/bin/swift', str(script), name], capture_output=True, check=True)
+            result = subprocess.run(['/usr/bin/swift', str(script), name], capture_output=True)
+            assert result.returncode != 2, 'copy did not publish the concealed/transient markers'
+            assert result.returncode == 0, result.stderr
             assert result.stdout == SAMPLE, 'typed pasteboard did not preserve exact UTF-8'
-        print('macOS typed clipboard: exact UTF-8/CRLF/RTF-prefix round trip passed on a private board.')
+        print('macOS typed clipboard: exact UTF-8/CRLF/RTF-prefix round trip with concealed/transient markers passed on a private board.')
     elif sys.platform.startswith('linux'):
         # The caller owns a fresh Xvfb display. Never use the desktop clipboard.
         assert os.environ.get('KEYBAY_TEST_X11') == '1'
