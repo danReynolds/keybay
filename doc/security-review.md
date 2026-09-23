@@ -33,7 +33,7 @@ stored values. The findings below are resolved or explicitly accepted:
 
 **Verification:**
 - SDK core: 505 tests.
-- CLI: 219 unit tests, 38 macOS and 39 Linux terminal cases, and 22
+- CLI: 220 unit tests, 38 macOS and 39 Linux terminal cases, and 22
   hidden-input cases.
 - The macOS Keychain lane with a disposable fixture.
 - A Docker crash probe: no core files, where previously the core held 7 copies
