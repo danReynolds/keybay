@@ -1,7 +1,7 @@
 name: keybay_cli
 description: Austere, local secret injection backed by Keybay.
 version: 0.2.0
-# Native CLI artifacts remain buildable; pub publishing awaits hosted Fleury.
+# Ships only as native binaries (GitHub Release, Homebrew), never to pub.dev.
 publish_to: none
 repository: https://github.com/danReynolds/keybay/tree/main/packages/keybay_cli
 homepage: https://danreynolds.github.io/keybay/#cli

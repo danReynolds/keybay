@@ -1,11 +1,14 @@
 # Keybay 0.2.0 release readiness
 
-Reviewed September 21, 2026 against `7965a5ea02e848a4de7216b094563cba5a0c40ee`.
+Reviewed September 21, 2026 against `7965a5ea02e848a4de7216b094563cba5a0c40ee`;
+updated September 24 to ship the CLI only through Homebrew and GitHub releases.
 The SDK and CLI/TUI implementation are integrated. The scoped SDK release is
 prepared; CLI publication still needs native distribution qualification and
-hosted Fleury dependencies. Neither 0.2.0 package has been published in this
-closeout. This page tracks remaining work; dated qualification records retain
-the evidence and limitations of their original runs.
+hosted Fleury dependencies. The SDK ships on pub.dev; the CLI ships only as
+native binaries through Homebrew and GitHub releases. Neither 0.2.0 package has
+been published in this closeout. This page tracks remaining work; dated
+qualification records retain the evidence and limitations of their original
+runs.
 
 ## Remaining work, in order
 
@@ -13,9 +16,9 @@ the evidence and limitations of their original runs.
 | --- | --- | --- |
 | P0, native macOS | Build and package a dedicated signed Dart runtime, signed AOT module and launcher through release-kit. Update the archive contract and Homebrew installation together. | Reproducible bundle from the release candidate, stable application/signing identity, and successful launch after signing. |
 | P0, native CLI | Qualify the actual installed packages and upgrades on macOS ARM64, Linux x64 and Linux ARM64, as configured in `release.toml`. | Artifact hashes, observed OS/ABI, protected-store continuity, CLI/TUI/child-process checks, and macOS notarization/downloaded-launch evidence. A source build or ad-hoc archive is insufficient. |
-| P0, CLI Pub | Publish reviewed Fleury and fleury_widgets versions, replace the exact Git pins with reviewed hosted versions, remove `publish_to: none`, and restore CLI publication validation. | Reviewed dependency closure, package validation and installed CLI checks. Fleury publication is a separate release action; it has not happened as part of this work. |
+| P0, Fleury | Publish reviewed Fleury and fleury_widgets versions that include [danReynolds/fleury#269](https://github.com/danReynolds/fleury/pull/269) (`93816cde`), then replace the CLI's exact Git pins with them. rk refuses to release a unit built from Git dependencies (RK-DART-201), even when they are pinned to a commit. | Reviewed dependency closure and installed CLI checks. Fleury publication is a separate release action; it has not happened as part of this work. |
 | P1 | Reconcile documentation, assess the latest security-monitoring results and validate the final candidate. | Current installation/release claims, no unresolved applicable blocking findings, full manual CI on the exact final main commit, and retained package/archive receipts. |
-| Release | Publish the SDK before the dependent CLI, then verify the channels actually served to users. | Signed tags, SDK Pub archive audit, CLI package/native download and Homebrew installation checks. Publishing is a separate action after preparation. |
+| Release | Publish the SDK before the dependent CLI, then verify the channels actually served to users. | Signed tags, SDK Pub archive audit, CLI native download and Homebrew installation checks. Publishing is a separate action after preparation. |
 
 The hosted-dependency work can proceed alongside native packaging. The SDK's
 release unit is independent of CLI packaging; `release.toml` publishes its
@@ -93,6 +96,9 @@ runtime security fix required before release preparation. Fresh checks passed
 This was not an independent external audit or renewed physical qualification.
 The September 22 pre-release assessment then covered the CLI/TUI. Its findings
 and resolutions are in the [review record](security-review.md#pre-release-assessment-2026-09-22).
+The CLI is not published to pub.dev because a Pub installation runs in the
+Dart VM, where the macOS Keychain item would trust every Dart program rather
+than the signed release binary (KB-SA-04).
 
 Known limits remain: best-effort memory clearing, no complete-snapshot rollback
 protection, and namespace-only isolation for ordinary desktop applications.

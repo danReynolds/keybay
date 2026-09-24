@@ -312,10 +312,11 @@ Linux uses isolated Xvfb; macOS uses a uniquely named pasteboard rather than the
 user's clipboard. See [qualification status](cli-qualification-status.md) for
 the exact configurations checked and the remaining release evidence.
 
-The CLI is temporarily `publish_to: none` because Fleury is Git-pinned. Native
-source/archive builds work; a reviewed hosted Fleury release is required before
-pub publishing. Signed native packaging and installed upgrades are separate
-gates in [release readiness](release-readiness.md). No SDK publication settings changed.
+The CLI is `publish_to: none`: it ships only as native binaries through Homebrew
+and GitHub releases, not pub.dev. Fleury stays Git-pinned until a reviewed
+hosted release exists, which release builds require. Signed native packaging and
+installed upgrades are separate gates in [release readiness](release-readiness.md).
+No SDK publication settings changed.
 
 ### Notification presentation
 

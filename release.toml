@@ -2,6 +2,9 @@ schema = 2
 
 # Two independently released units, so each states its own tag pattern.
 # The CLI depends on the core package, and rk publishes in that order.
+# The CLI ships only as native binaries. It is not on pub.dev: a Pub install
+# runs in the Dart VM, where the macOS Keychain would trust every Dart program
+# instead of the signed release binary (KB-SA-04).
 
 [release.keybay]
 path = "packages/keybay"
@@ -11,5 +14,8 @@ publish = ["git-tag", "pub.dev"]
 [release.keybay_cli]
 path = "packages/keybay_cli"
 tag = "keybay_cli-v{version}"
-publish = ["git-tag", "pub.dev", "github-release", "homebrew"]
+publish = ["git-tag", "github-release", "homebrew"]
 binary_platforms = ["macos-arm64", "linux-x64", "linux-arm64"]
+# Embed the CLI's application ID, as keybay_compile does; without it the
+# release binary cannot resolve which store it owns.
+dart_defines_from_pubspec = ["keybay.application_id"]

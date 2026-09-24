@@ -8,6 +8,8 @@ hidden-input cases**, and private-pasteboard/archive/identity checks on macOS
 ARM64 / Dart 3.12.2. It did not renew real-provider or distribution evidence.
 C4 installed-artifact qualification and hosted Fleury dependencies remain
 outstanding; [release readiness](release-readiness.md) defines those gates.
+The CLI ships only as native binaries through Homebrew and GitHub releases,
+not pub.dev.
 The separate [SDK qualification](qualification-status.md) retains its scope.
 The dated sections below retain earlier checks and their original scope.
 
@@ -626,8 +628,9 @@ nested Linux host/ABI when Docker is used. CI invokes the same selectors.
 - Qualify actual installed artifacts and upgrades. Hardened macOS distribution
   still needs the signed runtime/module form and signing/notarization evidence.
   Structural checks on an ad-hoc copy do not establish launchability.
-- Replace Git-pinned Fleury with reviewed hosted releases and restore CLI Pub
-  validation before publication. The CLI remains `publish_to: none` meanwhile.
+- Replace Git-pinned Fleury with reviewed hosted releases before release; rk
+  does not release a unit built from Git dependencies. The CLI stays
+  `publish_to: none`.
 - Follow the [release closeout](release-readiness.md#final-publication-checks)
   for final security triage, version/install claims and channel verification.
 
