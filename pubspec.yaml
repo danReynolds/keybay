@@ -2,7 +2,7 @@
 # Keybay packages a single, shared dependency resolution (one pubspec.lock).
 # The packages publish independently from their own directories:
 #   packages/keybay      → the core library (pub.dev: keybay)
-#   packages/keybay_cli  → the CLI (pub.dev: keybay_cli, Homebrew, GitHub release)
+#   packages/keybay_cli  → the CLI (Homebrew, GitHub release; not pub.dev)
 name: keybay_workspace
 publish_to: none
 
