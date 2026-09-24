@@ -31,6 +31,7 @@ ios_device() {
   local listing
   listing="$(mktemp "${TMPDIR:-/tmp}/keybay-demo-devices.XXXXXX")"
   xcrun devicectl list devices --json-output "$listing" >/dev/null
+  trap 'rm -f "$listing"; trap - RETURN' RETURN
   python3 - "$listing" <<'PY'
 import json, sys
 devices = [d for d in json.load(open(sys.argv[1]))['result']['devices']
@@ -42,7 +43,6 @@ if len(devices) != 1:
     sys.exit(f'Name one iOS device to install on (found: {names}).')
 print(devices[0]['identifier'])
 PY
-  rm -f "$listing"
 }
 
 platform="${1:-}"

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:keybay/keybay.dart';
 
@@ -32,10 +33,20 @@ class _KeybayDemoAppState extends State<KeybayDemoApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Cover the window whenever the app is not in front, so a revealed value
-    // never reaches the app switcher's snapshot. Leaving the foreground closes
-    // the session; returning opens it again, asking for the passphrase if set.
-    setState(() => _covered = state != AppLifecycleState.resumed);
+    // On phones, cover the window whenever the app is not in front, so a
+    // revealed value never reaches the app switcher's snapshot. A desktop
+    // window is inactive whenever another app has focus; cover it only once
+    // it is hidden. Leaving the foreground closes the session; returning
+    // opens it again, asking for the passphrase if set.
+    final mobile =
+        defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.android;
+    setState(
+      () => _covered = mobile
+          ? state != AppLifecycleState.resumed
+          : state == AppLifecycleState.hidden ||
+                state == AppLifecycleState.paused,
+    );
     if (state == AppLifecycleState.hidden ||
         state == AppLifecycleState.paused) {
       if (_vault.stage == VaultStage.open ||
