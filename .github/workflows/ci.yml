@@ -262,6 +262,30 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  # The dogfooding app: analysis and widget tests over the SDK's in-memory
+  # engine. Device builds are local (apps/keybay_demo/tool/install.sh).
+  demo-app:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: install exact Flutter SDK
+        run: |
+          flutter_root="$RUNNER_TEMP/flutter"
+          git init "$flutter_root"
+          git -C "$flutter_root" remote add origin https://github.com/flutter/flutter.git
+          git -C "$flutter_root" fetch --depth=1 origin refs/tags/3.44.4:refs/tags/3.44.4
+          git -C "$flutter_root" checkout --detach refs/tags/3.44.4
+          test "$(git -C "$flutter_root" rev-parse HEAD)" = ad70ec4617166f1c38e5d2bfd388af71fda14f06
+          echo "$flutter_root/bin" >> "$GITHUB_PATH"
+      - run: flutter pub get --enforce-lockfile
+        working-directory: apps/keybay_demo
+      - run: flutter analyze --fatal-infos
+        working-directory: apps/keybay_demo
+      - run: flutter test
+        working-directory: apps/keybay_demo
+
   # Genuine mobile platform APIs on disposable virtual devices. These are
   # Continuous integration checks, not physical-device qualification and do
   # not issue physical qualification reports.
