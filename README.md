@@ -11,7 +11,9 @@ The CLI supports macOS and ordinary Linux desktop.
 
 Version 0.2.0 is prepared but not yet published. The SDK and CLI/TUI source is
 integrated; native CLI packaging and hosted Fleury dependencies remain release
-gates. See [release readiness](doc/release-readiness.md) and the
+gates. The SDK will ship on pub.dev and the CLI as native binaries through
+Homebrew and GitHub releases.
+See [release readiness](doc/release-readiness.md) and the
 [local CLI installation guide](packages/keybay_cli/README.md#install).
 
 ## CLI

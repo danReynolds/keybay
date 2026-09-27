@@ -2,8 +2,9 @@
 
 ## 0.2.0
 
-Unreleased. Native distribution qualification and publication remain separate
-from source integration. Pub publishing awaits a hosted Fleury release.
+Unreleased. The CLI ships only as native binaries through Homebrew and GitHub
+releases; it is not published to pub.dev. Native distribution qualification and
+publication remain separate from source integration.
 
 - Adapt existing commands to the single-application V2 SDK and session API.
   Existing V1 stores are not migrated automatically.

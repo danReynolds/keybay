@@ -27,15 +27,14 @@ invokes a shell or stays resident as a wrapper.
 
 ## Install
 
-Use an official V2 native release when available. Its embedded application ID
-and stable packaging establish the intended SDK identity and provider behavior.
-Hardened macOS distribution must qualify a dedicated signed Dart AOT runtime
-and signed module; a local single-file build below is a development artifact,
-not evidence that hardened distribution works. Hosted
-`dart install keybay_cli` remains unqualified for this CLI release. The SDK can
-resolve identity from a recognized Dart install bundle's retained pubspec, but
-that identity fixture does not qualify the CLI's hosted installation, signing
-or upgrade behavior.
+Use an official V2 native release when available. The CLI ships only as native
+binaries through Homebrew and GitHub releases; it is not published to pub.dev.
+A release's embedded application ID and stable packaging establish the intended
+SDK identity and provider behavior. Hardened macOS distribution must qualify a
+dedicated signed Dart AOT runtime and signed module; a local single-file build
+below is a development artifact, not evidence that hardened distribution works.
+Installing from source with `dart install` or Pub activation also gives a
+development build, not a supported installation.
 
 Contributors can build the in-tree executable from the repository root:
 
@@ -60,7 +59,10 @@ Put `$HOME/.pub-cache/bin` before an older Keybay installation in `PATH`.
 Path activation follows this checkout, so keep it in place. It runs through the
 shared Dart VM and resolves identity from the CLI package's own pubspec, including
 inside this workspace. This is a local development installation; the signed
-release distribution remains a separate qualification.
+release distribution remains a separate qualification. On macOS, the Keychain
+item it creates trusts the Dart VM rather than Keybay, so any program run with
+`dart` can read the platform root without a prompt. Keep real secrets behind a
+strong passphrase.
 
 With Dart 3.12.2, local path activation prints Pub's dependency-resolution
 messages before Keybay starts. Use the native executable for scripts or
@@ -233,8 +235,8 @@ in the [qualification report](../../doc/cli-qualification-status.md).
 
 The UI disables Fleury debug/hot reload and refuses `FLEURY_*` runtime settings
 or an active Dart VM service before opening the SDK. Fleury currently uses an
-exact Git revision; pub publishing stays disabled until a reviewed hosted
-release is available. Source and native archive builds remain supported.
+exact Git revision; release builds wait for a reviewed hosted Fleury release.
+Source and native archive builds remain supported.
 
 ### Local browser UX preview
 

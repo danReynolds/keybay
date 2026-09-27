@@ -106,8 +106,9 @@ jobs:
       # Exercise the SDK package archive and warning contract before a tag.
       # Keep archive-policy validation on the current-SDK Linux lane; the
       # minimum lane is reserved for runtime/AOT compatibility at the floor.
-      # CLI Pub publishing is disabled until Fleury has a hosted release;
-      # test_cli.sh above still validates the exact native CLI archive.
+      # The CLI ships only as native binaries, never to pub.dev, so it has
+      # no publication archive; test_cli.sh above validates the exact native
+      # CLI archive.
       - name: Validate SDK publication archive
         if: runner.os == 'Linux'
         run: ./tool/validate_publish.sh packages/keybay cryptography dbus ffi
