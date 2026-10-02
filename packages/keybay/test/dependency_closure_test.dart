@@ -7,8 +7,9 @@ import 'dart:io';
 import 'package:test/test.dart';
 
 /// Supply-chain firewall (see doc/design.md): this workspace's complete runtime
-/// resolution is frozen by package, version, hosted source, and the committed
-/// pubspec.lock hashes. Downstream applications still resolve transitive ranges
+/// resolution is frozen by package, version, source, and the committed lockfile.
+/// The unpublished Keypass development dependency is pinned to one Git commit.
+/// Downstream applications still resolve transitive ranges
 /// under their own lockfiles. This test fails CI when our reviewed tree shifts.
 void main() {
   test('runtime dependency closure is the vetted set', () {
@@ -44,12 +45,15 @@ void main() {
     const expected = <String, String>{
       'args': '2.7.0',
       'collection': '1.19.1',
+      'convert': '3.1.2',
       'crypto': '3.0.7',
       'cryptography': '2.9.0',
       'dbus': '0.7.15',
       'ffi': '2.2.0',
+      'keypass': '0.1.0-dev.2',
       'meta': '1.18.3',
       'petitparser': '7.0.2',
+      'pointycastle': '4.0.0',
       'typed_data': '1.4.0',
       'xml': '7.0.1',
     };
@@ -62,15 +66,15 @@ void main() {
     );
 
     // Names alone don't prove provenance: a git/path override of a pinned
-    // dep keeps the name but swaps the code. Every package in the closure
-    // must resolve from the hosted registry.
+    // dep keeps the name but swaps the code. Only the exact reviewed Keypass
+    // commit may use Git; every other dependency must remain hosted.
     for (final name in closure) {
       expect(
         byName[name]?['source'],
-        'hosted',
+        name == 'keypass' ? 'git' : 'hosted',
         reason:
-            'package "$name" is not hosted — a git/path source means '
-            'the pinned resolution was overridden.',
+            'package "$name" changed source — the reviewed resolution '
+            'was overridden.',
       );
       expect(
         byName[name]?['version'],
@@ -90,5 +94,25 @@ void main() {
     expect(pubspec, isNot(contains('dependency_overrides')));
     // pubspec_overrides.yaml silently overrides the pinned resolution.
     expect(File('pubspec_overrides.yaml').existsSync(), isFalse);
+  });
+
+  test('Keypass Git source and resolved revision are the reviewed commit', () {
+    const commit = '78cbf68a52b9e11f22434059fcde8069a97b2bad';
+    const url = 'git@github.com:danReynolds/keypass.git';
+    final spec = File('pubspec.yaml').readAsStringSync();
+    expect(spec, contains('url: $url\n      ref: $commit'));
+    // The independent SDK test runs with its own lock; workspace execution
+    // resolves the root lock two levels above this package.
+    final local = File('pubspec.lock');
+    final lock = (local.existsSync() ? local : File('../../pubspec.lock'))
+        .readAsStringSync();
+    final entry = RegExp(
+      r'^  keypass:\n([\s\S]*?)(?=^  \w|\Z)',
+      multiLine: true,
+    ).firstMatch(lock)!.group(1)!;
+    expect(entry, contains('ref: "$commit"'));
+    expect(entry, contains('resolved-ref: "$commit"'));
+    expect(entry, contains('url: "$url"'));
+    expect(entry, contains('source: git'));
   });
 }

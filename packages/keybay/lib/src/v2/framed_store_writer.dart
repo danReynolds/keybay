@@ -27,13 +27,13 @@ final class _InitializedStore {
     required this.storeId,
     required this.storeKey,
     required this.epoch,
-    required this.passphraseMethodId,
+    required this.authMethods,
   });
 
   final Uint8List storeId;
   final Uint8List storeKey;
   final int epoch;
-  final String? passphraseMethodId;
+  final List<AuthMethod> authMethods;
 }
 
 extension _V2PlatformInitialization on V2StoreEngine {
@@ -44,15 +44,12 @@ extension _V2PlatformInitialization on V2StoreEngine {
   ) async {
     Uint8List? storeId;
     Uint8List? storeKey;
-    Uint8List? methodId;
-    Uint8List? passphraseSalt;
-    Uint8List? passphraseKey;
     Uint8List? packagePlaintext;
     V2KeyPackage? keyPackage;
     V2Manifest? manifest;
     PlatformRootLease? lease;
     _InitializedStore? result;
-    String? passphraseMethodId;
+    List<AuthMethod> authMethods = const [];
     Object? primaryFailure;
     StackTrace? primaryStack;
 
@@ -68,39 +65,26 @@ extension _V2PlatformInitialization on V2StoreEngine {
           storeKey: storeKey,
         );
       } else {
-        methodId = _entropy.randomBytes(V2StoreLimits.methodIdBytes);
-        passphraseSalt = _entropy.randomBytes(V2StoreLimits.argonSaltBytes);
-        final passphraseNonce = _entropy.randomBytes(V2StoreLimits.nonceBytes);
-        passphraseKey = await _derivePassphraseAndReleaseCredential(
-          deriver: _passphraseDeriver,
+        final method = await _enrollMethod(
+          engine: this,
           credential: credential,
-          profileId: v2FirstPassphraseProfile,
-          salt: passphraseSalt,
-        );
-        final innerEnvelope = await sealPassphraseEnvelope(
-          passphraseKey: passphraseKey,
+          storeId: storeId,
+          epoch: _initialStoreEpoch,
           storeKey: storeKey,
+          methodId: _entropy.randomBytes(V2StoreLimits.methodIdBytes),
+        );
+        keyPackage = V2MethodsPackage(
           storeId: storeId,
           epoch: _initialStoreEpoch,
-          methodId: methodId,
-          profileId: v2FirstPassphraseProfile,
-          salt: passphraseSalt,
-          nonce: passphraseNonce,
+          methods: [method],
         );
-        keyPackage = V2PassphrasePackage(
-          storeId: storeId,
-          epoch: _initialStoreEpoch,
-          methodId: methodId,
-          profileId: v2FirstPassphraseProfile,
-          salt: passphraseSalt,
-          innerEnvelope: innerEnvelope,
-        );
-        passphraseMethodId = encodeMethodId(methodId);
+        authMethods = _describePackage(keyPackage);
       }
       packagePlaintext = encodeKeyPackage(keyPackage);
 
       // Finish every fallible entropy/KDF step before creating provider state.
       // A derivation failure therefore leaves no root-only partial store.
+      _checkPasskeyCancelled(credential);
       final creation = await host.protector.createOnly(
         interaction: PlatformInteraction.allowed,
       );
@@ -117,7 +101,10 @@ extension _V2PlatformInitialization on V2StoreEngine {
       }
 
       final providerState = lease.providerState.copyBytes();
-      final bootstrapCore = V2BootstrapCore(providerState);
+      final bootstrapCore = V2BootstrapCore(
+        providerState,
+        suite: credential == null ? v2PrimitiveSuite : v2MethodsSuite,
+      );
       final domain = host.binding.domain.copyBytes();
       final packageAad = encodePlatformPackageAad(
         storageDomain: domain,
@@ -134,22 +121,13 @@ extension _V2PlatformInitialization on V2StoreEngine {
           lease: lease,
           sealedPackage: sealedPackage,
           aad: packageAad,
-          expectedStoreId: storeId,
-          expectedStoreKey: storeKey,
-          expectedEpoch: _initialStoreEpoch,
-          expectedMethodId: methodId,
-          expectedSalt: passphraseSalt,
-          passphraseKey: passphraseKey,
+          expectedPlaintext: packagePlaintext,
         );
       } finally {
         _clear(packagePlaintext);
         packagePlaintext = null;
         keyPackage.clear();
         keyPackage = null;
-        if (passphraseKey != null) {
-          _clear(passphraseKey);
-          passphraseKey = null;
-        }
       }
       await lease.close();
       lease = null;
@@ -201,6 +179,7 @@ extension _V2PlatformInitialization on V2StoreEngine {
           expectedRecordCount: 0,
         );
       });
+      _checkPasskeyCancelled(credential);
       await stage.replaceLive();
 
       final committedPin = await _openPin(transaction.openPinnedLive);
@@ -218,7 +197,7 @@ extension _V2PlatformInitialization on V2StoreEngine {
         storeId: storeId,
         storeKey: storeKey,
         epoch: _initialStoreEpoch,
-        passphraseMethodId: passphraseMethodId,
+        authMethods: authMethods,
       );
       storeId = null;
       storeKey = null;
@@ -238,7 +217,6 @@ extension _V2PlatformInitialization on V2StoreEngine {
       }
     }
     if (storeKey != null) _clear(storeKey);
-    if (passphraseKey != null) _clear(passphraseKey);
     if (packagePlaintext != null) _clear(packagePlaintext);
     keyPackage?.clear();
     manifest?.clear();
@@ -671,87 +649,21 @@ Future<void> _verifyKeyPackage({
   required PlatformRootLease lease,
   required Uint8List sealedPackage,
   required Uint8List aad,
-  required Uint8List expectedStoreId,
-  required Uint8List expectedStoreKey,
-  required int expectedEpoch,
-  required Uint8List? expectedMethodId,
-  required Uint8List? expectedSalt,
-  required Uint8List? passphraseKey,
+  required Uint8List expectedPlaintext,
 }) async {
-  Uint8List? plaintext;
-  Uint8List? openedStoreId;
-  Uint8List? openedStoreKey;
-  Uint8List? openedMethodId;
-  Uint8List? openedSalt;
-  Uint8List? openedEnvelope;
-  V2KeyPackage? package;
+  final plaintext = await lease.openPackage(
+    sealedPackage: sealedPackage,
+    aad: aad,
+  );
   try {
-    plaintext = await lease.openPackage(sealedPackage: sealedPackage, aad: aad);
-    package = decodeKeyPackage(plaintext);
-    if (package.epoch != expectedEpoch) {
-      throw _error(
-        KeybayErrorCode.storeAuthenticationFailed,
-        'The platform package failed verification.',
-      );
-    }
-    openedStoreId = package.storeId;
-    if (!_constantTimeEquals(openedStoreId, expectedStoreId)) {
-      throw _error(
-        KeybayErrorCode.storeAuthenticationFailed,
-        'The platform package failed verification.',
-      );
-    }
-
-    if (expectedMethodId == null) {
-      if (package is! V2PlatformOnlyPackage ||
-          expectedSalt != null ||
-          passphraseKey != null) {
-        throw _error(
-          KeybayErrorCode.storeAuthenticationFailed,
-          'The platform package failed verification.',
-        );
-      }
-      openedStoreKey = package.takeStoreKey();
-    } else {
-      if (package is! V2PassphrasePackage ||
-          expectedSalt == null ||
-          passphraseKey == null) {
-        throw _error(
-          KeybayErrorCode.storeAuthenticationFailed,
-          'The platform package failed verification.',
-        );
-      }
-      openedMethodId = package.methodId;
-      openedSalt = package.salt;
-      openedEnvelope = package.innerEnvelope;
-      if (!_constantTimeEquals(openedMethodId, expectedMethodId) ||
-          !_constantTimeEquals(openedSalt, expectedSalt) ||
-          package.profileId != v2FirstPassphraseProfile) {
-        throw _error(
-          KeybayErrorCode.storeAuthenticationFailed,
-          'The platform package failed verification.',
-        );
-      }
-      openedStoreKey = await openPassphraseEnvelope(
-        passphraseKey: passphraseKey,
-        storeId: openedStoreId,
-        epoch: package.epoch,
-        methodId: openedMethodId,
-        profileId: package.profileId,
-        salt: openedSalt,
-        innerEnvelope: openedEnvelope,
-      );
-    }
-    if (!_constantTimeEquals(openedStoreKey, expectedStoreKey)) {
+    if (!_constantTimeEquals(plaintext, expectedPlaintext)) {
       throw _error(
         KeybayErrorCode.storeAuthenticationFailed,
         'The platform package failed verification.',
       );
     }
   } finally {
-    package?.clear();
-    if (plaintext != null) _clear(plaintext);
-    if (openedStoreKey != null) _clear(openedStoreKey);
+    _clear(plaintext);
   }
 }
 

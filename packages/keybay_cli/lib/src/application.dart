@@ -260,7 +260,10 @@ final class CliApplication {
     try {
       return await openSession();
     } on KeybayException catch (error) {
-      if (error.code != KeybayErrorCode.authRequired) rethrow;
+      if (error.code != KeybayErrorCode.authRequired ||
+          error.authMethods.whereType<PassphraseMethod>().isEmpty) {
+        rethrow;
+      }
     }
 
     lifetime.check();

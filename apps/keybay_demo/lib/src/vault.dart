@@ -56,8 +56,16 @@ final class Vault extends ChangeNotifier {
       await _adopt(session, generation);
     } on KeybayException catch (error) {
       if (generation != _generation) return;
-      if (error.code == KeybayErrorCode.authRequired) {
+      if (error.code == KeybayErrorCode.authRequired &&
+          error.authMethods.whereType<PassphraseMethod>().isNotEmpty) {
         _enter(VaultStage.locked);
+      } else if (error.code == KeybayErrorCode.authRequired &&
+          error.authMethods.whereType<PasskeyMethod>().isNotEmpty) {
+        _enter(
+          VaultStage.failed,
+          'This demo does not yet support passkey unlock. Use a build of this '
+          'application that supports the configured method.',
+        );
       } else {
         _enter(VaultStage.failed, describe(error.code));
       }

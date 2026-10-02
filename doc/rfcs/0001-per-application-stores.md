@@ -6,6 +6,9 @@
 - **Target:** Keybay V2
 - **Scope:** SDK storage architecture and platform security policy
 - **Companion:** [RFC 0002: Keybay V2 CLI and foreground UI](0002-cli-tui.md)
+- **Amendment:** [RFC 0003: Passkey methods](0003-passkey-methods.md) supersedes
+  the singleton-only authentication package, suite-1-only reader, and
+  protected-open behavior below. Other platform and record invariants remain.
 
 > This RFC defines the accepted Keybay V2 target. It does not describe the API,
 > file format, or security guarantees of any currently shipped Keybay release.

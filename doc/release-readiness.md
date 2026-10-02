@@ -10,10 +10,19 @@ been published in this closeout. This page tracks remaining work; dated
 qualification records retain the evidence and limitations of their original
 runs.
 
+The October 2 passkey integration adds a development-only, exact-commit Keypass
+dependency and a new authenticated methods format. Its engineering review and
+regressions do not renew the older physical-device evidence. Keypass must become
+available to consumers, then be released on pub.dev and substituted for the Git
+pin before Keybay passes its unchanged publication gate. CLI/demo passkey UI
+and end-to-end Keybay vault tests with native passkey providers remain separate
+work; the SDK accepts system and hardware credentials.
+
 ## Remaining work, in order
 
 | Priority | Work | Completion evidence |
 | --- | --- | --- |
+| P0, Keypass | Resolve repository distribution and publish a reviewed hosted Keypass version; replace the SDK's exact Git pin with that version. | Consumer resolution, reviewed closure, unchanged SDK publish dry-run and exact-candidate CI pass. No permission to publish is implied by implementation approval. |
 | P0, native macOS | Build and package a dedicated signed Dart runtime, signed AOT module and launcher through release-kit. Update the archive contract and Homebrew installation together. | Reproducible bundle from the release candidate, stable application/signing identity, and successful launch after signing. |
 | P0, native CLI | Qualify the actual installed packages and upgrades on macOS ARM64, Linux x64 and Linux ARM64, as configured in `release.toml`. | Artifact hashes, observed OS/ABI, protected-store continuity, CLI/TUI/child-process checks, and macOS notarization/downloaded-launch evidence. A source build or ad-hoc archive is insufficient. |
 | P0, Fleury | Publish reviewed Fleury and fleury_widgets versions that include [danReynolds/fleury#269](https://github.com/danReynolds/fleury/pull/269) (`93816cde`), then replace the CLI's exact Git pins with them. rk refuses to release a unit built from Git dependencies (RK-DART-201), even when they are pinned to a commit. | Reviewed dependency closure and installed CLI checks. Fleury publication is a separate release action; it has not happened as part of this work. |

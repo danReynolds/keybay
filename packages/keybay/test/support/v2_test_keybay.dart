@@ -7,6 +7,7 @@ import 'package:keybay/src/v2/format/store_format.dart';
 import 'package:keybay/src/v2/host_platform.dart';
 import 'package:keybay/src/v2/keybay_v2.dart'
     show V2PassphraseDeriver, V2StoreEngine;
+import 'package:keypass/keypass.dart' show Keypass;
 
 import 'v2_pinned_store_files.dart';
 import 'v2_platform_fakes.dart';
@@ -16,7 +17,10 @@ import 'v2_platform_fakes.dart';
 /// This class contains no storage, session, authentication, or rotation logic.
 /// Those behaviors are exercised through [V2StoreEngine].
 final class V2TestKeybay {
-  V2TestKeybay({String applicationId = 'dev.keybay.public-api-test'}) {
+  V2TestKeybay({
+    String applicationId = 'dev.keybay.public-api-test',
+    Keypass Function(PasskeyCredential)? keypassClient,
+  }) {
     binding = ResolvedApplicationBinding.derive(
       identity: ApplicationIdentity(
         stableValue: applicationId,
@@ -33,7 +37,11 @@ final class V2TestKeybay {
       ResolvedHost(binding: binding, files: files, protector: protector),
     );
     deriver = FastTestPassphraseDeriver();
-    engine = V2StoreEngine(platform, passphraseDeriver: deriver);
+    engine = V2StoreEngine(
+      platform,
+      passphraseDeriver: deriver,
+      keypassClient: keypassClient,
+    );
   }
 
   late final ResolvedApplicationBinding binding;

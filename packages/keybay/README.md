@@ -40,12 +40,14 @@ reinstalls/restores. Follow the [deliberate recovery guidance](https://github.co
 do not automatically reset on error.
 
 Opening, changing authentication, and resetting may invoke trusted OS/provider
-UI. Record operations and `auth.list()` never prompt. There is no public
-interaction option.
+UI. Record operations and `auth.list()` never prompt. Mandatory platform
+protection cannot be bypassed; direct hardware passkeys use application-supplied
+PIN, connection-selection and progress callbacks.
 
 ## Application identity
 
-The production API accepts no application ID, path, provider, or store name.
+The production API accepts no application ID, path, platform-protector override,
+or store name.
 iOS, Android, and entitled macOS builds use OS-authenticated application facts.
 An ordinary Dart executable on Linux or unentitled macOS declares a stable
 namespace in its owning `pubspec.yaml`:
@@ -80,6 +82,89 @@ try {
 After enrollment, `Keybay.open()` returns `authRequired`; reopen with a
 `PassphraseCredential`. Closing the session clears Keybay's in-memory store-key
 buffer. The encrypted file never becomes plaintext.
+
+A store supports one passphrase and multiple passkey methods. These are
+alternative unlock methods on top of the mandatory platform root; configuring
+both does not require the user to present both.
+
+## Additional passkey protection
+
+Use the same credential API for OS-provider passkeys and physical FIDO2 keys.
+For an absent store, or one with a matching configured passkey:
+
+```dart
+final session = await Keybay.open(
+  credential: const PasskeyCredential.system(
+    rpId: 'vault.example.com',
+    label: 'Personal vault',
+  ),
+);
+try {
+  await session.set('api-token', 's3cr3t');
+} finally {
+  await session.close();
+}
+```
+
+To add a passkey to an existing store, first open it using its current
+protection, then call `session.auth.add`:
+
+```dart
+final method = await session.auth.add(
+  PasskeyCredential.hardware(
+    rpId: 'dev.example.vault',
+    label: 'Backup security key',
+    requestPin: ui.requestPin,
+    selectConnection: ui.selectConnection,
+    onEvent: ui.onHardwareEvent,
+  ),
+);
+```
+
+`ui` is your application's UI. PIN handlers return owned writable UTF-8 bytes;
+selection handlers return one of the exact offered `HardwareConnection` objects.
+Both receive cancellation signals. `HardwareEvent` reports instructions, not
+authentication success. Missing PIN or ambiguous-connection UI produces a typed
+failure; Keypass does not automatically retry PINs or switch credentials.
+
+The RP ID is required explicitly and stays stable. System passkeys use the
+app-associated domain; direct hardware uses a stable DNS-shaped scope without
+requiring a website. It does not change Keybay's application identity or store.
+`displayName` defaults to the RP ID; `label` defaults to `Keybay vault` and is used
+when enrolling or replacing a method. Construction presents no UI.
+
+Omit `methodId` when adding a passkey or initializing an absent store. Unlock
+may omit it only when one method matches the requested RP ID and route;
+otherwise select an exact stored ID. A passkey `auth.update` requires its
+existing ID and preserves that Keybay ID while enrolling a replacement; the
+replacement may deliberately use a different RP ID or route. Removing a method
+preserves the others and does not delete its provider credential. Removing the
+final additional method leaves platform-only protection.
+
+`authRequired` and `authMethodSelectionRequired` errors can include
+`KeybayException.authMethods` hints. These are not fully authenticated store
+policy until unlock succeeds. Use them for choices, keep your expected RP
+configuration, and use `session.auth.list()` after opening for authenticated
+metadata. Passkey failures have `code == passkeyOperationFailed` and a redacted
+`passkeyCode`; record and platform failures retain their own codes.
+
+Keybay internally owns and clears Keypass results. Supply a fresh
+`PasskeyCancellation` through the credential when an operation needs cancellation.
+Do not abandon its Future or use `Future.timeout` alone: cancel, await settlement,
+and close any session returned successfully, including after its initiating UI
+has closed. Cancellation does not undo an already committed auth change.
+
+Passkey access additionally needs [Keypass's native host setup](https://github.com/danReynolds/keypass/blob/main/doc/platforms.md):
+linked libraries, signing, UI hosts and any device permissions. System-provider
+Apple/Android apps also need their domain associations. Native packaging is
+manual; the Dart dependency alone does not configure the host. The SDK remains
+Flutter-free. See the [passkey guide](https://github.com/danReynolds/keybay/blob/main/doc/sdk.md#add-passkey-protection)
+for exact selection/error rules and callbacks. The current checkout uses a pinned
+Keypass Git dependency and requires repository access to resolve it.
+
+Passkeys protect encryption material in addition to the platform root. Syncing
+a passkey does not by itself make a Keybay store portable or provide a recovery
+plan. Existing passphrase callers keep their API.
 
 See the [SDK guide](https://github.com/danReynolds/keybay/blob/main/doc/sdk.md),
 [security policy](https://github.com/danReynolds/keybay/blob/main/SECURITY.md), and

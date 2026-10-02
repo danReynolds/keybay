@@ -53,6 +53,7 @@ void main() {
       closure,
       unorderedEquals(<String>{
         'keybay',
+        'keypass',
         'archive',
         'args',
         'async',
@@ -66,12 +67,14 @@ void main() {
         'vm_service',
         'watcher',
         'collection',
+        'convert',
         'crypto',
         'cryptography',
         'dbus',
         'ffi',
         'meta',
         'petitparser',
+        'pointycastle',
         'typed_data',
         'xml',
       }),
@@ -88,7 +91,9 @@ void main() {
           'root',
           reason: 'keybay must resolve from the workspace',
         );
-      } else if (name == 'fleury' || name == 'fleury_widgets') {
+      } else if (name == 'fleury' ||
+          name == 'fleury_widgets' ||
+          name == 'keypass') {
         expect(source, 'git');
       } else {
         expect(
@@ -98,6 +103,12 @@ void main() {
         );
       }
     }
+    // Keybay's companion firewall checks the exact Keypass Git SHA/source
+    // and complete hosted closure. Keep the CLI's new verification dependency
+    // versions explicit here as well.
+    expect(byName['keypass']?['version'], '0.1.0-dev.2');
+    expect(byName['pointycastle']?['version'], '4.0.0');
+    expect(byName['convert']?['version'], '3.1.2');
   });
 
   test('runtime dependencies are exact-pinned without overrides', () {

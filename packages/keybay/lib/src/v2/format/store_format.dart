@@ -6,6 +6,9 @@
 library;
 
 import 'dart:typed_data';
+import 'dart:convert';
+
+part 'auth_package.dart';
 
 const List<int> v2StoreMagic = <int>[0x4b, 0x42, 0x56, 0x32]; // KBV2
 const int v2PrimitiveSuite = 1;
@@ -21,14 +24,19 @@ const int v2PassphrasePackageBytes = 130;
 
 /// Frozen resource bounds applied before allocation or cryptographic work.
 abstract final class V2StoreLimits {
-  static const int storeBytes = 16 * 1024 * 1024;
+  static const int legacyStoreBytes = 16 * 1024 * 1024;
+  // Suite 2 reserves the complete package allowance outside this budget so
+  // verifier metadata can grow without making a full store impossible to open.
+  static const int nonPackageStoreBytes = legacyStoreBytes;
+  static const int storeBytes = nonPackageStoreBytes + sealedPackageBytes;
   static const int providerStateBytes = 64;
-  static const int sealedPackageBytes = 4 * 1024;
+  static const int legacySealedPackageBytes = 4 * 1024;
+  static const int sealedPackageBytes = 128 * 1024;
   static const int recordCount = 4096;
   static const int recordKeyBytes = 120;
   static const int recordValueBytes = 1024 * 1024;
   static const int getManyInputs = 1024;
-  static const int getManyResultBytes = storeBytes;
+  static const int getManyResultBytes = legacyStoreBytes;
   static const int storeIdBytes = 16;
   static const int methodIdBytes = 16;
   static const int argonSaltBytes = 16;
@@ -71,17 +79,24 @@ final class V2FormatFailure implements Exception {
 
 /// Public bytes needed before the platform-sealed package can be opened.
 final class V2BootstrapCore {
-  factory V2BootstrapCore(List<int> providerState) {
+  factory V2BootstrapCore(
+    List<int> providerState, {
+    int suite = v2PrimitiveSuite,
+  }) {
+    if (suite != v2PrimitiveSuite && suite != v2MethodsSuite) {
+      throw const V2FormatFailure(V2FormatFailureCode.unsupportedSuite);
+    }
     if (providerState.length > V2StoreLimits.providerStateBytes) {
       throw const V2FormatFailure(V2FormatFailureCode.limitExceeded);
     }
     if (!_containsOnlyBytes(providerState)) _invalid();
-    return V2BootstrapCore._(Uint8List.fromList(providerState));
+    return V2BootstrapCore._(Uint8List.fromList(providerState), suite);
   }
 
-  V2BootstrapCore._(this.providerState);
+  V2BootstrapCore._(this.providerState, this.suite);
 
   final Uint8List providerState;
+  final int suite;
 }
 
 /// The bootstrap core plus its bounded, unauthenticated package locator.
@@ -91,11 +106,14 @@ final class V2Bootstrap {
     required int sealedPackageLength,
   }) {
     if (sealedPackageLength < 1 ||
-        sealedPackageLength > V2StoreLimits.sealedPackageBytes) {
+        sealedPackageLength >
+            (core.suite == v2PrimitiveSuite
+                ? V2StoreLimits.legacySealedPackageBytes
+                : V2StoreLimits.sealedPackageBytes)) {
       throw const V2FormatFailure(V2FormatFailureCode.limitExceeded);
     }
     return V2Bootstrap._(
-      core: V2BootstrapCore(core.providerState),
+      core: V2BootstrapCore(core.providerState, suite: core.suite),
       sealedPackageLength: sealedPackageLength,
     );
   }
@@ -112,7 +130,7 @@ Uint8List encodeBootstrapCore(V2BootstrapCore core) {
     ..setUint8(1, v2StoreMagic[1])
     ..setUint8(2, v2StoreMagic[2])
     ..setUint8(3, v2StoreMagic[3])
-    ..setUint16(4, v2PrimitiveSuite)
+    ..setUint16(4, core.suite)
     ..setUint32(6, core.providerState.length);
   return Uint8List.fromList(<int>[
     ...fixed.buffer.asUint8List(),
@@ -128,6 +146,7 @@ V2BootstrapCore decodeBootstrapCore(Uint8List bytes) {
   if (bytes.length != coreLength) _invalid();
   return V2BootstrapCore(
     Uint8List.sublistView(bytes, v2BootstrapCoreFixedBytes),
+    suite: ByteData.sublistView(bytes).getUint16(4),
   );
 }
 
@@ -139,7 +158,8 @@ int decodeBootstrapCoreLength(Uint8List fixedPrefix) {
   if (fixedPrefix.length != v2BootstrapCoreFixedBytes) _invalid();
   _requireMagic(fixedPrefix);
   final view = ByteData.sublistView(fixedPrefix);
-  if (view.getUint16(4) != v2PrimitiveSuite) {
+  if (view.getUint16(4) != v2PrimitiveSuite &&
+      view.getUint16(4) != v2MethodsSuite) {
     throw const V2FormatFailure(V2FormatFailureCode.unsupportedSuite);
   }
   final providerLength = view.getUint32(6);
@@ -293,6 +313,8 @@ Uint8List encodeKeyPackage(V2KeyPackage package) {
     ..add(package._storeId)
     ..add(_u64(package.epoch));
   switch (package) {
+    case V2MethodsPackage():
+      return _encodeMethodsPackage(package);
     case V2PlatformOnlyPackage():
       out
         ..addByte(v2PlatformOnlyPolicy)
@@ -315,6 +337,8 @@ V2KeyPackage decodeKeyPackage(Uint8List bytes) {
   final epoch = ByteData.sublistView(bytes).getUint64(16);
   final policy = bytes[24];
   switch (policy) {
+    case v2MethodsPolicy:
+      return _decodeMethodsPackage(bytes);
     case v2PlatformOnlyPolicy:
       if (bytes.length != v2PlatformOnlyPackageBytes) {
         _invalid();
@@ -607,7 +631,7 @@ V2StoreLayout deriveStoreLayout({
       v2BootstrapCoreFixedBytes +
       V2StoreLimits.providerStateBytes +
       v2BootstrapLengthBytes;
-  if (fileLength < 0 || fileLength > V2StoreLimits.storeBytes) _limit();
+  validateStoreLength(fileLength: fileLength, bootstrap: bootstrap);
   if (bootstrapLength < v2BootstrapCoreFixedBytes + v2BootstrapLengthBytes ||
       bootstrapLength > maximumBootstrapLength) {
     _limit();
@@ -634,12 +658,30 @@ V2StoreLayout deriveStoreLayout({
   );
 }
 
+/// Applies the suite-specific whole-file bound before package allocation.
+///
+/// Suite 1 keeps its frozen total limit. Suite 2 reserves package headroom;
+/// bootstrap, records, manifest and trailer must fit the non-package budget.
+void validateStoreLength({
+  required int fileLength,
+  required V2Bootstrap bootstrap,
+}) {
+  if (fileLength < 0 || fileLength > V2StoreLimits.storeBytes) _limit();
+  if (bootstrap.core.suite == v2PrimitiveSuite) {
+    if (fileLength > V2StoreLimits.legacyStoreBytes) _limit();
+  } else if (fileLength - bootstrap.sealedPackageLength >
+      V2StoreLimits.nonPackageStoreBytes) {
+    _limit();
+  }
+}
+
 /// Derives frame offsets from authenticated manifest lengths.
 List<V2FrameRange> deriveFrameRanges(
   V2Manifest manifest, {
   required int frameRegionLength,
 }) {
-  if (frameRegionLength < 0 || frameRegionLength > V2StoreLimits.storeBytes) {
+  if (frameRegionLength < 0 ||
+      frameRegionLength > V2StoreLimits.nonPackageStoreBytes) {
     _limit();
   }
   var offset = 0;

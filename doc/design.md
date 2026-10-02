@@ -2,13 +2,14 @@
 
 This is the concise security model for the V2 implementation. The complete
 normative decisions, format ownership rules, failure semantics, and milestone
-gates are in [RFC 0001](rfcs/0001-per-application-stores.md).
+gates are in [RFC 0001](rfcs/0001-per-application-stores.md), amended for
+passkey methods by [RFC 0003](rfcs/0003-passkey-methods.md).
 
 ## Security objective
 
 Keybay protects local application secrets at rest without inventing a Keybay
 account or service. Each host application gets one encrypted store. Platform
-protection is always required, and an optional passphrase can make possession
+protection is always required, and optional credential methods can make possession
 of platform-accessible artifacts insufficient to recover the store key.
 
 The design is intentionally one-way:
@@ -39,7 +40,7 @@ Keybay is designed to resist:
 - accidental cross-application namespace collisions;
 - corruption, wrong keys, frame substitution, truncation, and malformed input;
 - lost updates and split initialization across processes; and
-- recovery of a passphrase-protected store from platform artifacts alone.
+- recovery of a credential-protected store from platform artifacts alone.
 
 It does not claim to resist:
 
@@ -67,7 +68,7 @@ matching executable or retained qualification evidence.
 | Invariant | Guarantee |
 |---|---|
 | `KB-INV-001` | Keybay-managed persistent data artifacts do not contain plaintext record values or passphrases. |
-| `KB-INV-002` | Copying the encrypted store without its separately platform-protected root is insufficient to recover records; configured passphrase protection additionally requires that passphrase. |
+| `KB-INV-002` | Copying the encrypted store without its separately platform-protected root is insufficient to recover records; additional methods require any one configured credential as well. |
 | `KB-INV-003` | Missing identity/key material, unsupported versions, corruption, and authentication failure fail closed without returning plaintext or silently creating replacement state. |
 | `KB-INV-004` | Process, lock, reboot, reinstall, backup, transfer, and restore behavior matches the documented policy for the qualified platform configuration. |
 | `KB-INV-005` | Keybay reports only protection properties established by the running platform and never infers hardware backing from an API or provider name. |
@@ -107,29 +108,53 @@ file, fsyncs it, and atomically renames it. Store-key rotation re-encrypts every
 frame. V2 deliberately has no journal, append log, tombstones, free list,
 compaction, Merkle tree, or in-place mutation.
 
-All lengths and counts are bounded before allocation. Current top-level limits
-include a 16 MiB file, 4,096 records, 120-byte record names, and 1 MiB record
-values.
+All lengths and counts are bounded before allocation. Limits include 4,096
+records, 120-byte record names, and 1 MiB record values. Suite 1 retains its
+16 MiB total-file cap. Suite 2 reserves up to 128 KiB for its sealed key package
+outside a 16 MiB budget for the other file bytes, so growing verification
+metadata cannot lock a full vault. The physical cap is 16 MiB plus 128 KiB;
+the aggregate plaintext read limit remains 16 MiB.
 
-## Key package and passphrases
+## Key package and additional methods
 
 The platform root seals the authoritative key package. With no additional
-method, that package has one platform-only route to `Kstore`. Adding a
-passphrase transactionally replaces it with a package that requires both the
-platform root and the passphrase-derived key.
+method, that package has one platform-only route to `Kstore`. Adding a method
+transactionally replaces it with a package that requires the platform root
+and any one configured passphrase or passkey. Methods are alternatives, not
+multiple factors required together. The limit is eight methods, including at
+most one passphrase.
 
 V2 passphrase profile 1 uses Argon2id v1.3 with 64 MiB, three iterations, four
 lanes, a random 16-byte salt, and a 32-byte result. Derivations are serialized
 per isolate so concurrent opens cannot multiply the 64 MiB working set there.
-The package format allows only zero or one passphrase method. A future hardware
-method may allow multiple instances, but methods are alternatives unless a
-future policy explicitly introduces multi-factor authentication.
+Passkeys use the verified repeatable 32-byte material returned by Keypass's
+system or hardware route. Biometric/presence UI alone is never key material.
+
+Each method's credential output derives a private X25519 key through
+domain-separated HKDF-SHA256. The package stores only its public key and an
+RFC 9180 HPKE envelope of `Kstore` (X25519 / HKDF-SHA256 /
+ChaCha20-Poly1305). No passphrase, PRF output, private key, or reusable
+credential-equivalent secret is persisted. The complete package is bound to
+the authenticated manifest. A provisional key recovered through a method is
+not returned until that manifest and the current package revision are checked.
+
+An authenticated session can rotate `Kstore` and encrypt it to surviving
+public keys without prompting their credentials. Removal rotates all records;
+the removed credential plus an old snapshot cannot derive another method's
+private key and open later generations. Old snapshots themselves remain
+recoverable with their old credentials; this is not rollback protection.
+
+New protected stores use bootstrap suite 2 and policy 2. Suite 1 singleton
+passphrase stores migrate transactionally on a successful authenticated open;
+wrong credentials cannot migrate them. The new package cap is 128 KiB while
+suite 1 retains its 4 KiB cap. Older clients fail closed on suite 2.
 
 Credential APIs accept mutable bytes. Keybay snapshots caller input
 synchronously and clears its owned copy after the operation. Sessions clear
 their owned store key and temporary plaintext on close. These are useful
 best-effort reductions in lifetime, not a claim that a garbage-collected Dart
-process can prove complete memory erasure.
+process can prove complete memory erasure. The pinned X25519 implementation
+also owns temporary copies that Keybay cannot overwrite.
 
 ## Identity and provider binding
 
@@ -226,11 +251,18 @@ is passed internally to providers; it adds no public interaction option.
 
 ## Supply chain and evidence
 
-Runtime dependencies are exact-pinned. CI freezes the resolved hosted closure,
+Runtime dependencies are pinned. CI freezes the reviewed closure,
 runs crypto vectors and format/adversarial tests, exercises real provider APIs
 where available, and separates simulator/emulator evidence from claims about
 physical hardware. A platform/API name alone is not evidence of secure hardware
 mediation.
+
+The development integration pins Keypass to its reviewed Git commit; its
+PointyCastle dependency is used for passkey verification. Keybay's HPKE uses
+the already pinned `cryptography` primitives and published/independent vectors.
+A hosted Keypass release is required before publishing Keybay; the Git pin
+does not satisfy the publication gate. Keypass adapter tests and previously
+recorded device probes are not end-to-end qualification of a Keybay vault.
 
 The current physical and lifecycle qualification inventory is in
 [device-security-suite.md](device-security-suite.md). The separate Claude review

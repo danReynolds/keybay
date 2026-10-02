@@ -34,9 +34,24 @@ CliFailure failureForKeybay(KeybayException error) {
       'error: the platform-protected store key is no longer usable.',
       'Restore the matching platform state or deliberately reset Keybay; existing values cannot be recovered without it.',
     ],
+    KeybayErrorCode.authRequired
+        when error.authMethods.whereType<PassphraseMethod>().isEmpty &&
+            error.authMethods.whereType<PasskeyMethod>().isNotEmpty =>
+      <String>[
+        'error: this CLI does not yet support passkey unlock.',
+        'Use a build of this application that supports the configured method.',
+      ],
     KeybayErrorCode.authRequired || KeybayErrorCode.unlockFailed => <String>[
       'error: Keybay authentication failed.',
-      'Check the passphrase and retry.',
+      'Use a configured credential to reopen the store.',
+    ],
+    KeybayErrorCode.authMethodSelectionRequired => <String>[
+      'error: more than one passkey method matches this request.',
+      'Select a configured authentication method and retry.',
+    ],
+    KeybayErrorCode.passkeyOperationFailed => <String>[
+      'error: the passkey operation did not complete.',
+      'Check the passkey provider or connected hardware and retry deliberately.',
     ],
     KeybayErrorCode.protectionMismatch => <String>[
       'error: the supplied credential does not match the store protection.',

@@ -12,12 +12,12 @@ import 'package:test/test.dart';
 import 'support/v2_store_crash_worker.dart';
 import 'support/v2_test_keybay.dart' show FastTestPassphraseDeriver;
 
-// Real engine and POSIX locks; disposable provider and fast test KDF. Unlike
-// the memory fake's immediate busy result, a native contender waits for release.
+// Real engine and POSIX locks; disposable provider and fast test KDF. User
+// interaction/KDF preparation must not hold the lock needed by record writers.
 void main() {
   for (final failRotation in [false, true]) {
     test(
-      'waiting writer respects ${failRotation ? 'aborted' : 'committed'} auth rotation',
+      'record writes survive ${failRotation ? 'aborted' : 'committed'} auth preparation',
       () async {
         final root = Directory(
           Directory.systemTemp
@@ -53,27 +53,18 @@ void main() {
 
         var writerFinished = false;
         final writing = peer
-            .set('contender', 'accepted-after-abort')
+            .set('contender', 'accepted-during-preparation')
             .whenComplete(() => writerFinished = true);
-        final writerResult = expectLater(
-          writing,
-          failRotation
-              ? completes
-              : throwsA(_failure(KeybayErrorCode.staleSession)),
-        );
-        // Drain the operation queue so the contender reaches the native lock
-        // while rotation is paused, without a timing-dependent sleep.
-        await Future<void>.delayed(Duration.zero);
-        expect(writerFinished, isFalse);
+        // This must finish BEFORE releasing the paused credential derivation.
+        // The timeout is a deadlock guard, not a scheduling assumption.
+        await writing.timeout(const Duration(seconds: 10));
+        expect(writerFinished, isTrue);
         deriver.release();
-        await Future.wait([rotationResult, writerResult]);
+        await rotationResult;
 
         expect(debugStoreSessionKeyIsCleared(peer), !failRotation);
         expect(await owner.get('stable'), 'acknowledged');
-        expect(
-          await owner.get('contender'),
-          failRotation ? 'accepted-after-abort' : isNull,
-        );
+        expect(await owner.get('contender'), 'accepted-during-preparation');
         final recovered = await engine.open(
           credential: failRotation ? null : crashPhrase('replacement'),
         );
@@ -81,6 +72,7 @@ void main() {
         expect(recovered.wasInitialized, isFalse);
         expect(await recovered.auth.list(), hasLength(failRotation ? 0 : 1));
         expect(await recovered.get('stable'), 'acknowledged');
+        expect(await recovered.get('contender'), 'accepted-during-preparation');
         await recovered.set('after', 'still-writable');
         await engine.reset();
         expect(
@@ -94,6 +86,63 @@ void main() {
       },
     );
   }
+
+  test('another engine auth change rejects a prepared stale policy', () async {
+    final root = Directory(
+      Directory.systemTemp
+          .createTempSync('keybay-rotation-policy-cas-')
+          .resolveSymbolicLinksSync(),
+    );
+    addTearDown(() => root.deleteSync(recursive: true));
+    for (final name in ['store', 'provider']) {
+      final directory = Directory('${root.path}/$name')..createSync();
+      expect(Process.runSync('chmod', ['700', directory.path]).exitCode, 0);
+    }
+    final deriver = _PausedDeriver(failRotation: false);
+    final firstEngine = V2StoreEngine(
+      CrashHost(root),
+      passphraseDeriver: deriver,
+    );
+    final secondEngine = V2StoreEngine(
+      CrashHost(root),
+      passphraseDeriver: FastTestPassphraseDeriver(),
+    );
+    final first = await firstEngine.open();
+    addTearDown(first.close);
+    final second = await secondEngine.open();
+    addTearDown(second.close);
+    addTearDown(deriver.release);
+    await first.set('stable', 'preserved');
+
+    final pending = first.auth.add(crashPhrase('discarded'));
+    final conflict = expectLater(
+      pending,
+      throwsA(_failure(KeybayErrorCode.storeStateConflict)),
+    );
+    await deriver.entered.future;
+
+    // A separate runtime cannot invalidate firstEngine's in-memory generation;
+    // only the prefix CAS detects this committed policy change.
+    await second.auth
+        .add(crashPhrase('winning'))
+        .timeout(const Duration(seconds: 10));
+    await second.set('concurrent', 'winning-generation');
+    deriver.release();
+    await conflict;
+
+    final reopened = await secondEngine.open(
+      credential: crashPhrase('winning'),
+    );
+    addTearDown(reopened.close);
+    expect(await reopened.get('stable'), 'preserved');
+    expect(await reopened.get('concurrent'), 'winning-generation');
+    expect(await reopened.auth.list(), hasLength(1));
+    await expectLater(
+      secondEngine.open(credential: crashPhrase('discarded')),
+      throwsA(_failure(KeybayErrorCode.unlockFailed)),
+    );
+    expect(File('${root.path}/store/keybay.v2.stage').existsSync(), isFalse);
+  });
 }
 
 final class _PausedDeriver implements V2PassphraseDeriver {
