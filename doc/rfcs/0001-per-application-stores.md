@@ -496,7 +496,7 @@ The state machine is normative:
 
 | Existing state | `Keybay.open()` | `Keybay.open(credential: PassphraseCredential(...))` |
 |---|---|---|
-| Totally absent | Atomically initialize platform-only and open | Atomically initialize passphrase-protected and open |
+| Totally absent | Atomically initialize platform-only and open | Throw `StoreNotFound` without enrollment, derivation, or root creation |
 | Platform-only | Open | Throw `ProtectionMismatch` without mutation |
 | Passphrase-protected | Throw `AuthRequired` | Authenticate and open |
 | Live file plus fixed staging artifact | Apply the matching live-store row; only after bootstrap and key-package authentication succeeds, durably discard staging under the same lock and open. Otherwise fail closed without cleanup. | Apply the matching live-store row; only after bootstrap and key-package authentication succeeds, durably discard staging under the same lock and open. Otherwise fail closed without cleanup. |
@@ -515,9 +515,13 @@ silently adds a passphrase to a platform-only store; protection changes occur
 only through an already authorized session.
 
 An interactive application confirms a new passphrase before calling
-`Keybay.open(credential: ...)`. Keybay owns no passphrase confirmation, terminal,
-Flutter route, biometric, or hardware UI. It receives authentication material
-from its host and performs derivation, verification, and storage transactions.
+`session.auth.add(PassphraseCredential(...))`. Credential-based open only
+authenticates existing protection; a missing live file without staging returns
+`StoreNotFound` before provider access, including when a platform root remains.
+Enrollment is never inferred from a failed unlock. Keybay owns no passphrase
+confirmation, terminal, Flutter route, biometric, or hardware UI. It receives
+authentication material from its host and performs derivation, verification,
+and storage transactions.
 
 `PassphraseCredential` borrows the caller's mutable bytes without copying them.
 Passing it to `open`, `auth.add`, or `auth.update` synchronously snapshots the

@@ -35,7 +35,14 @@ part 'auth_metadata_commit.dart';
 /// The runtime selects only a qualified platform profile. It never probes V1
 /// state, migrates prior storage, or falls back to process memory.
 abstract final class Keybay {
-  /// Opens or initializes the current application's store.
+  /// Opens the current application's store.
+  ///
+  /// Without a credential, fully absent state is initialized platform-only.
+  /// A supplied credential only authenticates an existing store; it never
+  /// enrolls a method. If the encrypted file is absent, returns
+  /// [KeybayErrorCode.storeNotFound].
+  /// Enroll protection explicitly with [KeybayAuthManager.add] before writing
+  /// records that should require it.
   /// Trusted operating-system/provider UI may participate in unlocking it.
   static Future<KeybaySession> open({KeybayCredential? credential}) =>
       _withCredential(credential, _productionRuntime._open);
@@ -81,6 +88,7 @@ enum KeybayErrorCode {
   platformOperationFailed,
   platformKeyInvalidated,
   storageOperationFailed,
+  storeNotFound,
   entropyUnavailable,
   authRequired,
   protectionMismatch,
@@ -191,13 +199,23 @@ abstract interface class KeybayAuthManager {
   /// Lists the authenticated unlock policy without presenting provider UI.
   Future<List<AuthMethod>> list();
 
-  /// Adds an unlock method; trusted operating-system/provider UI is permitted.
+  /// Adds an alternative unlock method; provider UI is permitted.
+  ///
+  /// At most one passphrase is allowed; adding a second fails with
+  /// [KeybayErrorCode.authMethodAlreadyConfigured]. Multiple passkeys may share
+  /// an RP ID and route. Adding never replaces an existing method.
   Future<AuthMethod> add(KeybayCredential credential);
 
-  /// Updates an unlock method; trusted operating-system/provider UI is permitted.
+  /// Replaces the passphrase or the passkey selected by its method ID.
+  ///
+  /// The existing method must exist and its ID is retained. Provider UI is
+  /// permitted, including creation of a replacement passkey.
   Future<AuthMethod> update(KeybayCredential replacement);
 
-  /// Removes an unlock method; trusted operating-system/provider UI is permitted.
+  /// Removes one alternative by ID; provider UI is permitted.
+  ///
+  /// Removing the final method returns to platform-only protection. Removing a
+  /// passkey method does not delete the credential from its provider.
   Future<void> remove(String id);
 }
 

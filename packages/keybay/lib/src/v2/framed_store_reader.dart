@@ -76,17 +76,13 @@ final class V2StoreEngine {
               hadStaging = artifacts.hasTransactionArtifacts;
               return;
             }
-            if (credential?.passkey?.methodId != null) {
+            if (credential != null) {
               throw _error(
-                KeybayErrorCode.invalidAuthInput,
-                'Creation cannot select an existing method.',
+                KeybayErrorCode.storeNotFound,
+                'No encrypted store is available to authenticate.',
               );
             }
-            final initialized = await _initializeStore(
-              host,
-              transaction,
-              credential,
-            );
+            final initialized = await _initializeStore(host, transaction);
             storeKey = initialized.storeKey;
             storeId = initialized.storeId;
             session = V2StoreSession._(
@@ -95,7 +91,7 @@ final class V2StoreEngine {
               storeKey: storeKey!,
               storeId: storeId!,
               epoch: initialized.epoch,
-              authMethods: initialized.authMethods,
+              authMethods: const [],
               wasInitialized: true,
               runtimeGeneration: openingGeneration,
               entropy: _entropy,

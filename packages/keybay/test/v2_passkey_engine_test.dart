@@ -23,13 +23,58 @@ import 'support/v2_test_keybay.dart';
 const _rpId = 'vault.example.com';
 
 void main() {
+  for (final credential in <KeybayCredential>[
+    _phrase(),
+    _passkey(PasskeyRoute.system),
+    _passkey(PasskeyRoute.hardware),
+    _passkey(PasskeyRoute.system, methodId: _missingId),
+    _passkey(PasskeyRoute.hardware, methodId: _missingId),
+  ]) {
+    test('$credential cannot initialize an absent store', () async {
+      final env = _Environment();
+      addTearDown(env.dispose);
+      await _failure(
+        env.open(credential: credential),
+        KeybayErrorCode.storeNotFound,
+      );
+      expect(env.provider.operationCount, 0);
+      expect(env.registry.rootCount, 0);
+      expect(env.files.hasLiveFile, isFalse);
+      expect(env.files.hasTransactionArtifacts, isFalse);
+
+      // The same restriction holds after explicit reset.
+      await env.open();
+      await env.engine.reset();
+      await _failure(
+        env.open(credential: credential),
+        KeybayErrorCode.storeNotFound,
+      );
+      expect(env.registry.rootCount, 0);
+      expect(env.files.hasLiveFile, isFalse);
+      expect(env.provider.operationCount, 0);
+
+      // Nor may a missing file overwrite a retained platform root.
+      final owner = await env.open();
+      await owner.close();
+      env.files.removeLiveBytes();
+      await _failure(
+        env.open(credential: credential),
+        KeybayErrorCode.storeNotFound,
+      );
+      expect(env.registry.rootCount, 1);
+      expect(env.files.hasLiveFile, isFalse);
+      expect(env.provider.operationCount, 0);
+      await _failure(env.open(), KeybayErrorCode.storeStateConflict);
+    });
+  }
+
   for (final route in PasskeyRoute.values) {
     test(
-      '$route creation and exact reopen retain mandatory platform root',
+      '$route enrollment and exact reopen retain mandatory platform root',
       () async {
         final env = _Environment();
         addTearDown(env.dispose);
-        final created = await env.open(credential: _passkey(route));
+        final created = await env.enroll(_passkey(route));
         expect(created.wasInitialized, isTrue);
         await created.set('service/token', 'test value');
         final method = (await created.auth.list()).single as PasskeyMethod;
@@ -85,7 +130,7 @@ void main() {
     () async {
       final env = _Environment();
       addTearDown(env.dispose);
-      final owner = await env.open(credential: _phrase());
+      final owner = await env.enroll(_phrase());
       await _writeRecords(owner);
       final phrase = (await owner.auth.list()).single as PassphraseMethod;
       var peer = await env.open(credential: _phrase());
@@ -195,7 +240,7 @@ void main() {
     () async {
       final env = _Environment();
       addTearDown(env.dispose);
-      final owner = await env.open(credential: _phrase());
+      final owner = await env.enroll(_phrase());
       final phrase = (await owner.auth.list()).single;
       final first = await owner.auth.add(_passkey(PasskeyRoute.system));
       final second = await owner.auth.add(_passkey(PasskeyRoute.system));
@@ -271,7 +316,8 @@ void main() {
       for (final credential in <KeybayCredential?>[null, _phrase()]) {
         final env = _Environment();
         addTearDown(env.dispose);
-        final original = await env.open(credential: credential);
+        final original = await env.open();
+        if (credential != null) await original.auth.add(credential);
         await original.set('service/token', 'retained');
         await original.close();
         final before = await _copyLive(env.files);
@@ -320,11 +366,11 @@ void main() {
         env.open(
           credential: _passkey(PasskeyRoute.system, methodId: _missingId),
         ),
-        KeybayErrorCode.invalidAuthInput,
+        KeybayErrorCode.storeNotFound,
       );
       expect(env.files.hasLiveFile, isFalse);
       expect(env.registry.rootCount, 0);
-      final owner = await env.open(credential: _phrase());
+      final owner = await env.enroll(_phrase());
       final phrase = (await owner.auth.list()).single;
       final before = await _copyLive(env.files);
       await _failure(
@@ -357,7 +403,7 @@ void main() {
     () async {
       final env = _Environment();
       addTearDown(env.dispose);
-      final created = await env.open(credential: _passkey(PasskeyRoute.system));
+      final created = await env.enroll(_passkey(PasskeyRoute.system));
       await _writeRecords(created);
       final method = (await created.auth.list()).single;
       await created.close();
@@ -393,7 +439,7 @@ void main() {
     () async {
       final env = _Environment();
       addTearDown(env.dispose);
-      final owner = await env.open(credential: _passkey(PasskeyRoute.hardware));
+      final owner = await env.enroll(_passkey(PasskeyRoute.hardware));
       final operations = env.provider.operationCount;
       await owner.set('one', 'first');
       await owner.setBytes('two', Uint8List.fromList([2, 3]));
@@ -422,7 +468,7 @@ void main() {
     () async {
       final env = _Environment();
       addTearDown(env.dispose);
-      final owner = await env.open(credential: _passkey(PasskeyRoute.system));
+      final owner = await env.enroll(_passkey(PasskeyRoute.system));
       await owner.set('service/token', 'retained');
       final method = (await owner.auth.list()).single;
       await owner.close();
@@ -451,7 +497,7 @@ void main() {
     () async {
       final env = _Environment();
       addTearDown(env.dispose);
-      final owner = await env.open(credential: _passkey(PasskeyRoute.hardware));
+      final owner = await env.enroll(_passkey(PasskeyRoute.hardware));
       await owner.close();
       final before = await _copyLive(env.files);
       env.provider.nextFailure = PasskeyErrorCode.pinInvalid;
@@ -475,7 +521,7 @@ void main() {
     () async {
       final env = _Environment();
       addTearDown(env.dispose);
-      final owner = await env.open(credential: _passkey(PasskeyRoute.system));
+      final owner = await env.enroll(_passkey(PasskeyRoute.system));
       await owner.set('service/token', 'retained');
       final method = (await owner.auth.list()).single;
       await _forgeLabelWithPlatformRoot(env, 'Forged!');
@@ -514,7 +560,7 @@ void main() {
         final env = _Environment();
         addTearDown(env.dispose);
         env.provider.counterless = true;
-        final owner = await env.open(credential: _passkey(PasskeyRoute.system));
+        final owner = await env.enroll(_passkey(PasskeyRoute.system));
         final passkey = (await owner.auth.list()).single;
         await owner.auth.add(_phrase());
         await owner.set('service/token', 'retained');
@@ -555,7 +601,7 @@ void main() {
     () async {
       final env = _Environment();
       addTearDown(env.dispose);
-      final owner = await env.open(credential: _phrase());
+      final owner = await env.enroll(_phrase());
       await _writeRecords(owner);
       final writer = await env.open(credential: _phrase(), freshEngine: true);
       final gate = _CeremonyGate();
@@ -595,7 +641,7 @@ void main() {
     () async {
       final env = _Environment();
       addTearDown(env.dispose);
-      final owner = await env.open(credential: _phrase());
+      final owner = await env.enroll(_phrase());
       await owner.set('service/token', 'retained');
       final peer = await env.open(credential: _phrase(), freshEngine: true);
       final gate = _CeremonyGate();
@@ -644,7 +690,7 @@ void main() {
     () async {
       final env = _Environment();
       addTearDown(env.dispose);
-      final owner = await env.open(credential: _phrase());
+      final owner = await env.enroll(_phrase());
       await owner.set('service/token', 'retained');
       final gate = _CeremonyGate();
       env.provider.afterNextSecret = () async {
@@ -673,7 +719,7 @@ void main() {
   );
 
   test(
-    'pre-cancelled enrollment creates no root, store, or native operation',
+    'pre-cancelled open creates no root, store, or native operation',
     () async {
       final env = _Environment();
       addTearDown(env.dispose);
@@ -696,7 +742,7 @@ void main() {
     () async {
       final env = _Environment();
       addTearDown(env.dispose);
-      final owner = await env.open(credential: _passkey(PasskeyRoute.system));
+      final owner = await env.enroll(_passkey(PasskeyRoute.system));
       await owner.set('service/token', 'retained');
       await owner.close();
       final before = await _copyLive(env.files);
@@ -724,7 +770,7 @@ void main() {
     () async {
       final env = _Environment();
       addTearDown(env.dispose);
-      final owner = await env.open(credential: _phrase());
+      final owner = await env.enroll(_phrase());
       await _writeRecords(owner);
       final peer = await env.open(credential: _phrase());
       final before = await _copyLive(env.files);
@@ -837,6 +883,12 @@ final class _Environment {
       credential: credential,
     );
     _sessions.add(session);
+    return session;
+  }
+
+  Future<V2StoreSession> enroll(KeybayCredential credential) async {
+    final session = await open();
+    await session.auth.add(credential);
     return session;
   }
 

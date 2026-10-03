@@ -83,28 +83,36 @@ After enrollment, `Keybay.open()` returns `authRequired`; reopen with a
 `PassphraseCredential`. Closing the session clears Keybay's in-memory store-key
 buffer. The encrypted file never becomes plaintext.
 
-A store supports one passphrase and multiple passkey methods. These are
+A store supports zero or one passphrase and multiple passkey methods (eight
+total methods maximum). Adding a second passphrase throws
+`authMethodAlreadyConfigured`; use `auth.update` to replace it. These are
 alternative unlock methods on top of the mandatory platform root; configuring
 both does not require the user to present both.
 
 ## Additional passkey protection
 
 Use the same credential API for OS-provider passkeys and physical FIDO2 keys.
-For an absent store, or one with a matching configured passkey:
+Configure the RP once and enroll explicitly on a new or platform-only store:
 
 ```dart
-final session = await Keybay.open(
-  credential: const PasskeyCredential.system(
-    rpId: 'vault.example.com',
-    label: 'Personal vault',
-  ),
+const systemPasskey = PasskeyCredential.system(
+  rpId: 'vault.example.com',
+  label: 'Personal vault',
 );
+final session = await Keybay.open();
 try {
+  await session.auth.add(systemPasskey);
   await session.set('api-token', 's3cr3t');
 } finally {
   await session.close();
 }
 ```
+
+Later, `Keybay.open(credential: systemPasskey)` authenticates using the saved
+method. Credential-based open never enrolls protection, for either passphrases
+or passkeys. If the encrypted file is missing it fails with `storeNotFound`
+without creating a root or invoking the passkey provider. Await enrollment
+success before writing records that should require the added protection.
 
 To add a passkey to an existing store, first open it using its current
 protection, then call `session.auth.add`:
@@ -133,7 +141,7 @@ requiring a website. It does not change Keybay's application identity or store.
 `displayName` defaults to the RP ID; `label` defaults to `Keybay vault` and is used
 when enrolling or replacing a method. Construction presents no UI.
 
-Omit `methodId` when adding a passkey or initializing an absent store. Unlock
+Omit `methodId` when adding a passkey. Unlock
 may omit it only when one method matches the requested RP ID and route;
 otherwise select an exact stored ID. A passkey `auth.update` requires its
 existing ID and preserves that Keybay ID while enrolling a replacement; the

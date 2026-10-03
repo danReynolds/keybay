@@ -28,18 +28,17 @@ import 'package:keybay/src/v2/platform_protector.dart';
 
 void main() {
   group('M6 persistent open policy', () {
-    test('protected first use implements the strict open matrix', () async {
+    test('explicit enrollment implements the strict open matrix', () async {
       final deriver = _FastPassphraseDeriver();
       final environment = _Environment(deriver: deriver);
       addTearDown(environment.dispose);
 
       final original = Uint8List.fromList(<int>[1, 2, 3, 4]);
       final phrase = Uint8List.fromList(original);
-      final opening = environment.engine.open(
-        credential: PassphraseCredential(phrase: phrase),
-      );
+      final initialized = await environment.engine.open();
+      final adding = initialized.auth.add(PassphraseCredential(phrase: phrase));
       phrase.fillRange(0, phrase.length, 0);
-      final initialized = await opening;
+      await adding;
       addTearDown(initialized.close);
 
       expect(initialized.wasInitialized, isTrue);
@@ -514,29 +513,32 @@ void main() {
   });
 
   group('M6 KDF failure atomicity', () {
-    test('protected first-use failure creates no root or file', () async {
-      final deriver = _FastPassphraseDeriver()
-        ..nextFailure = const V2PassphraseDerivationFailure(
-          V2PassphraseDerivationFailureCode.operationFailed,
+    test(
+      'credential open without a store never derives or creates state',
+      () async {
+        final deriver = _FastPassphraseDeriver()
+          ..nextFailure = const V2PassphraseDerivationFailure(
+            V2PassphraseDerivationFailureCode.operationFailed,
+          );
+        final environment = _Environment(deriver: deriver);
+        addTearDown(environment.dispose);
+        final callerPhrase = Uint8List.fromList(<int>[1, 2, 3]);
+        final opening = environment.engine.open(
+          credential: PassphraseCredential(phrase: callerPhrase),
         );
-      final environment = _Environment(deriver: deriver);
-      addTearDown(environment.dispose);
-      final callerPhrase = Uint8List.fromList(<int>[1, 2, 3]);
-      final opening = environment.engine.open(
-        credential: PassphraseCredential(phrase: callerPhrase),
-      );
-      callerPhrase.fillRange(0, callerPhrase.length, 0);
+        callerPhrase.fillRange(0, callerPhrase.length, 0);
 
-      await expectLater(
-        opening,
-        throwsA(_keybayFailure(KeybayErrorCode.storageOperationFailed)),
-      );
+        await expectLater(
+          opening,
+          throwsA(_keybayFailure(KeybayErrorCode.storeNotFound)),
+        );
 
-      expect(deriver.lastBorrowedInputIsCleared, isTrue);
-      expect(environment.registry.rootCount, 0);
-      expect(environment.files.hasLiveFile, isFalse);
-      expect(environment.files.hasTransactionArtifacts, isFalse);
-    });
+        expect(deriver.seenPassphrases, isEmpty);
+        expect(environment.registry.rootCount, 0);
+        expect(environment.files.hasLiveFile, isFalse);
+        expect(environment.files.hasTransactionArtifacts, isFalse);
+      },
+    );
 
     test('auth.add failure preserves platform-only state exactly', () async {
       final deriver = _FastPassphraseDeriver();
@@ -794,9 +796,8 @@ void main() {
   test('reset needs no passphrase and removes a protected store', () async {
     final environment = _Environment();
     addTearDown(environment.dispose);
-    final protected = await environment.engine.open(
-      credential: _credential(<int>[8, 6, 7, 5, 3, 0, 9]),
-    );
+    final protected = await environment.engine.open();
+    await protected.auth.add(_credential(<int>[8, 6, 7, 5, 3, 0, 9]));
     addTearDown(protected.close);
     await protected.set('service/token', 'secret');
 

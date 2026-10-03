@@ -15,8 +15,9 @@ void main() {
       () async {
         final provider = TestPasskeyProvider();
         final store = V2TestKeybay(keypassClient: provider.client);
-        final seeded = await store.open(
-          credential: const PasskeyCredential.system(rpId: 'vault.example.com'),
+        final seeded = await store.open();
+        await seeded.auth.add(
+          const PasskeyCredential.system(rpId: 'vault.example.com'),
         );
         await seeded.set('service/token', 'retained');
         if (withPassphrase) {

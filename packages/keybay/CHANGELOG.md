@@ -5,6 +5,11 @@
 Prepared V2 release; not yet published. This is a breaking API and storage-format
 change from 0.1.x. Existing stores are not read, migrated, or removed by V2.
 
+- Make `open(credential:)` authentication-only for passphrases and passkeys.
+  A missing encrypted file now returns `storeNotFound` without enrolling or
+  creating a root. Initialize empty platform-only state with `open()`, then
+  explicitly enroll through `session.auth.add` before writing protected values.
+
 - Integrate Keypass system and hardware credentials through `Keybay.open` and
   `session.auth`. Keep mandatory platform protection and the existing
   passphrase API; support up to eight alternative methods.

@@ -230,6 +230,7 @@ final class Vault extends ChangeNotifier {
 
 /// A short, user-facing description of a Keybay failure.
 String describe(KeybayErrorCode code) => switch (code) {
+  KeybayErrorCode.storeNotFound => 'No saved store is available to unlock.',
   KeybayErrorCode.unlockFailed => 'Wrong passphrase.',
   KeybayErrorCode.invalidAuthInput => 'That passphrase is not allowed.',
   KeybayErrorCode.platformProtectorLocked =>

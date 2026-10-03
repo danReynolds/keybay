@@ -27,20 +27,17 @@ final class _InitializedStore {
     required this.storeId,
     required this.storeKey,
     required this.epoch,
-    required this.authMethods,
   });
 
   final Uint8List storeId;
   final Uint8List storeKey;
   final int epoch;
-  final List<AuthMethod> authMethods;
 }
 
 extension _V2PlatformInitialization on V2StoreEngine {
   Future<_InitializedStore> _initializeStore(
     ResolvedHost host,
     StoreTransaction transaction,
-    _CredentialSnapshot? credential,
   ) async {
     Uint8List? storeId;
     Uint8List? storeKey;
@@ -49,7 +46,6 @@ extension _V2PlatformInitialization on V2StoreEngine {
     V2Manifest? manifest;
     PlatformRootLease? lease;
     _InitializedStore? result;
-    List<AuthMethod> authMethods = const [];
     Object? primaryFailure;
     StackTrace? primaryStack;
 
@@ -58,33 +54,14 @@ extension _V2PlatformInitialization on V2StoreEngine {
       storeKey = _entropy.randomBytes(V2StoreLimits.storeKeyBytes);
       final manifestNonce = _entropy.randomBytes(V2StoreLimits.nonceBytes);
 
-      if (credential == null) {
-        keyPackage = V2PlatformOnlyPackage(
-          storeId: storeId,
-          epoch: _initialStoreEpoch,
-          storeKey: storeKey,
-        );
-      } else {
-        final method = await _enrollMethod(
-          engine: this,
-          credential: credential,
-          storeId: storeId,
-          epoch: _initialStoreEpoch,
-          storeKey: storeKey,
-          methodId: _entropy.randomBytes(V2StoreLimits.methodIdBytes),
-        );
-        keyPackage = V2MethodsPackage(
-          storeId: storeId,
-          epoch: _initialStoreEpoch,
-          methods: [method],
-        );
-        authMethods = _describePackage(keyPackage);
-      }
+      keyPackage = V2PlatformOnlyPackage(
+        storeId: storeId,
+        epoch: _initialStoreEpoch,
+        storeKey: storeKey,
+      );
       packagePlaintext = encodeKeyPackage(keyPackage);
 
-      // Finish every fallible entropy/KDF step before creating provider state.
-      // A derivation failure therefore leaves no root-only partial store.
-      _checkPasskeyCancelled(credential);
+      // Obtain the initialization entropy before creating provider state.
       final creation = await host.protector.createOnly(
         interaction: PlatformInteraction.allowed,
       );
@@ -103,7 +80,7 @@ extension _V2PlatformInitialization on V2StoreEngine {
       final providerState = lease.providerState.copyBytes();
       final bootstrapCore = V2BootstrapCore(
         providerState,
-        suite: credential == null ? v2PrimitiveSuite : v2MethodsSuite,
+        suite: v2PrimitiveSuite,
       );
       final domain = host.binding.domain.copyBytes();
       final packageAad = encodePlatformPackageAad(
@@ -179,7 +156,6 @@ extension _V2PlatformInitialization on V2StoreEngine {
           expectedRecordCount: 0,
         );
       });
-      _checkPasskeyCancelled(credential);
       await stage.replaceLive();
 
       final committedPin = await _openPin(transaction.openPinnedLive);
@@ -197,7 +173,6 @@ extension _V2PlatformInitialization on V2StoreEngine {
         storeId: storeId,
         storeKey: storeKey,
         epoch: _initialStoreEpoch,
-        authMethods: authMethods,
       );
       storeId = null;
       storeKey = null;

@@ -17,6 +17,10 @@ final class CliFailure implements Exception {
 /// Maps the redacted V2 error code without incorporating provider detail.
 CliFailure failureForKeybay(KeybayException error) {
   final lines = switch (error.code) {
+    KeybayErrorCode.storeNotFound => <String>[
+      'error: no encrypted Keybay store is available to unlock.',
+      'Authentication did not create a replacement store or change its protection.',
+    ],
     KeybayErrorCode.applicationIdentityUnavailable => <String>[
       'error: Keybay could not establish this CLI build\'s application identity.',
       'Install an official build or compile it with the Keybay build command.',

@@ -1,5 +1,30 @@
 # Keypass integration engineering review
 
+## Consumer contract follow-up — October 3, 2026
+
+Following the API discussion, `open(credential:)` now only authenticates existing
+protection, for passphrases and both passkey routes. A missing live file without
+staging returns `storeNotFound` before root acquisition, derivation, or passkey
+enrollment. Credential-free first use still creates an empty platform-only store;
+`auth.add` explicitly enrolls protection before protected records are written.
+The initialization helper no longer accepts a credential. Existing encrypted
+formats, migration, rotation, and credential-record selection are unchanged.
+
+The guide now shows reusable app-owned RP configuration and documents singleton
+passphrase versus multiple alternative passkeys. This adds no global domain,
+ambient configuration, or automatic system/hardware fallback.
+
+Current local checks: SDK 585 passed / three D-Bus skips on Dart 3.12.2;
+standalone SDK 583 passed / five host/SDK skips on Dart 3.11.0; 36 affected CLI
+tests, seven Flutter demo tests, and 45 repository tests passed. The full CLI
+run passed its 220 unaffected tests; all four old implicit-enrollment fixtures
+were corrected and passed in the affected-suite rerun. SDK/CLI source and test
+analysis, Flutter analysis, and changed-file formatting passed. No native-device
+ceremony was rerun. The earlier review and native receipts below remain scoped
+to their recorded revision; the dependency distribution blocker remains.
+
+## Original integration review
+
 Date: October 2, 2026. Scope: the Keybay SDK integration branch, based on
 `d71eb38`, consuming Keypass commit
 `78cbf68a52b9e11f22434059fcde8069a97b2bad`.

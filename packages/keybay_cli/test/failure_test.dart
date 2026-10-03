@@ -8,6 +8,25 @@ import 'package:test/test.dart';
 import '../../keybay/test/support/v2_test_keybay.dart';
 
 void main() {
+  test(
+    'missing store fails unlock without enrolling or exposing input',
+    () async {
+      final store = V2TestKeybay(applicationId: 'dev.keybay.cli-missing-store');
+      addTearDown(store.dispose);
+      final phrase = Uint8List.fromList(utf8.encode('secret-sentinel'));
+      final error = await _capture(
+        () => store.open(credential: PassphraseCredential(phrase: phrase)),
+      );
+      phrase.fillRange(0, phrase.length, 0);
+      expect(error.code, KeybayErrorCode.storeNotFound);
+      expect(store.files.hasLiveFile, isFalse);
+      final failure = failureForKeybay(error);
+      expect(failure.exitCode, 1);
+      expect(failure.lines.first, contains('no encrypted Keybay store'));
+      expect(failure.lines.join('\n'), isNot(contains('secret-sentinel')));
+    },
+  );
+
   test('authentication failures are redacted and map to status 1', () async {
     final store = V2TestKeybay(applicationId: 'dev.keybay.cli-failure-auth');
     addTearDown(store.dispose);

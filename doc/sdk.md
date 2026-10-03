@@ -36,9 +36,16 @@ try {
 }
 ```
 
-`open` initializes fully absent state. A retained platform root without its
-complete encrypted file returns `storeStateConflict`; see [recovery](#errors-and-limits)
-before integrating the quickstart. There is no separate create/configure step.
+Credential-free `open()` initializes fully absent state with platform protection.
+`open(credential: ...)` only authenticates an existing store: it never enrolls
+protection, even on first use or after reset. A missing encrypted file returns
+`storeNotFound` before accessing a credential provider or creating a platform
+root. Use an authenticated session's `auth.add` to enroll protection before
+writing records that should require it.
+
+A retained platform root without its complete encrypted file makes
+credential-free initialization return `storeStateConflict`; see
+[recovery](#errors-and-limits). There is no separate create/configure step.
 The session retains the recovered store key, not every record name or value.
 `close` rejects new work, lets accepted work settle, and clears Keybay's
 in-memory store-key buffer. Process exit also releases memory, but explicit
@@ -193,33 +200,44 @@ temporary secret, key derivation, encrypted method envelopes and their
 authenticated persistence. Applications use the same `Keybay.open` and
 `session.auth` API as for passphrases; they do not handle a `PasskeyResult`.
 
-To initialize an absent store with an OS-provider passkey, or reopen a store
-that already has a matching method:
+Configure the consumer-owned RP once in a reusable credential. Construction
+presents no UI and retains no secret. No global Keybay domain or hosted service
+is involved:
 
 ```dart
-final session = await Keybay.open(
-  credential: const PasskeyCredential.system(
-    rpId: 'vault.example.com',
-    label: 'Personal vault',
-  ),
+const systemPasskey = PasskeyCredential.system(
+  rpId: 'vault.example.com',
+  label: 'Personal vault',
 );
+```
+
+For a new or platform-only store, explicitly enroll before writing secrets:
+
+```dart
+final session = await Keybay.open();
 try {
+  final method = await session.auth.add(systemPasskey);
+  // method.id identifies this enrolled alternative.
   await session.set('service/api-token', 's3cr3t');
 } finally {
   await session.close();
 }
 ```
 
-An existing platform-only or passphrase-only store does not gain a passkey
-through `open`. Open it using its current protection, then explicitly add one:
+For an already protected store, open with its existing credential before adding
+another method. Enrollment failure leaves the previous protection intact; do
+not continue with secret writes that depended on the new protection succeeding.
+
+On a later run, use the same configuration to unlock the one matching enrolled
+method. This never creates a new passkey:
 
 ```dart
-final method = await session.auth.add(
-  const PasskeyCredential.system(
-    rpId: 'vault.example.com',
-    label: 'Personal vault',
-  ),
-);
+final session = await Keybay.open(credential: systemPasskey);
+try {
+  final token = await session.get('service/api-token');
+} finally {
+  await session.close();
+}
 ```
 
 For direct physical FIDO2 keys, use the hardware constructor:
@@ -245,7 +263,7 @@ construction opens no device and presents no dialog.
 | `rpId` | Required, stable relying-party identifier. Use the app-associated domain for the system route, or a stable DNS-shaped identifier for direct hardware. Matching is case-insensitive. |
 | `displayName` | Optional provider presentation text; defaults to the RP ID. |
 | `label` | Enrollment/replacement label; defaults to `Keybay vault`. It does not select a method during unlock. |
-| `methodId` | Exact stored Keybay method to unlock or replace. Omit for adding a method or initializing an absent store. |
+| `methodId` | Exact stored Keybay method to unlock or replace. Omit when adding a method. |
 | `cancellation` | Optional `PasskeyCancellation` for this operation. Use a fresh signal for each attempt. |
 
 The RP ID must be supplied explicitly. It is neither an API endpoint nor a
@@ -278,6 +296,20 @@ recheck the package before committing and preserve intervening record writes.
 
 ### Select and manage methods
 
+Protection methods are alternatives on top of mandatory platform protection:
+`platform AND (passphrase OR passkey A OR passkey B ...)`. A store supports zero
+or one passphrase and multiple passkeys, with at most eight total methods.
+
+| Operation | Passphrase | Passkey |
+| --- | --- | --- |
+| `add(credential)` | Add the singleton; a second fails with `authMethodAlreadyConfigured` | Enroll another credential, even under the same RP and route |
+| `update(credential)` | Replace the configured passphrase | Replace the exact `methodId`, retaining that Keybay ID |
+| `remove(id)` | Remove that method | Remove that method |
+
+Adding never silently replaces a method; updating/removing an unknown method
+fails with `authMethodNotConfigured`. Use `auth.list()` to display "Add" versus
+"Change" controls, while still handling errors if another session changes policy.
+
 `session.auth.list()` returns fully authenticated `PassphraseMethod` and
 `PasskeyMethod` entries without prompting. A passkey entry exposes its stable
 Keybay `id`, `rpId`, `route` and `label`; credential records and key material
@@ -296,12 +328,17 @@ For `Keybay.open(credential: PasskeyCredential...)` on a methods-package store
 | No ID and no matching passkey exists | `protectionMismatch`; do not enroll over the existing policy. |
 | No ID and several matching passkeys exist | `authMethodSelectionRequired` with compatible method hints. |
 
+The RP ID scopes credentials; it is not a unique passkey identifier. Only this
+vault's enrolled methods participate in selection, even when the provider has
+many unrelated passkeys under the same RP. After selecting a method, Keybay
+loads its opaque record and Keypass requests that exact credential.
+
 Keybay does not try every credential until one works. On ambiguity, let the
 user choose a method ID and retry using your application's expected RP ID and
 route. `label` and `displayName` are not selectors.
 
 `auth.add` enrolls an additional passkey and requires `methodId` to be omitted.
-An absent-store initialization has the same requirement. `auth.update` requires
+`auth.update` requires
 the exact ID of an existing `PasskeyMethod`, enrolls its replacement, and retains
 the Keybay method ID. It can deliberately change that method's RP ID or route:
 
@@ -424,11 +461,17 @@ Once open, record operations and `auth.list()` remain prompt-free.
 ## Errors and limits
 
 Catch `KeybayException` and branch on `code`, not human-readable text. Important
-codes include `authRequired`, `authMethodSelectionRequired`,
+codes include `storeNotFound`, `authRequired`, `authMethodSelectionRequired`,
 `passkeyOperationFailed`, `unlockFailed`, `platformProtectorUnavailable`,
 `platformProtectorLocked`, `storeAuthenticationFailed`, `storeStateConflict`,
 `storeBusy`, `staleSession`, and `sessionClosed`. Error strings never contain
 record values, passphrases, provider state, or unrestricted paths.
+
+`storeNotFound` means a credential-based open found no live encrypted file
+(and no incomplete staging state). No method was enrolled, no root was created
+or acquired, and no passphrase was derived. This does not prove that the
+platform root is absent. Do not automatically treat a failed unlock as permission
+to initialize or reset; make first-use setup an explicit application flow.
 
 `storeStateConflict` means the observed files/provider state cannot safely be
 opened or initialized. A retained root without a complete file can occur after

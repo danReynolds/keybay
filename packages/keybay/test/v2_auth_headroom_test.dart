@@ -30,7 +30,8 @@ void main() {
         final credential = suite == v2MethodsSuite
             ? const PasskeyCredential.system(rpId: 'vault.example.com')
             : null;
-        final session = await env.open(credential: credential);
+        final session = await env.open();
+        if (credential != null) await session.auth.add(credential);
         await session.close();
         final pin = (await env.files.openPinnedLive())!;
         final original = await pin.readExact(offset: 0, length: pin.length);
@@ -89,7 +90,8 @@ void main() {
         label: 'Capacity regression',
       );
 
-      var session = await env.open(credential: credential());
+      var session = await env.open();
+      await session.auth.add(credential());
       addTearDown(() => session.close());
       // Enrollment checks repeatability twice. Reach a persisted one-digit
       // counter so the next unlock must enlarge authenticated metadata.

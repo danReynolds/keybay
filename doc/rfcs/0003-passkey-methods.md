@@ -29,15 +29,22 @@ integration adds neither a Keybay service nor a production browser bridge.
 
 ## Selection and ownership
 
-`open` enrolls only when the store is wholly absent. Existing stores require
-their current policy; a missing credential, wrong RP, wrong route, or absent
-method never enrolls, resets, tries another method, or retries a PIN.
+`open(credential:)` only authenticates existing protection, for both passphrase
+and passkey requests. A missing live file with no staging artifacts returns
+`storeNotFound` before platform-root access, Argon derivation, or a Keypass
+operation; it never enrolls, including after reset or with a retained root.
+Incomplete staging state still fails as `storeStateConflict` first.
+Credential-free `open()` may initialize fully absent platform-only state;
+additional protection is enrolled explicitly through the session's `auth.add`.
+Existing stores require their current policy; a missing credential, wrong RP,
+wrong route, or absent method never enrolls, resets, tries another method, or
+retries a PIN.
 
 Passkey unlock can omit `methodId` only when exactly one method matches its RP
 and route. Ambiguity returns `authMethodSelectionRequired` before a passkey
 prompt. Updates require an existing passkey method ID and retain it while
-explicitly enrolling a replacement; they may change its RP or route. Adds and
-absent-store creation reject a supplied method ID. Passphrase updates retain
+explicitly enrolling a replacement; they may change its RP or route. Adds
+reject a supplied method ID. Passphrase updates retain
 the existing singleton API. `authMethods` error hints are authenticated only
 by the platform package, not yet by the credential-dependent manifest; UI must
 not treat them as authority to unlock or change policy.
@@ -174,9 +181,10 @@ remains queued; callbacks attempting Keybay operations fail with `storeBusy`
 rather than waiting on their own auth operation. First creation remains an
 exclusive initialization transaction to prevent rival stores.
 
-As in the existing initialization model, failure or cancellation after creating
-the platform root but before committing the first file can leave root-only
-state. A later open reports `storeStateConflict`; deliberate reset is required
+As in the existing initialization model, failure after creating the platform
+root but before committing the first file can leave root-only state. A later
+credential-free open reports `storeStateConflict` (credential-based open reports
+`storeNotFound` without acquiring that root); deliberate reset is required
 before creating a new store. Keybay never treats partial initialization as
 absence or deletes provider credentials automatically. Successful auth rotation
 drains already accepted peer work before its Future settles; a peer waiting for
