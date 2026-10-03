@@ -37,7 +37,9 @@ Future<T> _nativeOperation<T>(Future<T> Function() operation) async {
     throw TuiStoreException(
       failureForKeybay(error).lines.join('\n'),
       unlock: switch (error.code) {
-        KeybayErrorCode.authRequired => TuiUnlockFailure.missing,
+        KeybayErrorCode.authRequired
+            when error.authMethods.whereType<PassphraseMethod>().isNotEmpty =>
+          TuiUnlockFailure.missing,
         KeybayErrorCode.unlockFailed => TuiUnlockFailure.incorrect,
         _ => null,
       },

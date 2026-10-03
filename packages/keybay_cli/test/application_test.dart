@@ -14,6 +14,7 @@ import 'package:keybay_cli/src/failure.dart';
 import 'package:test/test.dart';
 
 import '../../keybay/test/support/v2_test_keybay.dart';
+import '../../keybay/test/support/v2_passkey_backend.dart';
 
 void main() {
   test('help and version are compact and never open Keybay', () async {
@@ -497,6 +498,72 @@ void main() {
   });
 
   group('authentication lifecycle', () {
+    for (final withPassphrase in [false, true]) {
+      test(
+        'passkey store uses supported CLI credential (mixed: $withPassphrase)',
+        () async {
+          final provider = TestPasskeyProvider();
+          addTearDown(() {
+            provider.expectReleased();
+            provider.clear();
+          });
+          final harness = _Harness(
+            store: V2TestKeybay(keypassClient: provider.client),
+          );
+          final seeded = await harness.store.open();
+          await seeded.auth.add(
+            const PasskeyCredential.system(rpId: 'vault.example.com'),
+          );
+          await seeded.set('service/token', 'retained');
+          if (withPassphrase) {
+            await seeded.auth.add(
+              PassphraseCredential(phrase: utf8.encode('correct')),
+            );
+          }
+          await seeded.close();
+          final generation = harness.store.files.liveGeneration;
+          var prompts = 0;
+          final output = StringBuffer();
+          final errors = StringBuffer();
+          final application = _application(
+            harness: harness,
+            stdout: output,
+            stderr: errors,
+            passphraseReader: ({summary}) async {
+              prompts++;
+              return utf8.encode('correct');
+            },
+          );
+          final code = await application.execute(const ListCommand());
+          if (withPassphrase) {
+            expect(code, exitSuccess);
+            expect(prompts, 1);
+            expect(output.toString(), 'service/token\n');
+            expect(harness.credentialOpenCalls, 1);
+          } else {
+            expect(code, exitFailure);
+            expect(prompts, 0);
+            expect(harness.openCalls, 1);
+            expect(harness.credentialOpenCalls, 0);
+            expect(
+              errors.toString(),
+              contains('does not yet support passkey unlock'),
+            );
+            expect(errors.toString(), isNot(contains('reset')));
+            expect(output.toString(), isEmpty);
+          }
+          expect(harness.store.files.liveGeneration, generation);
+          expect(
+            provider.operationCount,
+            1,
+            reason:
+                'This CLI must not attempt a passkey or automatic fallback.',
+          );
+          expect(harness.allSessionsClosed, isTrue);
+        },
+      );
+    }
+
     test('protected command prompts once, authenticates, and closes', () async {
       final harness = _Harness();
       await harness.protect('correct horse battery staple');
@@ -739,9 +806,12 @@ CliApplication _application({
 void _allowSecretOutput() {}
 
 final class _Harness {
-  final V2TestKeybay store = V2TestKeybay(
-    applicationId: 'dev.keybay.cli-application-test',
-  );
+  _Harness({V2TestKeybay? store})
+    : store =
+          store ??
+          V2TestKeybay(applicationId: 'dev.keybay.cli-application-test');
+
+  final V2TestKeybay store;
   final List<_TrackingSession> sessions = <_TrackingSession>[];
   final List<List<String>> requestedKeys = <List<String>>[];
   final List<Uint8List> returnedValueBuffers = <Uint8List>[];

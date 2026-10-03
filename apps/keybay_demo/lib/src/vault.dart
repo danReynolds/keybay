@@ -56,8 +56,16 @@ final class Vault extends ChangeNotifier {
       await _adopt(session, generation);
     } on KeybayException catch (error) {
       if (generation != _generation) return;
-      if (error.code == KeybayErrorCode.authRequired) {
+      if (error.code == KeybayErrorCode.authRequired &&
+          error.authMethods.whereType<PassphraseMethod>().isNotEmpty) {
         _enter(VaultStage.locked);
+      } else if (error.code == KeybayErrorCode.authRequired &&
+          error.authMethods.whereType<PasskeyMethod>().isNotEmpty) {
+        _enter(
+          VaultStage.failed,
+          'This demo does not yet support passkey unlock. Use a build of this '
+          'application that supports the configured method.',
+        );
       } else {
         _enter(VaultStage.failed, describe(error.code));
       }
@@ -222,6 +230,7 @@ final class Vault extends ChangeNotifier {
 
 /// A short, user-facing description of a Keybay failure.
 String describe(KeybayErrorCode code) => switch (code) {
+  KeybayErrorCode.storeNotFound => 'No saved store is available to unlock.',
   KeybayErrorCode.unlockFailed => 'Wrong passphrase.',
   KeybayErrorCode.invalidAuthInput => 'That passphrase is not allowed.',
   KeybayErrorCode.platformProtectorLocked =>

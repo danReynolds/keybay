@@ -21,7 +21,8 @@ void main() {
     () async {
       final environment = _Environment(requiresInteraction: true);
       addTearDown(environment.dispose);
-      final first = await environment.engine.open(credential: _credential());
+      final first = await environment.engine.open();
+      await first.auth.add(_credential());
       await first.close();
       final session = await environment.engine.open(credential: _credential());
       addTearDown(session.close);
@@ -36,6 +37,7 @@ void main() {
         (operation: 'open', interaction: PlatformInteraction.allowed),
         (operation: 'open', interaction: PlatformInteraction.allowed),
         (operation: 'open', interaction: PlatformInteraction.allowed),
+        (operation: 'open', interaction: PlatformInteraction.allowed),
         (operation: 'reset', interaction: PlatformInteraction.allowed),
       ]);
     },
@@ -46,7 +48,8 @@ void main() {
     () async {
       final environment = _Environment(requiresInteraction: true);
       addTearDown(environment.dispose);
-      final session = await environment.engine.open(credential: _credential());
+      final session = await environment.engine.open();
+      await session.auth.add(_credential());
       addTearDown(session.close);
       await session.set('service/token', 'preserved');
       environment.protector.calls.clear();
@@ -94,7 +97,8 @@ void main() {
       () async {
         final environment = _Environment();
         addTearDown(environment.dispose);
-        final owner = await environment.engine.open(credential: _credential());
+        final owner = await environment.engine.open();
+        await owner.auth.add(_credential());
         addTearDown(owner.close);
         await owner.set('service/token', 'preserved');
         final reader = await environment.newEngine().open(

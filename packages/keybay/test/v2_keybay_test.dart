@@ -365,16 +365,15 @@ void main() {
   });
 
   group('passphrase state model', () {
-    test('protected initialization snapshots borrowed bytes', () async {
+    test('explicit enrollment snapshots borrowed bytes', () async {
       final store = V2TestKeybay();
       addTearDown(store.dispose);
       final original = Uint8List.fromList([1, 2, 3]);
       final phrase = Uint8List.fromList(original);
-      final opening = store.open(
-        credential: PassphraseCredential(phrase: phrase),
-      );
+      final first = await store.open();
+      final adding = first.auth.add(PassphraseCredential(phrase: phrase));
       phrase.fillRange(0, phrase.length, 0);
-      final first = await opening;
+      await adding;
       expect(first.wasInitialized, isTrue);
       expect(store.deriver.lastBorrowedInputIsCleared, isTrue);
       await first.close();
@@ -407,7 +406,8 @@ void main() {
         final phrase = Uint8List.fromList([1]);
         final credential = PassphraseCredential(phrase: phrase);
         phrase[0] = 2;
-        final session = await store.open(credential: credential);
+        final session = await store.open();
+        await session.auth.add(credential);
         await session.close();
 
         final reopened = await store.open(
@@ -609,10 +609,9 @@ void main() {
       const canary = 'DO-NOT-RENDER-THIS-PASSPHRASE';
       final store = V2TestKeybay();
       addTearDown(store.dispose);
-      final session = await store.open(
-        credential: PassphraseCredential(
-          phrase: Uint8List.fromList(canary.codeUnits),
-        ),
+      final session = await store.open();
+      await session.auth.add(
+        PassphraseCredential(phrase: Uint8List.fromList(canary.codeUnits)),
       );
       await session.close();
 

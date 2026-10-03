@@ -16,5 +16,19 @@ export 'src/v2/keybay_v2.dart'
         KeybayException,
         KeybayLimits,
         KeybaySession,
+        PasskeyCredential,
+        PasskeyMethod,
         PassphraseCredential,
         PassphraseMethod;
+
+export 'package:keypass/keypass.dart'
+    show
+        HardwareConnection,
+        HardwareConnectionPicker,
+        HardwareEvent,
+        HardwarePinPrompt,
+        HardwarePinRequest,
+        HardwareTransport,
+        PasskeyCancellation,
+        PasskeyErrorCode,
+        PasskeyRoute;

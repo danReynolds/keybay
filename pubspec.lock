@@ -220,6 +220,15 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.5"
+  keypass:
+    dependency: transitive
+    description:
+      path: "."
+      ref: "78cbf68a52b9e11f22434059fcde8069a97b2bad"
+      resolved-ref: "78cbf68a52b9e11f22434059fcde8069a97b2bad"
+      url: "git@github.com:danReynolds/keypass.git"
+    source: git
+    version: "0.1.0-dev.2"
   lints:
     dependency: transitive
     description:
@@ -292,6 +301,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "7.0.2"
+  pointycastle:
+    dependency: transitive
+    description:
+      name: pointycastle
+      sha256: "92aa3841d083cc4b0f4709b5c74fd6409a3e6ba833ffc7dc6a8fee096366acf5"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.0.0"
   pool:
     dependency: transitive
     description:
