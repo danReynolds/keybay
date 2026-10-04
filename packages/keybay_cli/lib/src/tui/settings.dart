@@ -61,14 +61,13 @@ final class _SettingsScreenState extends State<SettingsScreen> {
 
   List<_SettingsAction> get _categoryActions => [
     if (!_data) ...[
-      (
-        shortcut: 'p',
-        label: model.protected ? 'Change passphrase' : 'Add passphrase',
-        view: TuiView.passphrase,
-        description: model.protected
-            ? 'Replace the passphrase used to open this store.'
-            : 'Require a passphrase when opening this store.',
-      ),
+      if (!model.protected)
+        (
+          shortcut: 'p',
+          label: 'Add passphrase',
+          view: TuiView.passphrase,
+          description: 'Require a passphrase when opening this store.',
+        ),
       if (model.protected)
         (
           shortcut: 'x',

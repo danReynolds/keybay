@@ -12,7 +12,7 @@ import 'package:test/test.dart';
 import 'support/v2_store_crash_worker.dart';
 
 void main() {
-  for (final operation in ['write', 'rotate']) {
+  for (final operation in ['write', 'remove']) {
     for (final point in [
       'partial-stage',
       'before-replace',
@@ -85,24 +85,25 @@ void main() {
 
           final replaced = point == 'after-replace' || point == 'acknowledged';
           final recoveredEngine = CrashHost(root).engine();
-          final currentPhrase = operation == 'rotate' && replaced
-              ? 'replacement'
-              : 'original';
-          if (operation == 'rotate') {
-            final wrongPhrase = replaced ? 'original' : 'replacement';
+          final removed = operation == 'remove' && replaced;
+          if (operation == 'remove') {
             await expectLater(
-              recoveredEngine.open(credential: crashPhrase(wrongPhrase)),
+              removed
+                  ? recoveredEngine.open(credential: crashPhrase('original'))
+                  : recoveredEngine.open(),
               throwsA(
                 isA<KeybayException>().having(
                   (e) => e.code,
                   'code',
-                  KeybayErrorCode.unlockFailed,
+                  removed
+                      ? KeybayErrorCode.protectionMismatch
+                      : KeybayErrorCode.authRequired,
                 ),
               ),
             );
           }
           final recovered = await recoveredEngine.open(
-            credential: crashPhrase(currentPhrase),
+            credential: removed ? null : crashPhrase('original'),
           );
           expect(recovered.wasInitialized, isFalse);
           expect(await recovered.get('stable'), 'acknowledged-value-canary');

@@ -26,14 +26,12 @@ void main() {
       await first.close();
       final session = await environment.engine.open(credential: _credential());
       addTearDown(session.close);
-      final updated = await session.auth.update(_credential());
-      await session.auth.remove(updated.id);
+      await session.auth.remove((await session.auth.list()).single);
       await session.auth.add(_credential());
       await environment.engine.reset();
 
       expect(environment.protector.calls, <_ProviderCall>[
         (operation: 'create', interaction: PlatformInteraction.allowed),
-        (operation: 'open', interaction: PlatformInteraction.allowed),
         (operation: 'open', interaction: PlatformInteraction.allowed),
         (operation: 'open', interaction: PlatformInteraction.allowed),
         (operation: 'open', interaction: PlatformInteraction.allowed),
@@ -110,7 +108,7 @@ void main() {
           damaged[damaged.length - 5] ^= 1;
           environment.files.replaceLiveBytes(damaged);
         } else {
-          await owner.auth.update(_credential());
+          await owner.auth.remove((await owner.auth.list()).single);
         }
         environment.protector.calls.clear();
         final accesses = environment.protector.providerAccesses;

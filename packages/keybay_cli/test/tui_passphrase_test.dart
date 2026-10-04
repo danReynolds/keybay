@@ -66,13 +66,13 @@ void main() {
   // The model clears its buffer as soon as a protection change starts. The
   // store must be keyed to the typed bytes, never to that cleared buffer, for
   // example if an adapter ever awaited before the SDK snapshotted the input.
-  for (final replacing in [false, true]) {
+  for (final afterRemoval in [false, true]) {
     test(
-      'a TUI ${replacing ? 'update' : 'add'} keys the store to the typed bytes',
+      'a TUI ${afterRemoval ? 'add after removal' : 'add'} keys the store to the typed bytes',
       () async {
         final store = V2TestKeybay();
         addTearDown(store.dispose);
-        if (replacing) {
+        if (afterRemoval) {
           final session = await store.open();
           await session.auth.add(
             PassphraseCredential(phrase: utf8.encode('original')),
@@ -85,10 +85,17 @@ void main() {
           authorize: () {},
           onExit: () {},
         );
-        await model.open(replacing ? utf8.encode('original') : null);
+        await model.open(afterRemoval ? utf8.encode('original') : null);
+        if (afterRemoval) {
+          model.navigate(TuiView.passphrase);
+          expect(model.view, isNot(TuiView.passphrase));
+          model.navigate(TuiView.removePassphrase);
+          await model.removePassphrase();
+          expect(model.protected, isFalse);
+        }
         model.navigate(TuiView.passphrase);
         final typed = utf8.encode('secret-passphrase');
-        await model.changePassphrase(Uint8List.fromList(typed));
+        await model.addPassphrase(Uint8List.fromList(typed));
         expect(model.protected, isTrue);
         await model.close();
         model.dispose();

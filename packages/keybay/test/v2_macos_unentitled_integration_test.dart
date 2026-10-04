@@ -107,11 +107,12 @@ void main() {
       try {
         expect(authenticated.wasInitialized, isFalse);
         expect(await authenticated.get('service/token'), 'first value');
+        await authenticated.auth.remove(added);
         final updated = await _withPassphrase(
           'replacement-$nonce',
-          authenticated.auth.update,
+          authenticated.auth.add,
         );
-        expect(updated.id, added.id);
+        expect(updated.id, isNot(added.id));
       } finally {
         await authenticated.close();
       }

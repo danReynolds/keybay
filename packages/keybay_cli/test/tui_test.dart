@@ -592,7 +592,7 @@ void main() {
     await model.open();
     model.navigate(TuiView.passphrase);
     final phrase = bytes('secret-passphrase');
-    await model.changePassphrase(phrase);
+    await model.addPassphrase(phrase);
     expect(phrase, everyElement(0));
     expect(model.protected, isTrue);
     final value = bytes('line one\nline two');
@@ -1408,7 +1408,7 @@ void main() {
           await model.open();
           if (protected) {
             model.navigate(TuiView.passphrase);
-            await model.changePassphrase(bytes('disposable'));
+            await model.addPassphrase(bytes('disposable'));
           }
           model.navigate(TuiView.settings);
           tester.pumpWidget(KeybayTui(model: model));
@@ -1423,7 +1423,7 @@ void main() {
           for (final category in ['Security', 'Data']) {
             final actionLabels = category == 'Security'
                 ? [
-                    protected ? 'Change passphrase' : 'Add passphrase',
+                    if (!protected) 'Add passphrase',
                     if (protected) 'Remove passphrase',
                   ]
                 : ['Clear all records', 'Reset Keybay'];
@@ -1691,11 +1691,11 @@ void main() {
         await model.open();
         if (protected) {
           model.navigate(TuiView.passphrase);
-          await model.changePassphrase(bytes('disposable'));
+          await model.addPassphrase(bytes('disposable'));
         }
         tester.pumpWidget(KeybayTui(model: model));
         for (final entry in {
-          KeyCode.p: (TuiView.security, TuiView.passphrase),
+          if (!protected) KeyCode.p: (TuiView.security, TuiView.passphrase),
           KeyCode.c: (TuiView.data, TuiView.clear),
           KeyCode.r: (TuiView.data, TuiView.reset),
           if (protected)

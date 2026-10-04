@@ -159,7 +159,7 @@ void main() {
           'android-v2-plaintext-marker',
         );
 
-        await session.auth.remove(method.id);
+        await session.auth.remove(method);
         await session.close();
         session = await Keybay.open();
         expect(

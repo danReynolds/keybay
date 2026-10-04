@@ -1,13 +1,13 @@
 part of 'keybay_v2.dart';
 
-enum _AuthChange { add, update, remove }
+enum _AuthChange { add, remove }
 
 enum _RotationGeneration { old, replacement, unknown }
 
 /// Prepares authentication outside the file lock, then atomically rotates.
 ///
 /// An authenticated session authorizes changes; credential material is used
-/// only for the newly enrolled/replaced method. Every surviving method is
+/// only for the newly enrolled method. Every surviving method is
 /// rewrapped to its authenticated public key without requesting its secret.
 Future<AuthMethod?> _commitAuthChange(
   V2StoreSession session,

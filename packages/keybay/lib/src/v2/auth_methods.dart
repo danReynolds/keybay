@@ -50,12 +50,16 @@ PasskeyRecord _methodRecord(V2AuthMethodEnvelope method) {
   }
 }
 
-AuthMethod _describeMethod(V2AuthMethodEnvelope method) {
+AuthMethod _describeMethod(V2AuthMethodEnvelope method, Uint8List storeId) {
   final id = encodeMethodId(method.methodId);
-  if (method.kind == V2AuthMethodKind.passphrase) return PassphraseMethod._(id);
+  final store = base64UrlEncode(storeId);
+  if (method.kind == V2AuthMethodKind.passphrase) {
+    return PassphraseMethod._(id, store, label: method.label);
+  }
   final record = _methodRecord(method);
   return PasskeyMethod._(
     id,
+    storeId: store,
     rpId: record.rpId,
     route: record.route,
     label: method.label,
@@ -65,7 +69,10 @@ AuthMethod _describeMethod(V2AuthMethodEnvelope method) {
 List<AuthMethod> _describePackage(V2KeyPackage package) => switch (package) {
   V2PlatformOnlyPackage() => const [],
   V2PassphrasePackage() => [
-    PassphraseMethod._(encodeMethodId(package.methodId)),
+    PassphraseMethod._(
+      encodeMethodId(package.methodId),
+      base64UrlEncode(package.storeId),
+    ),
   ],
   V2MethodsPackage() => _describeMethods(package),
 };
@@ -81,7 +88,7 @@ List<AuthMethod> _describeMethods(V2MethodsPackage package) {
         'The stored authentication methods contain duplicate credentials.',
       );
     }
-    result.add(_describeMethod(method));
+    result.add(_describeMethod(method, package.storeId));
   }
   return List.unmodifiable(result);
 }
@@ -118,23 +125,15 @@ V2AuthMethodEnvelope _selectMethod(
 ) {
   final passkey = credential.passkey;
   final hints = _describePackage(package);
-  if (passkey == null) {
-    for (final method in package.methods) {
-      if (method.kind == V2AuthMethodKind.passphrase) return method;
-    }
-    throw _error(
-      KeybayErrorCode.protectionMismatch,
-      'No passphrase is configured.',
-    );
-  }
   bool matches(V2AuthMethodEnvelope method) {
+    if (passkey == null) return method.kind == V2AuthMethodKind.passphrase;
     if (method.kind == V2AuthMethodKind.passphrase) return false;
     final record = _methodRecord(method);
     return record.rpId == passkey.rpId.toLowerCase() &&
         record.route == passkey.route;
   }
 
-  final id = passkey.methodId;
+  final id = credential.methodId;
   if (id != null) {
     for (final method in package.methods) {
       if (encodeMethodId(method.methodId) != id) continue;
@@ -153,7 +152,7 @@ V2AuthMethodEnvelope _selectMethod(
   if (compatible.isEmpty) {
     throw _error(
       KeybayErrorCode.protectionMismatch,
-      'No matching passkey method is configured.',
+      'No matching authentication method is configured.',
     );
   }
   if (compatible.length != 1) {
@@ -164,7 +163,7 @@ V2AuthMethodEnvelope _selectMethod(
           .whereType<PasskeyMethod>()
           .where(
             (method) =>
-                method.rpId == passkey.rpId.toLowerCase() &&
+                method.rpId == passkey!.rpId.toLowerCase() &&
                 method.route == passkey.route,
           )
           .toList(),
@@ -174,7 +173,7 @@ V2AuthMethodEnvelope _selectMethod(
 }
 
 void _checkPasskeyCancelled(_CredentialSnapshot? credential) {
-  if (credential?.passkey?.cancellation?.isCancelled ?? false) {
+  if (credential?.cancellation?.isCancelled ?? false) {
     throw _error(
       KeybayErrorCode.passkeyOperationFailed,
       'Passkey authentication was cancelled.',
@@ -221,8 +220,12 @@ Future<V2AuthMethodEnvelope> _enrollMethod({
       result = await _runPasskey(
         () => engine
             ._keypassClient(request)
-            .create(label: request.label, cancellation: request.cancellation),
+            .create(
+              label: credential.label,
+              cancellation: credential.cancellation,
+            ),
       );
+      credential.clear();
       if (result.record.rpId != request.rpId.toLowerCase() ||
           result.record.route != request.route) {
         throw const PasskeyException(PasskeyErrorCode.verificationFailed);
@@ -280,7 +283,7 @@ Future<V2AuthMethodEnvelope> _enrollMethod({
     return V2AuthMethodEnvelope(
       methodId: methodId,
       kind: kind,
-      label: request?.label ?? 'Passphrase',
+      label: credential.label,
       salt: salt,
       profileId: request == null ? v2FirstPassphraseProfile : 0,
       publicKey: publicKey,
@@ -288,6 +291,7 @@ Future<V2AuthMethodEnvelope> _enrollMethod({
       passkeyRecord: recordBytes,
     );
   } finally {
+    credential.clear();
     if (material != null) _clear(material);
     if (privateKey != null) _clear(privateKey);
     result?.dispose();
@@ -327,8 +331,9 @@ Future<_UnlockedMethod> _unlockMethod({
       result = await _runPasskey(
         () => engine
             ._keypassClient(request)
-            .unlock(record, cancellation: request.cancellation),
+            .unlock(record, cancellation: credential.cancellation),
       );
+      credential.clear();
       if (result.record.id != recordId) {
         throw const PasskeyException(PasskeyErrorCode.verificationFailed);
       }
@@ -379,6 +384,7 @@ Future<_UnlockedMethod> _unlockMethod({
       'The supplied credential did not unlock the store.',
     );
   } finally {
+    credential.clear();
     if (material != null) _clear(material);
     if (privateKey != null) _clear(privateKey);
     if (storeKey != null) _clear(storeKey);
@@ -447,12 +453,7 @@ Future<_PolicyReplacement> _buildAuthReplacement({
   V2AuthMethodEnvelope? target;
   switch (change) {
     case _AuthChange.add:
-      if (credential == null || request?.methodId != null) {
-        throw _error(
-          KeybayErrorCode.invalidAuthInput,
-          'An added method cannot select an existing method.',
-        );
-      }
+      if (credential == null) throw StateError('Missing enrollment credential');
       if (request == null &&
           methods.any((method) => method.kind == V2AuthMethodKind.passphrase)) {
         throw _error(
@@ -464,36 +465,6 @@ Future<_PolicyReplacement> _buildAuthReplacement({
         throw _error(
           KeybayErrorCode.limitExceeded,
           'The authentication method limit was reached.',
-        );
-      }
-    case _AuthChange.update:
-      if (credential == null) {
-        throw StateError('Missing replacement credential');
-      }
-      if (request != null && request.methodId == null) {
-        throw _error(
-          KeybayErrorCode.invalidAuthInput,
-          'Select the passkey method to replace.',
-        );
-      }
-      for (final method in methods) {
-        if (request == null
-            ? method.kind == V2AuthMethodKind.passphrase
-            : encodeMethodId(method.methodId) == request.methodId) {
-          target = method;
-          break;
-        }
-      }
-      if (target == null) {
-        throw _error(
-          KeybayErrorCode.authMethodNotConfigured,
-          'The method to replace is not configured.',
-        );
-      }
-      if (request != null && target.kind == V2AuthMethodKind.passphrase) {
-        throw _error(
-          KeybayErrorCode.protectionMismatch,
-          'A passkey request cannot replace a passphrase method.',
         );
       }
     case _AuthChange.remove:
@@ -516,9 +487,7 @@ Future<_PolicyReplacement> _buildAuthReplacement({
       storeId: session._storeId,
       epoch: epoch,
       storeKey: storeKey,
-      methodId:
-          target?.methodId ??
-          session._entropy.randomBytes(V2StoreLimits.methodIdBytes),
+      methodId: session._entropy.randomBytes(V2StoreLimits.methodIdBytes),
     );
     if (added.kind != V2AuthMethodKind.passphrase) {
       final id = _methodRecord(added).id;
@@ -535,7 +504,7 @@ Future<_PolicyReplacement> _buildAuthReplacement({
       }
     }
     replacements.add(added);
-    result = _describeMethod(added);
+    result = _describeMethod(added, session._storeId);
   }
   for (final method in methods) {
     if (identical(method, target)) continue;

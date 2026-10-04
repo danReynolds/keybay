@@ -199,6 +199,7 @@ final class TuiModel extends ChangeNotifier {
 
   void navigate(TuiView next) {
     if (_ending || (busy && !_dismisses(next))) return;
+    if (next == TuiView.passphrase && protected) return;
     if (next != view &&
         (next == TuiView.create ||
             next == TuiView.passphrase ||
@@ -416,8 +417,12 @@ final class TuiModel extends ChangeNotifier {
     });
   }
 
-  Future<void> changePassphrase(Uint8List phrase) {
-    if (busy || _ending || _session == null || view != TuiView.passphrase) {
+  Future<void> addPassphrase(Uint8List phrase) {
+    if (busy ||
+        _ending ||
+        _session == null ||
+        protected ||
+        view != TuiView.passphrase) {
       clearBytes(phrase);
       return Future.value();
     }
@@ -429,19 +434,16 @@ final class TuiModel extends ChangeNotifier {
     return _perform(
       (token) async {
         try {
-          final changing = _session!.changePassphrase(
-            phrase,
-            replacing: protected,
-          );
+          final adding = _session!.addPassphrase(phrase);
           clearBytes(phrase);
-          await changing;
+          await adding;
         } finally {
           clearBytes(phrase);
         }
         await _refresh();
         if (_current(token)) {
           view = TuiView.security;
-          message('Passphrase protection updated.');
+          message('Passphrase added.');
         }
       },
       protection: true,

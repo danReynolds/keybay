@@ -1097,34 +1097,25 @@ final adding = session.auth.add(
 confirmedNewPassphrase.fillRange(0, confirmedNewPassphrase.length, 0);
 await adding;
 
-final updating = session.auth.update(
-  PassphraseCredential(phrase: confirmedReplacementPassphrase),
-);
-confirmedReplacementPassphrase.fillRange(
-  0,
-  confirmedReplacementPassphrase.length,
-  0,
-);
-await updating;
-
 final passphrase =
     (await session.auth.list()).whereType<PassphraseMethod>().single;
-await session.auth.remove(passphrase.id);
+await session.auth.remove(passphrase);
 ```
 
-`add` fails if a passphrase already exists; `update` fails if none exists and
-otherwise atomically replaces it. Remove is never used as the first half of an
-update. The TUI explicitly confirms the protection reduction before removing
-the singleton passphrase. Its current method ID comes from `auth.list()` or
-an auth operation result; `update` retains that ID. There is no UI for arbitrary
-method types or a collection of future hardware credentials.
+`add` fails if a passphrase already exists. The TUI exposes Add only without a
+passphrase and Remove only when one exists. There is no Change action or hidden
+remove/add sequence. A user changing a passphrase removes it explicitly, then
+opens Add. The TUI confirms the protection reduction before removal; the vault
+remains platform-only until another method is added successfully. Its current
+method comes from `auth.list()`. There is no UI for arbitrary method types or
+hardware credentials.
 
 Settings uses a left sidebar (Security and Data) with the active category’s
 content beside it. Sidebar arrows change categories without invoking actions;
 Enter or → focuses content, ← returns to the sidebar, and Tab traverses panes
 and Back. Escape/Back exits Settings; cancelling a form returns to its category.
 Security contains passphrase state, the fixed five-minute idle-exit policy,
-Add/Change (p) and Remove passphrase (x). Data contains Clear (c) and Reset (r).
+Add (p) or Remove passphrase (x). Data contains Clear (c) and Reset (r).
 Category shortcuts apply only to visible actions and retain all confirmations.
 Focus uses a row background and marker; destructive actions use red. Buttons
 and rows have hover feedback that neither activates nor steals keyboard focus.
@@ -1153,7 +1144,7 @@ updates the committing session, and makes peers fail closed against the new
 state. The stable platform root is retained. A failed/interrupted call does not
 prove that the old policy remains current; preserve the store, close and require
 an explicit authenticated reopen before further work. Do not automatically
-retry an add/update/remove or claim that cancelling the UI rolled it back.
+retry an add/remove or claim that cancelling the UI rolled it back.
 Keybay has no passphrase escrow or data-recovery path; the TUI must say so before
 enabling protection.
 
@@ -1502,7 +1493,7 @@ providers for the advertised deployment configurations.
   deletion reports missing normally
 
 - **Passphrase management:** Byte-exact confirmation, no trimming/normalization, 1–1024
-  bytes; add/update/remove through `session.auth`; stable ID on update; explicit removal
+  bytes; add/remove through `session.auth`; fresh IDs on enrollment; explicit removal
   confirmation; unsuccessful/uncertain changes never trigger automatic retry or record
   loss
 

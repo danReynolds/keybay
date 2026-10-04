@@ -88,18 +88,20 @@ final class _NativeTuiSession implements TuiSession {
   @override
   Future<void> clearAll() => _nativeOperation(session.clearAll);
   @override
-  Future<void> changePassphrase(Uint8List phrase, {required bool replacing}) =>
-      _nativeOperation(() async {
-        final credential = PassphraseCredential(phrase: phrase);
-        if (replacing) {
-          await session.auth.update(credential);
-        } else {
-          await session.auth.add(credential);
-        }
-      });
+  Future<void> addPassphrase(Uint8List phrase) => _nativeOperation(() async {
+    await session.auth.add(PassphraseCredential(phrase: phrase));
+  });
   @override
-  Future<void> removePassphrase(String id) =>
-      _nativeOperation(() => session.auth.remove(id));
+  Future<void> removePassphrase(String id) => _nativeOperation(() async {
+    final method = (await session.auth.list())
+        .whereType<PassphraseMethod>()
+        .where((method) => method.id == id)
+        .firstOrNull;
+    if (method == null) {
+      throw const TuiStoreException('The passphrase is no longer configured.');
+    }
+    await session.auth.remove(method);
+  });
   @override
   Future<void> close() => _nativeOperation(session.close);
 }

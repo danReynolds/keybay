@@ -124,13 +124,12 @@ final class _DemoSession implements TuiSession {
   }
 
   @override
-  Future<void> changePassphrase(
-    Uint8List phrase, {
-    required bool replacing,
-  }) async {
+  Future<void> addPassphrase(Uint8List phrase) async {
     check();
+    if (store._phrase != null) {
+      throw const TuiStoreException('A passphrase is already configured.');
+    }
     final copy = Uint8List.fromList(phrase);
-    store._phrase?.fillRange(0, store._phrase!.length, 0);
     store._phrase = copy;
   }
 

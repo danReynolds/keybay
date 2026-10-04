@@ -1,5 +1,48 @@
 # Keypass integration engineering review
 
+## Accepted add/remove contract — October 4, 2026
+
+The consumer API is now `auth.add(credential, label:)`, `auth.list()`, and
+`auth.remove(method)`. Update/replacement was removed from the public API and
+the rotation engine. Every add creates a new enrollment ID. Method descriptors
+carry internal vault identity, so removal works across list calls and reopened
+sessions while rejecting foreign-vault, reset-vault, and removed enrollments.
+
+Passkey credentials contain RP ID, optional display name, route, and optional
+hardware PIN bytes. Labels belong to add; method selection belongs to open;
+passkey cancellation belongs to the operation. Hardware events, PIN prompts,
+and connection pickers are no longer part of Keybay's consumer surface. The
+existing Keypass adapter receives fresh owned PIN copies; Keybay snapshots
+caller bytes synchronously and clears its snapshot before vault staging and
+on failure. No Keypass dependency or encrypted format changed.
+
+Removing and adding are deliberately separate commits. A failed add after the
+last method was removed leaves platform-only protection. The guide documents
+this accepted behavior, and regression tests assert it. Passphrase-only CLI,
+web preview, and Flutter demo controls expose Add or Remove, with no hidden
+change flow. Hardware keys can be added before removing an old enrollment when
+capacity permits.
+
+Validation on macOS ARM64:
+
+| Check | Result |
+| --- | --- |
+| Full SDK, Dart 3.12.2, excluding opt-in integration | 589 passed; three D-Bus-daemon skips. Includes add/remove crash recovery, PIN ownership, method binding, and legacy migration. |
+| Standalone SDK, Dart 3.11.0, `tool/test_sdk_standalone.sh` | Analysis clean; 587 passed; five host/SDK-specific skips. |
+| Full CLI suite | 225 passed. |
+| Flutter demo | Analysis clean; eight passed. |
+| Repository tooling and web preview | 45 passed. |
+| SDK/CLI source, tests, and web preview analysis | Clean. |
+
+The broader suites were run from their package directories with a matching
+Dart runtime and cached dependencies. The original root-directory attempt was
+invalid for package-relative fixtures; the final results above are complete
+successful reruns. Dependency pins and lockfiles are unchanged. No physical
+provider ceremony was rerun, and no claim of native-device qualification is
+added. The existing private/unpublished Keypass dependency remains a public CI
+and publication blocker; the PR remains a draft. The earlier independent agent
+reviews below cover their recorded revision, not this follow-up.
+
 ## Consumer contract follow-up — October 3, 2026
 
 Following the API discussion, `open(credential:)` now only authenticates existing

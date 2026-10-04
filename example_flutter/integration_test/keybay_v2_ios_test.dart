@@ -129,7 +129,7 @@ void main() {
       unlock.fillRange(0, unlock.length, 0);
       session = await opening;
       expect(await session.get('service/token'), 'ios-v2-plaintext-marker');
-      await session.auth.remove(method.id);
+      await session.auth.remove(method);
     } finally {
       await session?.close();
       await Keybay.reset();

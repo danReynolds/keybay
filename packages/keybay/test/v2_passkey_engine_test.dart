@@ -27,8 +27,6 @@ void main() {
     _phrase(),
     _passkey(PasskeyRoute.system),
     _passkey(PasskeyRoute.hardware),
-    _passkey(PasskeyRoute.system, methodId: _missingId),
-    _passkey(PasskeyRoute.hardware, methodId: _missingId),
   ]) {
     test('$credential cannot initialize an absent store', () async {
       final env = _Environment();
@@ -96,7 +94,8 @@ void main() {
         expect(await _copyLive(env.files), before);
 
         final reopened = await env.open(
-          credential: _passkey(route, methodId: method.id),
+          credential: _passkey(route),
+          methodId: method.id,
           freshEngine: true,
         );
         expect(reopened.wasInitialized, isFalse);
@@ -116,7 +115,7 @@ void main() {
         final protectedBytes = await _copyLive(env.files);
         final operations = env.provider.operationCount;
         await _failure(
-          env.open(credential: _passkey(route, methodId: method.id)),
+          env.open(credential: _passkey(route), methodId: method.id),
           KeybayErrorCode.platformKeyInvalidated,
         );
         expect(env.provider.operationCount, operations);
@@ -164,7 +163,8 @@ void main() {
       );
       await _expectRecords(
         await env.open(
-          credential: _passkey(PasskeyRoute.system, methodId: system.id),
+          credential: _passkey(PasskeyRoute.system),
+          methodId: system.id,
           freshEngine: true,
         ),
       );
@@ -173,16 +173,18 @@ void main() {
       before = await _copyLive(env.files);
       final previousOperations = env.provider.operationCount;
       final replacement =
-          await owner.auth.update(
-                _passkey(
-                  PasskeyRoute.system,
-                  rpId: 'replacement.example.com',
-                  methodId: hardware.id,
-                  label: 'Replacement',
-                ),
+          await owner.auth.add(
+                _passkey(PasskeyRoute.system, rpId: 'replacement.example.com'),
+                label: 'Replacement',
               )
               as PasskeyMethod;
-      expect(replacement.id, hardware.id);
+      // Adding a different key does not revoke the old enrollment.
+      expect(
+        (await owner.auth.list()).map((method) => method.id),
+        contains(hardware.id),
+      );
+      await owner.auth.remove(hardware);
+      expect(replacement.id, isNot(hardware.id));
       expect(replacement.rpId, 'replacement.example.com');
       expect(replacement.route, PasskeyRoute.system);
       expect(replacement.label, 'Replacement');
@@ -191,16 +193,17 @@ void main() {
       await _expectStale(peer);
       await _failure(
         env.open(
-          credential: _passkey(PasskeyRoute.hardware, methodId: hardware.id),
+          credential: _passkey(PasskeyRoute.hardware),
+          methodId: hardware.id,
         ),
-        KeybayErrorCode.protectionMismatch,
+        KeybayErrorCode.authMethodNotConfigured,
       );
       expect(env.provider.operationCount, previousOperations + 1);
 
       peer = await env.open(credential: _phrase());
       before = await _copyLive(env.files);
       final operationsBeforeRemove = env.provider.operationCount;
-      await owner.auth.remove(system.id);
+      await owner.auth.remove(system);
       expect(env.provider.operationCount, operationsBeforeRemove);
       _expectResealed(before, await _copyLive(env.files));
       await _expectStale(peer);
@@ -208,11 +211,8 @@ void main() {
         await env.open(credential: _phrase(), freshEngine: true),
       );
       final survivor = await env.open(
-        credential: _passkey(
-          PasskeyRoute.system,
-          rpId: replacement.rpId,
-          methodId: replacement.id,
-        ),
+        credential: _passkey(PasskeyRoute.system, rpId: replacement.rpId),
+        methodId: replacement.id,
         freshEngine: true,
       );
       await _expectRecords(survivor);
@@ -222,12 +222,12 @@ void main() {
       );
 
       final operationsBeforeLastRemovals = env.provider.operationCount;
-      await owner.auth.remove(phrase.id);
+      await owner.auth.remove(phrase);
       await _failure(
         env.open(credential: _phrase()),
         KeybayErrorCode.protectionMismatch,
       );
-      await owner.auth.remove(replacement.id);
+      await owner.auth.remove(replacement);
       expect(env.provider.operationCount, operationsBeforeLastRemovals);
       expect(await owner.auth.list(), isEmpty);
       await _expectRecords(await env.open(freshEngine: true));
@@ -275,21 +275,22 @@ void main() {
       );
       expect(selection.authMethods.clear, throwsUnsupportedError);
 
-      for (final request in [
-        _passkey(PasskeyRoute.system, methodId: phrase.id),
-        _passkey(PasskeyRoute.system, methodId: hardware.id),
-        _passkey(PasskeyRoute.hardware, methodId: first.id),
-        _passkey(PasskeyRoute.system, methodId: otherRp.id),
-        _passkey(PasskeyRoute.system, rpId: 'missing.example.com'),
+      for (final (request, id) in [
+        (_passkey(PasskeyRoute.system), phrase.id),
+        (_passkey(PasskeyRoute.system), hardware.id),
+        (_passkey(PasskeyRoute.hardware), first.id),
+        (_passkey(PasskeyRoute.system), otherRp.id),
+        (_passkey(PasskeyRoute.system, rpId: 'missing.example.com'), null),
       ]) {
         await _failure(
-          env.open(credential: request),
+          env.open(credential: request, methodId: id),
           KeybayErrorCode.protectionMismatch,
         );
       }
       await _failure(
         env.open(
-          credential: _passkey(PasskeyRoute.system, methodId: _missingId),
+          credential: _passkey(PasskeyRoute.system),
+          methodId: _missingId,
         ),
         KeybayErrorCode.authMethodNotConfigured,
       );
@@ -297,12 +298,8 @@ void main() {
       expect(await _copyLive(env.files), before);
 
       final exact = await env.open(
-        credential: _passkey(
-          PasskeyRoute.system,
-          rpId: 'VAULT.EXAMPLE.COM',
-          methodId: first.id,
-          label: 'An unlock label does not select another method',
-        ),
+        credential: _passkey(PasskeyRoute.system, rpId: 'VAULT.EXAMPLE.COM'),
+        methodId: first.id,
       );
       expect(exact.wasInitialized, isFalse);
       expect(env.provider.operationCount, operations + 1);
@@ -337,25 +334,21 @@ void main() {
     },
   );
 
-  test(
-    'malformed label fails before creating a passkey or platform root',
-    () async {
-      final env = _Environment();
-      addTearDown(env.dispose);
-      await _failure(
-        env.open(
-          credential: _passkey(
-            PasskeyRoute.system,
-            label: String.fromCharCode(0xd800),
-          ),
-        ),
-        KeybayErrorCode.invalidAuthInput,
-      );
-      expect(env.provider.operationCount, 0);
-      expect(env.registry.rootCount, 0);
-      expect(env.files.hasLiveFile, isFalse);
-    },
-  );
+  test('malformed enrollment label fails before creating a passkey', () async {
+    final env = _Environment();
+    addTearDown(env.dispose);
+    final owner = await env.open();
+    final before = await _copyLive(env.files);
+    await _failure(
+      owner.auth.add(
+        _passkey(PasskeyRoute.system),
+        label: String.fromCharCode(0xd800),
+      ),
+      KeybayErrorCode.invalidAuthInput,
+    );
+    expect(env.provider.operationCount, 0);
+    expect(await _copyLive(env.files), before);
+  });
 
   test(
     'invalid method mutations fail before enrollment and preserve policy',
@@ -364,31 +357,15 @@ void main() {
       addTearDown(env.dispose);
       await _failure(
         env.open(
-          credential: _passkey(PasskeyRoute.system, methodId: _missingId),
+          credential: _passkey(PasskeyRoute.system),
+          methodId: _missingId,
         ),
         KeybayErrorCode.storeNotFound,
       );
       expect(env.files.hasLiveFile, isFalse);
       expect(env.registry.rootCount, 0);
       final owner = await env.enroll(_phrase());
-      final phrase = (await owner.auth.list()).single;
       final before = await _copyLive(env.files);
-      await _failure(
-        owner.auth.add(_passkey(PasskeyRoute.system, methodId: phrase.id)),
-        KeybayErrorCode.invalidAuthInput,
-      );
-      await _failure(
-        owner.auth.update(_passkey(PasskeyRoute.system)),
-        KeybayErrorCode.invalidAuthInput,
-      );
-      await _failure(
-        owner.auth.update(_passkey(PasskeyRoute.system, methodId: phrase.id)),
-        KeybayErrorCode.protectionMismatch,
-      );
-      await _failure(
-        owner.auth.update(_passkey(PasskeyRoute.system, methodId: _missingId)),
-        KeybayErrorCode.authMethodNotConfigured,
-      );
       await _failure(
         owner.auth.add(_phrase()),
         KeybayErrorCode.authMethodAlreadyConfigured,
@@ -534,7 +511,8 @@ void main() {
       expect(env.provider.operationCount, operations);
       await _failure(
         env.open(
-          credential: _passkey(PasskeyRoute.system, methodId: method.id),
+          credential: _passkey(PasskeyRoute.system),
+          methodId: method.id,
         ),
         KeybayErrorCode.storeAuthenticationFailed,
       );
@@ -575,7 +553,7 @@ void main() {
         await gate.entered.future;
         late Uint8List afterRemoval;
         try {
-          await owner.auth.remove(passkey.id);
+          await owner.auth.remove(passkey);
           afterRemoval = await _copyLive(env.files);
         } finally {
           gate.resume();
@@ -650,7 +628,8 @@ void main() {
       await gate.entered.future;
       late Uint8List committed;
       try {
-        await peer.auth.update(
+        await peer.auth.remove((await peer.auth.list()).single);
+        await peer.auth.add(
           PassphraseCredential(phrase: Uint8List.fromList([9, 8, 7])),
         );
         committed = await _copyLive(env.files);
@@ -726,7 +705,8 @@ void main() {
       final cancellation = PasskeyCancellation()..cancel();
       final error = await _failure(
         env.open(
-          credential: _passkey(PasskeyRoute.system, cancellation: cancellation),
+          credential: _passkey(PasskeyRoute.system),
+          cancellation: cancellation,
         ),
         KeybayErrorCode.passkeyOperationFailed,
       );
@@ -750,7 +730,8 @@ void main() {
       env.provider.afterNextSecret = cancellation.cancel;
       final error = await _failure(
         env.open(
-          credential: _passkey(PasskeyRoute.system, cancellation: cancellation),
+          credential: _passkey(PasskeyRoute.system),
+          cancellation: cancellation,
         ),
         KeybayErrorCode.passkeyOperationFailed,
       );
@@ -781,7 +762,8 @@ void main() {
       };
       final error = await _failure(
         owner.auth.add(
-          _passkey(PasskeyRoute.hardware, cancellation: cancellation),
+          _passkey(PasskeyRoute.hardware),
+          cancellation: cancellation,
         ),
         KeybayErrorCode.passkeyOperationFailed,
       );
@@ -826,22 +808,10 @@ PassphraseCredential _phrase() =>
 PasskeyCredential _passkey(
   PasskeyRoute route, {
   String rpId = _rpId,
-  String label = 'Primary',
-  String? methodId,
-  PasskeyCancellation? cancellation,
+  Uint8List? pin,
 }) => switch (route) {
-  PasskeyRoute.system => PasskeyCredential.system(
-    rpId: rpId,
-    label: label,
-    methodId: methodId,
-    cancellation: cancellation,
-  ),
-  PasskeyRoute.hardware => PasskeyCredential.hardware(
-    rpId: rpId,
-    label: label,
-    methodId: methodId,
-    cancellation: cancellation,
-  ),
+  PasskeyRoute.system => PasskeyCredential.system(rpId: rpId),
+  PasskeyRoute.hardware => PasskeyCredential.hardware(rpId: rpId, pin: pin),
 };
 
 final class _Environment {
@@ -878,9 +848,13 @@ final class _Environment {
   Future<V2StoreSession> open({
     KeybayCredential? credential,
     bool freshEngine = false,
+    String? methodId,
+    PasskeyCancellation? cancellation,
   }) async {
     final session = await (freshEngine ? _newEngine() : engine).open(
       credential: credential,
+      methodId: methodId,
+      cancellation: cancellation,
     );
     _sessions.add(session);
     return session;
@@ -888,7 +862,7 @@ final class _Environment {
 
   Future<V2StoreSession> enroll(KeybayCredential credential) async {
     final session = await open();
-    await session.auth.add(credential);
+    await session.auth.add(credential, label: 'Primary');
     return session;
   }
 

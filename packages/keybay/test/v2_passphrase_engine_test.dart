@@ -97,7 +97,7 @@ void main() {
   });
 
   test(
-    'auth CRUD preserves data, reseals every frame, and invalidates peers',
+    'auth add/remove preserves data, reseals every frame, and invalidates peers',
     () async {
       final deriver = _FastPassphraseDeriver();
       final environment = _Environment(deriver: deriver);
@@ -146,16 +146,17 @@ void main() {
         credential: _credential(<int>[1, 2, 3]),
       );
       addTearDown(passphrasePeer.close);
+      await owner.auth.remove(added);
       final beforeUpdate = await _copyLive(environment.files);
       final replacement = Uint8List.fromList(<int>[4, 5, 6]);
-      final updating = owner.auth.update(
+      final addingReplacement = owner.auth.add(
         PassphraseCredential(phrase: replacement),
       );
       replacement.fillRange(0, replacement.length, 0);
-      final updated = await updating;
+      final updated = await addingReplacement;
       final afterUpdate = await _copyLive(environment.files);
       try {
-        expect(updated.id, added.id);
+        expect(updated.id, isNot(added.id));
         expect(deriver.lastBorrowedInputIsCleared, isTrue);
         _expectEveryFrameResealed(beforeUpdate, afterUpdate);
       } finally {
@@ -178,13 +179,13 @@ void main() {
       );
       addTearDown(replacementPeer.close);
       await expectLater(
-        owner.auth.remove('0' * 32),
+        owner.auth.remove(added),
         throwsA(_keybayFailure(KeybayErrorCode.authMethodNotConfigured)),
       );
-      expect((await owner.auth.list()).single.id, added.id);
+      expect((await owner.auth.list()).single.id, updated.id);
 
       final beforeRemove = await _copyLive(environment.files);
-      await owner.auth.remove(added.id);
+      await owner.auth.remove(updated);
       final afterRemove = await _copyLive(environment.files);
       try {
         _expectEveryFrameResealed(beforeRemove, afterRemove);
@@ -208,7 +209,7 @@ void main() {
       addTearDown(platformOnly.close);
       await _expectRecords(platformOnly);
       await expectLater(
-        owner.auth.remove(added.id),
+        owner.auth.remove(added),
         throwsA(_keybayFailure(KeybayErrorCode.authMethodNotConfigured)),
       );
     },
@@ -233,15 +234,16 @@ void main() {
           .separateEngine(deriver)
           .open(credential: _credential(<int>[1, 2, 3]));
       addTearDown(beforeUpdate.close);
-      final updated = await owner.auth.update(_credential(<int>[4, 5, 6]));
-      expect(updated.id, added.id);
+      await owner.auth.remove(added);
+      final updated = await owner.auth.add(_credential(<int>[4, 5, 6]));
+      expect(updated.id, isNot(added.id));
       await _expectCrossEngineAuthenticationFailure(beforeUpdate);
 
       final beforeRemove = await environment
           .separateEngine(deriver)
           .open(credential: _credential(<int>[4, 5, 6]));
       addTearDown(beforeRemove.close);
-      await owner.auth.remove(added.id);
+      await owner.auth.remove(updated);
       await _expectCrossEngineAuthenticationFailure(beforeRemove);
 
       expect(await owner.get('service/token'), 'preserved');
@@ -512,7 +514,7 @@ void main() {
     );
   });
 
-  group('M6 KDF failure atomicity', () {
+  group('M6 auth failure atomicity', () {
     test(
       'credential open without a store never derives or creates state',
       () async {
@@ -579,7 +581,7 @@ void main() {
     });
 
     test(
-      'auth.update failure preserves the old route and sessions exactly',
+      'auth.remove failure preserves the old route and sessions exactly',
       () async {
         final deriver = _FastPassphraseDeriver();
         final environment = _Environment(deriver: deriver);
@@ -594,19 +596,16 @@ void main() {
         addTearDown(peer.close);
         final generation = environment.files.liveGeneration;
         final before = await _copyLive(environment.files);
-        deriver.nextFailure = const V2PassphraseDerivationFailure(
-          V2PassphraseDerivationFailureCode.operationFailed,
-        );
-        final callerPhrase = Uint8List.fromList(<int>[4, 5, 6]);
-        final updating = owner.auth.update(
-          PassphraseCredential(phrase: callerPhrase),
-        );
-        callerPhrase.fillRange(0, callerPhrase.length, 0);
+        environment.files.beforeStageFinish = () {
+          throw const StoreFilesFailure(StoreFilesFailureCode.operationFailed);
+        };
+        final removing = owner.auth.remove(method);
 
         await expectLater(
-          updating,
+          removing,
           throwsA(_keybayFailure(KeybayErrorCode.storageOperationFailed)),
         );
+        environment.files.beforeStageFinish = null;
         final after = await _copyLive(environment.files);
         try {
           expect(after, before);

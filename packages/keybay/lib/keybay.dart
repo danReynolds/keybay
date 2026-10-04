@@ -22,13 +22,4 @@ export 'src/v2/keybay_v2.dart'
         PassphraseMethod;
 
 export 'package:keypass/keypass.dart'
-    show
-        HardwareConnection,
-        HardwareConnectionPicker,
-        HardwareEvent,
-        HardwarePinPrompt,
-        HardwarePinRequest,
-        HardwareTransport,
-        PasskeyCancellation,
-        PasskeyErrorCode,
-        PasskeyRoute;
+    show PasskeyCancellation, PasskeyErrorCode, PasskeyRoute;

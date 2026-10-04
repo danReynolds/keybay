@@ -115,17 +115,13 @@ final class Vault extends ChangeNotifier {
     await _refresh(session);
   });
 
-  /// Adds a passphrase, or replaces the current one.
-  Future<void> setPassphrase(String passphrase) =>
+  /// Adds a passphrase to an unprotected store.
+  Future<void> addPassphrase(String passphrase) =>
       _withSession((session) async {
         final phrase = _utf8(passphrase);
         try {
           final credential = PassphraseCredential(phrase: phrase);
-          if (passphraseProtected) {
-            await session.auth.update(credential);
-          } else {
-            await session.auth.add(credential);
-          }
+          await session.auth.add(credential);
         } finally {
           phrase.fillRange(0, phrase.length, 0);
         }
@@ -134,7 +130,7 @@ final class Vault extends ChangeNotifier {
 
   Future<void> removePassphrase() => _withSession((session) async {
     for (final method in await session.auth.list()) {
-      if (method is PassphraseMethod) await session.auth.remove(method.id);
+      if (method is PassphraseMethod) await session.auth.remove(method);
     }
     await _refresh(session);
   });

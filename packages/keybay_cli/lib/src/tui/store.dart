@@ -21,7 +21,7 @@ abstract interface class TuiSession {
   Future<void> setBytes(String key, Uint8List value);
   Future<bool> delete(String key);
   Future<void> clearAll();
-  Future<void> changePassphrase(Uint8List phrase, {required bool replacing});
+  Future<void> addPassphrase(Uint8List phrase);
   Future<void> removePassphrase(String id);
   Future<void> close();
 }

@@ -472,7 +472,7 @@ final class _PassphraseFormState extends State<PassphraseForm>
     }
     final phrase = _phrase.takeBytes();
     eraseDrafts();
-    unawaited(model.changePassphrase(phrase));
+    unawaited(model.addPassphrase(phrase));
   }
 
   @override
@@ -482,7 +482,7 @@ final class _PassphraseFormState extends State<PassphraseForm>
       return ResizePrompt(model: model, draft: true);
     }
     return FormShell(
-      title: model.protected ? 'Change passphrase' : 'Add passphrase',
+      title: 'Add passphrase',
       subtitle: const Text(
         'No recovery for a lost passphrase.',
         style: CellStyle(foreground: AnsiColor(3)),

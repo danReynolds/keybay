@@ -9,6 +9,30 @@ import '../../../packages/keybay/test/support/v2_passkey_backend.dart';
 import '../../../packages/keybay/test/support/v2_test_keybay.dart';
 
 void main() {
+  test(
+    'demo changes passphrases only through explicit removal and addition',
+    () async {
+      final store = V2TestKeybay();
+      final vault = Vault(_Backend(store));
+      addTearDown(() async {
+        await vault.close();
+        vault.dispose();
+        await store.dispose();
+      });
+      await vault.open();
+      await vault.addPassphrase('original');
+      expect(vault.passphraseProtected, isTrue);
+      await vault.removePassphrase();
+      expect(vault.passphraseProtected, isFalse);
+      await vault.addPassphrase('new phrase');
+      await vault.close();
+      await vault.open();
+      expect(vault.stage, VaultStage.locked);
+      expect(await vault.unlock('original'), isFalse);
+      expect(await vault.unlock('new phrase'), isTrue);
+    },
+  );
+
   for (final withPassphrase in [false, true]) {
     test(
       'demo only offers a configured passphrase (mixed: $withPassphrase)',

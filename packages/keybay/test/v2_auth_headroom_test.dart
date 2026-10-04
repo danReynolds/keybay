@@ -85,13 +85,11 @@ void main() {
         await env.dispose();
         provider.clear();
       });
-      PasskeyCredential credential() => PasskeyCredential.system(
-        rpId: 'vault.example.com',
-        label: 'Capacity regression',
-      );
+      PasskeyCredential credential() =>
+          PasskeyCredential.system(rpId: 'vault.example.com');
 
       var session = await env.open();
-      await session.auth.add(credential());
+      await session.auth.add(credential(), label: 'Capacity regression');
       addTearDown(() => session.close());
       // Enrollment checks repeatability twice. Reach a persisted one-digit
       // counter so the next unlock must enlarge authenticated metadata.

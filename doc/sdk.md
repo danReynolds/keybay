@@ -51,7 +51,7 @@ The session retains the recovered store key, not every record name or value.
 in-memory store-key buffer. Process exit also releases memory, but explicit
 closure keeps the exposure window bounded in long-lived applications.
 
-`Keybay.open()`, `session.auth.add/update/remove`, and `Keybay.reset()` may
+`Keybay.open()`, `session.auth.add/remove`, and `Keybay.reset()` may
 invoke trusted OS or provider UI. Applications should call them from a context
 that can accommodate that interaction. Record operations and `auth.list()`
 never prompt or acquire the platform provider, including when an operation fails.
@@ -135,7 +135,7 @@ try {
     final method = await session.auth.add(
       PassphraseCredential(phrase: phrase),
     );
-    print(method.id); // opaque identifier used for later removal
+    print(method.id); // Nonsecret enrollment identifier; remove accepts method.
   } finally {
     phrase.fillRange(0, phrase.length, 0);
   }
@@ -172,64 +172,54 @@ Passphrase management occurs only through an authenticated session:
 
 ```dart
 final methods = await session.auth.list();
-
-await session.auth.update(
-  PassphraseCredential(phrase: replacementPhraseBytes),
-);
-
 final passphrase = methods.whereType<PassphraseMethod>().single;
-await session.auth.remove(passphrase.id);
+await session.auth.remove(passphrase);
+
+// A different passphrase is a new enrollment with a new ID.
+await session.auth.add(
+  PassphraseCredential(phrase: newPhraseBytes),
+);
 ```
 
-`update` replaces the singleton passphrase method while retaining its opaque
-method ID. `remove` takes an ID returned by `list` and removes only that method.
-Other configured methods remain available. Removing the final additional
-method deliberately returns the store to platform-only protection.
+Auth management consists of `add`, `list`, and `remove`. There is no `update`
+or `replace`. Removing and adding are separate commits. To change a passphrase,
+remove the current one before adding another. If it was the only method, the
+vault uses platform-only protection between those calls and stays that way if
+adding fails. Other enrolled methods remain available.
 
-Adding, changing or removing passphrase protection rotates the store key and
-re-encrypts every record. This protects the new generation; an older complete
-snapshot remains subject to its original protection when the corresponding
-platform material is available. Changing the vault passphrase does not revoke
-an API token at its issuer or securely erase external backups.
+Adding or removing protection rotates the store key and re-encrypts every
+record. This protects the new generation; an older complete snapshot retains
+its original protection when the corresponding platform material is available.
+Removing an unlock method does not revoke API tokens at their issuers or erase
+external backups.
 
 ## Add passkey protection
 
 Passkeys supply additional encryption protection through
 [Keypass](https://github.com/danReynolds/keypass). Keybay owns the Keypass client,
-temporary secret, key derivation, encrypted method envelopes and their
-authenticated persistence. Applications use the same `Keybay.open` and
-`session.auth` API as for passphrases; they do not handle a `PasskeyResult`.
+temporary secret, derivation, encrypted method envelopes and their authenticated
+persistence. Applications never handle a `PasskeyResult` or saved Keypass record.
 
-Configure the consumer-owned RP once in a reusable credential. Construction
-presents no UI and retains no secret. No global Keybay domain or hosted service
-is involved:
+Credentials contain authentication input. Constructing one opens no device or
+provider UI. System credentials can be reused as immutable configuration:
 
 ```dart
 const systemPasskey = PasskeyCredential.system(
   rpId: 'vault.example.com',
-  label: 'Personal vault',
 );
-```
 
-For a new or platform-only store, explicitly enroll before writing secrets:
-
-```dart
 final session = await Keybay.open();
 try {
-  final method = await session.auth.add(systemPasskey);
-  // method.id identifies this enrolled alternative.
+  await session.auth.add(systemPasskey, label: 'Personal vault');
   await session.set('service/api-token', 's3cr3t');
 } finally {
   await session.close();
 }
 ```
 
-For an already protected store, open with its existing credential before adding
-another method. Enrollment failure leaves the previous protection intact; do
-not continue with secret writes that depended on the new protection succeeding.
-
-On a later run, use the same configuration to unlock the one matching enrolled
-method. This never creates a new passkey:
+For an already protected store, first open it with its existing credential.
+Await enrollment before writing data that should require the new protection.
+On a later run, authenticate with the existing enrollment:
 
 ```dart
 final session = await Keybay.open(credential: systemPasskey);
@@ -240,136 +230,133 @@ try {
 }
 ```
 
-For direct physical FIDO2 keys, use the hardware constructor:
+Opening never creates a passkey. A missing encrypted file produces
+`storeNotFound` before platform-root access or a passkey ceremony.
+
+For physical FIDO2 keys, provide an optional PIN as UTF-8 bytes:
 
 ```dart
-final backup = await session.auth.add(
+final pin = await readHardwarePinBytes(); // Your app's input UI.
+final adding = session.auth.add(
   PasskeyCredential.hardware(
     rpId: 'dev.example.vault',
-    label: 'Backup security key',
-    requestPin: ui.requestPin,
-    selectConnection: ui.selectConnection,
-    onEvent: ui.onHardwareEvent,
+    pin: pin,
   ),
+  label: 'Backup key',
 );
+pin.fillRange(0, pin.length, 0);
+final backup = await adding;
 ```
 
-Here `ui` represents your application's UI, not a Keybay helper object.
-Both credential constructors contain request/configuration metadata only;
-construction opens no device and presents no dialog.
+Keybay snapshots PIN bytes synchronously, as it does passphrases, and clears
+its copy when the ceremony finishes or the operation fails. It never saves the
+PIN in an enrollment. The caller remains responsible for clearing its own copy.
+The optional PIN must contain 4–63 UTF-8 bytes with no NUL; the authenticator
+applies its own PIN policy. Omit it when the platform/key supplies user
+verification itself. A key requiring application PIN entry then returns
+`passkeyOperationFailed` with `passkeyCode == pinRequired`. The app can ask for
+input and deliberately retry; rejected PINs are never retried automatically.
 
-| Field | Contract |
+| Credential field | Contract |
 | --- | --- |
-| `rpId` | Required, stable relying-party identifier. Use the app-associated domain for the system route, or a stable DNS-shaped identifier for direct hardware. Matching is case-insensitive. |
-| `displayName` | Optional provider presentation text; defaults to the RP ID. |
-| `label` | Enrollment/replacement label; defaults to `Keybay vault`. It does not select a method during unlock. |
-| `methodId` | Exact stored Keybay method to unlock or replace. Omit when adding a method. |
-| `cancellation` | Optional `PasskeyCancellation` for this operation. Use a fresh signal for each attempt. |
+| `rpId` | Required relying-party scope. Use the associated domain for system passkeys, or a stable DNS-shaped identifier for direct hardware. |
+| `displayName` | Optional provider presentation text, defaulting to the RP ID. |
+| `pin` | Hardware-only, optional caller-owned UTF-8 bytes for this attempt. |
 
-The RP ID must be supplied explicitly. It is neither an API endpoint nor a
-replacement for `keybay.application_id`. It does not select another Keybay
-store, change the host application identity or weaken platform protection.
-Existing credentials retain their original RP ID and route; no automatic scope
-migration occurs. Choosing the same RP ID for both routes does not make two
-separately created credentials interchangeable.
+The RP ID is not an endpoint, a Keybay store selector, or a replacement for
+`keybay.application_id`. Direct hardware access needs no hosted website and
+makes no claim to authenticate the calling executable. Using the same RP ID
+for two routes does not make separately enrolled credentials interchangeable.
 
-The hardware constructor also accepts these optional handlers:
-
-| Handler | Behavior |
-| --- | --- |
-| `requestPin` | Receives `HardwarePinRequest` and a cancellation signal. Return owned, writable UTF-8 PIN bytes, or `null` to cancel. Keypass clears those bytes, including late replies. Without a handler, a key needing application PIN entry fails with `pinRequired`. |
-| `selectConnection` | Receives offered `HardwareConnection` objects and cancellation. Return one of those exact objects, or `null` to cancel. A sole connection is selected automatically; multiple connections without a handler fail with `deviceSelectionRequired`. |
-| `onEvent` | Receives informational `HardwareEvent.touchRequired` or `HardwareEvent.presentKey` instructions. These events do not establish authentication. |
-
-A connection can be a USB candidate or NFC reader; a reader does not prove that
-a key is present. Selection belongs to the current operation. Do not cache its
-object for the next call. Close PIN and selection UI when its cancellation
-signal fires. Keypass never automatically retries a rejected PIN, resets a key,
-or switches to a weaker or different credential.
-
-Read any vault data needed by your UI before starting the auth operation.
-Calling Keybay from its hardware callbacks (including `close` or `reset`)
-fails promptly with `storeBusy`; waiting on the operation that is waiting on
-your callback would otherwise deadlock. Ordinary callers outside the callback
-can continue using other sessions while enrollment is pending. Auth changes
-recheck the package before committing and preserve intervening record writes.
+There are no PIN prompts, connection pickers, or event callbacks in a Keybay
+credential. The app owns input and progress UI. Direct hardware discovery
+selects a sole connection; multiple candidates report `deviceSelectionRequired`.
+Disconnect other keys/readers before retrying. Advanced connection selection
+and event handling remain available in Keypass itself.
 
 ### Select and manage methods
 
-Protection methods are alternatives on top of mandatory platform protection:
-`platform AND (passphrase OR passkey A OR passkey B ...)`. A store supports zero
-or one passphrase and multiple passkeys, with at most eight total methods.
+The accepted consumer surface is:
 
-| Operation | Passphrase | Passkey |
-| --- | --- | --- |
-| `add(credential)` | Add the singleton; a second fails with `authMethodAlreadyConfigured` | Enroll another credential, even under the same RP and route |
-| `update(credential)` | Replace the configured passphrase | Replace the exact `methodId`, retaining that Keybay ID |
-| `remove(id)` | Remove that method | Remove that method |
+```dart
+Keybay.open(credential: credential, methodId: selectedId);
+session.auth.add(credential, label: 'Everyday key');
+session.auth.list();
+session.auth.remove(method);
+```
 
-Adding never silently replaces a method; updating/removing an unknown method
-fails with `authMethodNotConfigured`. Use `auth.list()` to display "Add" versus
-"Change" controls, while still handling errors if another session changes policy.
+`methodId` is optional on `open`. Labels are optional on `add`, defaulting to
+`Passphrase` or `Keybay vault`. Both `open` and `add` accept an optional
+`PasskeyCancellation` for passkey attempts; neither stores it in the credential.
 
-`session.auth.list()` returns fully authenticated `PassphraseMethod` and
-`PasskeyMethod` entries without prompting. A passkey entry exposes its stable
-Keybay `id`, `rpId`, `route` and `label`; credential records and key material
-remain internal.
+Protection remains `platform AND (passphrase OR passkey A OR passkey B ...)`.
+A store supports zero or one passphrase and multiple passkeys, up to eight total
+methods. Adding a second passphrase fails with `authMethodAlreadyConfigured`.
+Every successful add creates a new opaque method ID; adding never overwrites
+an enrollment.
 
-For `Keybay.open(credential: PasskeyCredential...)` on a methods-package store
-(platform-only and legacy passphrase stores first reject passkey requests with
-`protectionMismatch`):
+`auth.list()` returns immutable, fully authenticated descriptors without
+prompting. Every method exposes `id` and `label`. A `PasskeyMethod` also exposes
+`rpId` and `route`. Descriptors contain no credential material. They can be
+passed directly to `remove`, including after reopening the same vault:
+
+```dart
+final methods = await session.auth.list();
+final selected = await chooseMethod(methods); // Your app's selection UI.
+await session.auth.remove(selected);
+```
+
+Removal validates both vault identity and method ID. A method from another
+vault, a reset vault, or an already removed enrollment fails with
+`authMethodNotConfigured`. Object instance identity is irrelevant. Removing
+the last method deliberately returns the store to platform-only protection.
+
+For passkey unlock, `methodId` selects among this vault's enrolled methods:
 
 | Request | Behavior before a passkey prompt |
 | --- | --- |
-| Explicit `methodId` exists and matches the requested RP ID and route | Unlock exactly that method. |
-| Explicit `methodId` does not exist | `authMethodNotConfigured`. |
+| Explicit ID exists and matches kind, RP ID and route | Unlock exactly that method. |
+| Explicit ID does not exist | `authMethodNotConfigured`. |
 | Explicit ID names a different kind, RP ID or route | `protectionMismatch`. |
-| No ID and exactly one matching passkey exists | Unlock that method. |
-| No ID and no matching passkey exists | `protectionMismatch`; do not enroll over the existing policy. |
-| No ID and several matching passkeys exist | `authMethodSelectionRequired` with compatible method hints. |
-
-The RP ID scopes credentials; it is not a unique passkey identifier. Only this
-vault's enrolled methods participate in selection, even when the provider has
-many unrelated passkeys under the same RP. After selecting a method, Keybay
-loads its opaque record and Keypass requests that exact credential.
-
-Keybay does not try every credential until one works. On ambiguity, let the
-user choose a method ID and retry using your application's expected RP ID and
-route. `label` and `displayName` are not selectors.
-
-`auth.add` enrolls an additional passkey and requires `methodId` to be omitted.
-`auth.update` requires
-the exact ID of an existing `PasskeyMethod`, enrolls its replacement, and retains
-the Keybay method ID. It can deliberately change that method's RP ID or route:
+| No ID and one matching method exists | Unlock that method. |
+| No ID and no matching method exists | `protectionMismatch`. |
+| No ID and several matching methods exist | `authMethodSelectionRequired` with compatible hints. |
 
 ```dart
-await session.auth.update(
-  PasskeyCredential.hardware(
+final session = await Keybay.open(
+  credential: PasskeyCredential.hardware(
     rpId: 'dev.example.vault',
-    methodId: backup.id,
-    label: 'Replacement backup key',
-    requestPin: ui.requestPin,
-    selectConnection: ui.selectConnection,
-    onEvent: ui.onHardwareEvent,
+    pin: enteredPinBytes,
   ),
+  methodId: backup.id,
 );
-
-await session.auth.remove(backup.id);
 ```
 
-Providing an ID to `add` or omitting it from a passkey `update` is
-`invalidAuthInput`. Passphrase `update` continues to replace the singleton
-passphrase method without an ID. An update is an explicit enrollment operation,
-not an attempt to unlock the replacement using the old credential.
+The RP ID scopes credentials; it is not a unique passkey identifier. Keybay
+loads the selected enrollment's internal record to request that exact passkey.
+It never tries every credential until one works. Labels and display names do
+not select methods. The application retains its expected RP configuration.
 
-Adding, replacing or removing a method updates the encrypted policy atomically
-and rotates protection for the new store generation while retaining other
-configured methods. A failure before atomic replacement leaves the previous
-usable policy intact. An I/O failure reported after replacement can leave the
-new policy committed: reopen and inspect before retrying a mutation. A provider
-may still retain a newly created passkey if the later transaction fails.
-Removing a Keybay method does not delete the
-provider's passkey or make older copied snapshots undecryptable.
+To swap hardware keys, add the new key before removing the old enrollment:
+
+```dart
+final next = await session.auth.add(
+  PasskeyCredential.hardware(rpId: 'dev.example.vault', pin: newKeyPinBytes),
+  label: 'New everyday key',
+);
+await session.auth.remove(backup);
+```
+
+During these two commits, both keys are enrolled. If removal fails, the old
+method may still be enrolled; inspect the list before retrying. At the method
+limit, an enrollment must be removed before another can be added.
+
+Each add or remove atomically commits its own encrypted policy and rotated
+store generation. An I/O failure reported after file replacement can leave
+that operation committed: reopen and inspect before retrying. Provider
+registration may leave a newly created passkey behind if local persistence
+fails. Removing a Keybay method does not delete the provider's passkey or make
+older complete snapshots undecryptable.
 
 ### Authentication errors and hints
 
@@ -420,8 +407,8 @@ final cancellation = PasskeyCancellation();
 final opening = Keybay.open(
   credential: PasskeyCredential.system(
     rpId: 'vault.example.com',
-    cancellation: cancellation,
   ),
+  cancellation: cancellation,
 );
 // Connect a Cancel control to cancellation.cancel().
 final session = await opening;

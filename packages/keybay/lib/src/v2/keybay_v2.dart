@@ -44,8 +44,18 @@ abstract final class Keybay {
   /// Enroll protection explicitly with [KeybayAuthManager.add] before writing
   /// records that should require it.
   /// Trusted operating-system/provider UI may participate in unlocking it.
-  static Future<KeybaySession> open({KeybayCredential? credential}) =>
-      _withCredential(credential, _productionRuntime._open);
+  /// [methodId] selects an enrollment when several match the credential.
+  /// [cancellation] cancels a passkey attempt; await the operation to settle.
+  static Future<KeybaySession> open({
+    KeybayCredential? credential,
+    String? methodId,
+    PasskeyCancellation? cancellation,
+  }) => _withCredential(
+    credential,
+    _productionRuntime._open,
+    methodId: methodId,
+    cancellation: cancellation,
+  );
 
   /// Removes the encrypted store and resets Keybay-owned provider state.
   /// Nonsecret coordination files and provider-owned roots may remain.
@@ -61,9 +71,9 @@ abstract final class KeybayLimits {
 
 /// Authentication material supplied to an operation.
 ///
-/// Passphrases borrow caller-owned bytes; operations snapshot those bytes
-/// synchronously and clear their own copy. Passkeys carry request metadata
-/// and acquire temporary material only during an authentication operation.
+/// Passphrases and hardware PINs borrow caller-owned bytes; operations snapshot
+/// those bytes synchronously and clear their own copy. Passkeys acquire
+/// temporary encryption material only during an authentication operation.
 sealed class KeybayCredential {
   const KeybayCredential();
 }
@@ -139,15 +149,25 @@ final class KeybayException implements Exception {
 
 /// A configured additional unlock method.
 sealed class AuthMethod {
-  const AuthMethod._(this.id);
+  const AuthMethod._(this.id, this._storeId, {required this.label});
 
   /// Opaque stable identifier used to remove this configured method.
   final String id;
+
+  /// Human-readable enrollment name. It is not used to select a credential.
+  final String label;
+
+  // Bind descriptors to their originating vault, including across reset.
+  final String _storeId;
 }
 
 /// A configured singleton passphrase method.
 final class PassphraseMethod extends AuthMethod {
-  const PassphraseMethod._(super.id) : super._();
+  const PassphraseMethod._(
+    super.id,
+    super.storeId, {
+    super.label = 'Passphrase',
+  }) : super._();
 
   @override
   String toString() => 'PassphraseMethod(id: $id)';
@@ -204,19 +224,21 @@ abstract interface class KeybayAuthManager {
   /// At most one passphrase is allowed; adding a second fails with
   /// [KeybayErrorCode.authMethodAlreadyConfigured]. Multiple passkeys may share
   /// an RP ID and route. Adding never replaces an existing method.
-  Future<AuthMethod> add(KeybayCredential credential);
+  /// [label] names this enrollment. [cancellation] applies to passkey attempts.
+  Future<AuthMethod> add(
+    KeybayCredential credential, {
+    String? label,
+    PasskeyCancellation? cancellation,
+  });
 
-  /// Replaces the passphrase or the passkey selected by its method ID.
-  ///
-  /// The existing method must exist and its ID is retained. Provider UI is
-  /// permitted, including creation of a replacement passkey.
-  Future<AuthMethod> update(KeybayCredential replacement);
-
-  /// Removes one alternative by ID; provider UI is permitted.
+  /// Removes a method returned by [add] or [list]; provider UI is permitted.
   ///
   /// Removing the final method returns to platform-only protection. Removing a
   /// passkey method does not delete the credential from its provider.
-  Future<void> remove(String id);
+  /// Foreign-vault and already removed methods fail with
+  /// [KeybayErrorCode.authMethodNotConfigured]. Removing and adding are separate
+  /// commits; changing a passphrase requires removing the existing one first.
+  Future<void> remove(AuthMethod method);
 }
 
 enum _SessionLifecycle { open, closing, closed }
@@ -230,23 +252,37 @@ final _productionRuntime = V2StoreEngine(switch (Platform.operatingSystem) {
 });
 
 final class _CredentialSnapshot {
-  _CredentialSnapshot.passphrase(this.bytes) : passkey = null;
-  _CredentialSnapshot.passkey(this.passkey) : bytes = Uint8List(0);
+  _CredentialSnapshot({
+    required this.bytes,
+    this.passkey,
+    this.methodId,
+    required this.label,
+    this.cancellation,
+  });
 
   final Uint8List bytes;
   final PasskeyCredential? passkey;
+  final String? methodId;
+  final String label;
+  final PasskeyCancellation? cancellation;
 
   void clear() => _clear(bytes);
 }
 
 Future<T> _withCredential<T>(
   KeybayCredential? credential,
-  Future<T> Function(_CredentialSnapshot? credential) operation,
-) {
+  Future<T> Function(_CredentialSnapshot? credential) operation, {
+  String? methodId,
+  PasskeyCancellation? cancellation,
+}) {
   _CredentialSnapshot? snapshot;
   try {
     _checkAuthCallback();
-    snapshot = _snapshotCredential(credential);
+    snapshot = _snapshotCredential(
+      credential,
+      methodId: methodId,
+      cancellation: cancellation,
+    );
     final future = operation(snapshot);
     return future.whenComplete(() => snapshot?.clear());
   } on Object catch (error, stackTrace) {
@@ -255,22 +291,67 @@ Future<T> _withCredential<T>(
   }
 }
 
-_CredentialSnapshot? _snapshotCredential(KeybayCredential? credential) {
-  if (credential == null) return null;
-  return switch (credential) {
-    PassphraseCredential() => _snapshotPassphrase(credential._phrase),
-    PasskeyCredential() => _snapshotPasskey(credential),
-  };
-}
-
-_CredentialSnapshot _snapshotPassphrase(Uint8List phrase) {
-  if (phrase.isEmpty || phrase.length > 1024) {
+_CredentialSnapshot? _snapshotCredential(
+  KeybayCredential? credential, {
+  String? methodId,
+  String? label,
+  PasskeyCancellation? cancellation,
+}) {
+  if (credential == null) {
+    if (methodId != null || cancellation != null) {
+      throw _error(
+        KeybayErrorCode.invalidAuthInput,
+        'A credential is required.',
+      );
+    }
+    return null;
+  }
+  if (cancellation != null && credential is! PasskeyCredential) {
     throw _error(
       KeybayErrorCode.invalidAuthInput,
-      'A passphrase must contain between 1 and 1024 bytes.',
+      'Cancellation applies to passkey operations.',
     );
   }
-  return _CredentialSnapshot.passphrase(Uint8List.fromList(phrase));
+  final name =
+      label ??
+      (credential is PasskeyCredential ? 'Keybay vault' : 'Passphrase');
+  try {
+    if (methodId != null) decodeMethodId(methodId);
+    final encoded = utf8.encode(name);
+    if (name.trim().isEmpty ||
+        encoded.length > v2MaxMethodLabelBytes ||
+        utf8.decode(encoded) != name) {
+      throw const FormatException();
+    }
+  } on Object {
+    throw _error(
+      KeybayErrorCode.invalidAuthInput,
+      'Invalid authentication metadata.',
+    );
+  }
+  final Uint8List bytes;
+  PasskeyCredential? passkey;
+  switch (credential) {
+    case PassphraseCredential():
+      final phrase = credential._phrase;
+      if (phrase.isEmpty || phrase.length > 1024) {
+        throw _error(
+          KeybayErrorCode.invalidAuthInput,
+          'A passphrase must contain between 1 and 1024 bytes.',
+        );
+      }
+      bytes = Uint8List.fromList(phrase);
+    case PasskeyCredential():
+      passkey = _snapshotPasskey(credential);
+      bytes = passkey._pin ?? Uint8List(0);
+  }
+  return _CredentialSnapshot(
+    bytes: bytes,
+    passkey: passkey,
+    methodId: methodId,
+    label: name,
+    cancellation: cancellation,
+  );
 }
 
 Future<T> _future<T>(FutureOr<T> Function() operation) {

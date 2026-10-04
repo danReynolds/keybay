@@ -41,8 +41,16 @@ final class V2StoreEngine {
   int _runtimeGeneration = 0;
 
   /// Opens or initializes the store without reading record values.
-  Future<V2StoreSession> open({KeybayCredential? credential}) =>
-      _withCredential(credential, _open);
+  Future<V2StoreSession> open({
+    KeybayCredential? credential,
+    String? methodId,
+    PasskeyCancellation? cancellation,
+  }) => _withCredential(
+    credential,
+    _open,
+    methodId: methodId,
+    cancellation: cancellation,
+  );
 
   /// Compatibility spelling for platform-only M4/M5 qualification tests.
   Future<V2StoreSession> openPlatformOnly() => open();
@@ -60,6 +68,9 @@ final class V2StoreEngine {
         var hadStaging = false;
         var openingGeneration = 0;
         try {
+          if (credential != null) {
+            _testProbe?.onOperationInput?.call(credential.bytes);
+          }
           _checkPasskeyCancelled(credential);
           final host = await _resolveHost();
           await host.files.withExclusiveTransaction((transaction) async {
@@ -158,6 +169,13 @@ final class V2StoreEngine {
                     throw _error(
                       KeybayErrorCode.protectionMismatch,
                       'The store requires its configured passphrase.',
+                    );
+                  }
+                  if (credential.methodId != null &&
+                      credential.methodId != encodeMethodId(package.methodId)) {
+                    throw _error(
+                      KeybayErrorCode.authMethodNotConfigured,
+                      'The requested method is not configured.',
                     );
                   }
                   final material = await _derivePassphraseAndReleaseCredential(
@@ -547,37 +565,41 @@ final class V2StoreSession implements KeybaySession {
     }),
   );
 
-  Future<AuthMethod> _addAuth(KeybayCredential credential) =>
-      _withCredentialOperation(
-        credential,
-        (snapshot) async => (await _commitAuthChange(
-          this,
-          _AuthChange.add,
-          credential: snapshot,
-        ))!,
-      );
+  Future<AuthMethod> _addAuth(
+    KeybayCredential credential, {
+    String? label,
+    PasskeyCancellation? cancellation,
+  }) => _withCredentialOperation(
+    credential,
+    (snapshot) async =>
+        (await _commitAuthChange(this, _AuthChange.add, credential: snapshot))!,
+    label: label,
+    cancellation: cancellation,
+  );
 
-  Future<AuthMethod> _updateAuth(KeybayCredential replacement) =>
-      _withCredentialOperation(
-        replacement,
-        (snapshot) async => (await _commitAuthChange(
-          this,
-          _AuthChange.update,
-          credential: snapshot,
-        ))!,
-      );
-
-  Future<void> _removeAuth(String id) => _prepare(
+  Future<void> _removeAuth(AuthMethod method) => _prepare(
     () => _start(() async {
-      await _commitAuthChange(this, _AuthChange.remove, methodId: id);
+      if (method._storeId != base64UrlEncode(_storeId)) {
+        throw _error(
+          KeybayErrorCode.authMethodNotConfigured,
+          'The method does not belong to this store.',
+        );
+      }
+      await _commitAuthChange(this, _AuthChange.remove, methodId: method.id);
     }),
   );
 
   Future<T> _withCredentialOperation<T>(
     KeybayCredential credential,
-    Future<T> Function(_CredentialSnapshot snapshot) operation,
-  ) => _prepare(() {
-    final snapshot = _snapshotCredential(credential)!;
+    Future<T> Function(_CredentialSnapshot snapshot) operation, {
+    String? label,
+    PasskeyCancellation? cancellation,
+  }) => _prepare(() {
+    final snapshot = _snapshotCredential(
+      credential,
+      label: label,
+      cancellation: cancellation,
+    )!;
     return _start(() => operation(snapshot), ownedInputs: [snapshot.bytes]);
   });
 
@@ -930,15 +952,14 @@ final class _V2AuthManager implements KeybayAuthManager {
   Future<List<AuthMethod>> list() => _session._listAuth();
 
   @override
-  Future<AuthMethod> add(KeybayCredential credential) =>
-      _session._addAuth(credential);
+  Future<AuthMethod> add(
+    KeybayCredential credential, {
+    String? label,
+    PasskeyCancellation? cancellation,
+  }) => _session._addAuth(credential, label: label, cancellation: cancellation);
 
   @override
-  Future<AuthMethod> update(KeybayCredential replacement) =>
-      _session._updateAuth(replacement);
-
-  @override
-  Future<void> remove(String id) => _session._removeAuth(id);
+  Future<void> remove(AuthMethod method) => _session._removeAuth(method);
 }
 
 final class _RequestedRecord {

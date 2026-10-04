@@ -2,6 +2,7 @@
 
 - Status: implemented on the integration branch; review and release gates apply
 - Date: 2026-10-02
+- Consumer API decision: accepted 2026-10-04, add/list/remove only
 - Amends: [RFC 0001](0001-per-application-stores.md)
 - Consumer contract: [SDK guide](../sdk.md#add-passkey-protection)
 
@@ -9,7 +10,8 @@
 
 Keybay consumes Keypass as a separate, Flutter-free Dart SDK. It accepts
 `PasskeyCredential.system` and `PasskeyCredential.hardware` in the existing
-`open(credential:)`, `auth.add`, and `auth.update` APIs. Keybay owns credential
+`open(credential:)` and `auth.add` APIs. Auth management is `add`, `list`, and
+`remove(AuthMethod)` only; no update or replacement operation is exposed. Keybay owns credential
 records, key derivation, envelopes, and atomic persistence; applications never
 handle the temporary Keypass secret. One explicit RP ID configures each
 credential request, independently of Keybay's fixed application identity.
@@ -22,7 +24,10 @@ access Keypass or reacquire a platform root.
 
 The system route uses Keypass's native provider with the consumer's required
 app/domain association and native host setup. The hardware route uses its
-physical FIDO backend and optional PIN, connection, and event handlers. Direct
+physical FIDO backend with optional caller-owned PIN bytes. Credentials contain
+RP ID, optional display name, route, and (hardware only) optional PIN input.
+Enrollment labels and cancellation belong to operations; the optional method
+selector belongs to `open`. Keybay exposes no hardware UI callbacks. Direct
 hardware RP scoping does not authenticate the calling executable. A shared
 RP ID does not make separately enrolled credentials interchangeable. This
 integration adds neither a Keybay service nor a production browser bridge.
@@ -42,10 +47,18 @@ retries a PIN.
 
 Passkey unlock can omit `methodId` only when exactly one method matches its RP
 and route. Ambiguity returns `authMethodSelectionRequired` before a passkey
-prompt. Updates require an existing passkey method ID and retain it while
-explicitly enrolling a replacement; they may change its RP or route. Adds
-reject a supplied method ID. Passphrase updates retain
-the existing singleton API. `authMethods` error hints are authenticated only
+prompt. The selector is an `open` argument, not credential state. Every add
+gets a fresh ID. Removal accepts a method descriptor bound internally to its
+vault ID and rejects foreign or removed methods. A descriptor need not be the
+same Dart object instance or originate from the current session.
+
+Changing a passphrase requires explicit removal followed by add. Those are
+separate transactions: removing the last method leaves platform-only protection
+if the later add is canceled or fails. There is no hidden upsert, atomic swap,
+or rollback across the two calls. For passkeys, add before removing when the
+method limit permits it. Labels are optional enrollment metadata for both kinds.
+
+`authMethods` error hints are authenticated only
 by the platform package, not yet by the credential-dependent manifest; UI must
 not treat them as authority to unlock or change policy.
 
@@ -54,7 +67,10 @@ material, and on every failure. Keybay clears its owned PRF/Argon output,
 derived private key, HPKE scratch, provisional store key, and rejected queued
 credential buffers. The session owns only its current store key and nonsensitive
 metadata. Caller copies, Dart VM temporaries, and internal X25519 temporary
-copies cannot all be proven erased. Passphrase APIs remain byte based.
+copies cannot all be proven erased. Passphrase and PIN APIs remain byte based. Operations synchronously snapshot
+caller input; PIN snapshots are cleared as soon as the Keypass ceremony settles,
+before vault staging. Keypass receives a fresh owned PIN copy for each requested
+ceremony stage. It never automatically retries a rejected PIN.
 
 ## Suite and encoding
 
