@@ -506,7 +506,11 @@ From the repository root:
 
 No arguments selects `core`. Reports under `build/regression` record
 `kind: cli-regression`, source digest, platform, ABI, and per-selection result.
-A missing prerequisite is blocked (69), never a pass. The core archive/signature
+A missing prerequisite is blocked (69), never a pass. Core regression includes
+hardware enrollment/unlock terminal scenarios using a fake passkey provider:
+PIN masking, deliberate retry, cancellation, interruption, idle exit and
+foreground loss. These do not access a physical key and do not replace attended
+hardware qualification. The core archive/signature
 checks establish structure only; final signed distribution and upgrade evidence
 remain a separate release gate. Generic Dart installation is not qualified by
 these checks.

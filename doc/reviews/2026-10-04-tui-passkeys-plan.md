@@ -40,6 +40,36 @@ loaded ABI 1 and returned no connected devices in 26 ms. The CLI suite passed 24
 the browser demo compile also passed. These are separate from physical-device proof. The pending native
 cancellation/discovery timing and signed distribution gates below still apply.
 
+## Unattended terminal follow-up
+
+The October 4 follow-up adds `hardware_pty_harness.dart` and
+`tool/test_cli_hardware_tui.py` to `tool/test_cli_core.sh`. They run the real SDK
+engine, TUI and POSIX driver with disposable storage/platform roots and a fake
+Keypass provider. No native hardware adapter is loaded and no physical key or
+normal vault is accessed.
+
+The 18 terminal cases cover enrollment and unlock: masked PIN paste through
+blur and resize at both supported minimum sizes; explicit retry after a rejected
+PIN; blocked-PIN submission refusal; cancellation followed by retry only after
+drain; termination while waiting; interruption during PIN entry; idle exit; and
+loss of foreground ownership. The provider returns after cancellation to expose
+late-result cleanup. Receipts assert session closure, cleared operation inputs,
+released provider secrets, unchanged storage for aborted operations and no
+plaintext disclosure. Foreground-loss cases use only their own shell/PTY jobs.
+
+This found and fixed a real keyboard issue: selecting a hardware enrollment
+opened a form with no focused input or button, so Enter did not start unlock.
+The Unlock action now receives initial focus and regains it after a retryable
+failure without a PIN field. Two widget regressions cover entry and retry at
+40×24 and 80×20. The full CLI suite now passes 247 tests; the 32 SDK tests sharing
+the extended fake provider and Dart analysis also pass.
+
+These results qualify the app's simulated terminal lifecycle. They do not
+measure physical USB cancellation, discovery latency with a problematic key,
+or native firmware PIN behavior. The attended test remains pending. The
+prepared live-test executable is rebuilt with the focus fix under the same
+disposable identity and path.
+
 ## User flow
 
 1. Open Keybay normally. First use stays `Keybay.open()`; existing protection

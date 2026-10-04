@@ -18,6 +18,7 @@ final class TestPasskeyProvider {
   bool counterless = false;
   kp.PasskeyErrorCode? nextFailure;
   FutureOr<void> Function()? afterNextSecret;
+  FutureOr<void> Function(kp.PasskeyCancellation)? beforeEvaluation;
 
   int get operationCount => _backends.length;
 
@@ -74,9 +75,11 @@ final class TestPasskeyProvider {
 
   Future<kp.PasskeyAssertion> _evaluate(
     kp.PasskeyEvaluationRequest request,
+    kp.PasskeyCancellation cancellation,
   ) async {
     final binding = request.bindings.single;
     evaluations.add(binding);
+    await beforeEvaluation?.call(cancellation);
     final failure = nextFailure;
     nextFailure = null;
     if (failure != null) throw kp.PasskeyException(failure);
@@ -143,7 +146,7 @@ final class _TestPasskeyBackend implements kp.PasskeyBackend {
   Future<kp.PasskeyAssertion> evaluate(
     kp.PasskeyEvaluationRequest request,
     kp.PasskeyCancellation cancellation,
-  ) => provider._evaluate(request);
+  ) => provider._evaluate(request, cancellation);
 
   @override
   Future<void> dispose() async {

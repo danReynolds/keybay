@@ -320,6 +320,12 @@ unchanged. No automatic clearing or clipboard-history erasure is claimed.
 
 The repeatable core regression includes Fleury component tests, production-SDK
 model tests, native PTY lifecycle tests and private clipboard round trips.
+The hardware-specific PTY harness substitutes only the provider/platform/storage
+boundaries and covers PIN input, cancel-and-drain, interruption, idle exit and
+foreground loss during both enrollment and unlock. Its operation receipts check
+cleanup and commit outcomes; physical hardware timing remains a separate gate.
+Hardware Unlock focuses its primary button when no PIN field is present, both
+on entry and after a retryable failure.
 Linux uses isolated Xvfb; macOS uses a uniquely named pasteboard rather than the
 user's clipboard. See [qualification status](cli-qualification-status.md) for
 the exact configurations checked and the remaining release evidence.

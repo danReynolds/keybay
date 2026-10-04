@@ -35,10 +35,13 @@ dart compile exe packages/keybay_cli/tool/passphrase_prompt_harness.dart \
   -o "$tmp/passphrase_prompt_harness"
 dart compile exe packages/keybay_cli/tool/command_harness.dart \
   -o "$tmp/command_harness"
+dart compile exe packages/keybay_cli/tool/hardware_pty_harness.dart \
+  -o "$tmp/hardware_pty_harness"
 dart compile exe packages/keybay_cli/tool/clipboard_harness.dart \
   -o "$tmp/clipboard_harness"
 python3 tool/test_cli_commands.py "$tmp/command_harness"
 python3 tool/test_cli_tui.py "$tmp/command_harness"
+python3 tool/test_cli_hardware_tui.py "$tmp/hardware_pty_harness"
 python3 tool/test_cli_exec.py "$tmp/keybay"
 python3 tool/test_cli_pty.py "$tmp/prompt_harness"
 python3 tool/test_cli_passphrase.py "$tmp/passphrase_prompt_harness"

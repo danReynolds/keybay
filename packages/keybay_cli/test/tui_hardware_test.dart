@@ -326,6 +326,40 @@ void main() {
   );
 
   for (final size in [const CellSize(40, 24), const CellSize(80, 20)]) {
+    test(
+      'hardware unlock focuses its action on entry and retry at $size',
+      () async {
+        final seed = await store.open();
+        await seed.auth.add(
+          const PasskeyCredential.hardware(rpId: cliHardwareRpId),
+        );
+        await seed.close();
+        final m = model();
+        await m.open();
+        final before = provider.operationCount;
+        final tester = FleuryTester(
+          viewportSize: size,
+          clipboard: DiscardClipboard(),
+        );
+        addTearDown(tester.dispose);
+        tester.pumpWidget(KeybayTui(model: m));
+        await tester.settle();
+        tester.sendKey(const KeyEvent(KeyCode.enter));
+        await tester.settle();
+        expect(m.view, TuiView.hardwareUnlock);
+        expect(provider.operationCount, before);
+        provider.nextFailure = PasskeyErrorCode.deviceUnavailable;
+        tester.sendKey(const KeyEvent(KeyCode.enter));
+        await tester.settle();
+        expect(provider.operationCount, before + 1);
+        expect(m.hardwareError, contains('No hardware key'));
+        tester.sendKey(const KeyEvent(KeyCode.enter));
+        await tester.settle();
+        expect(provider.operationCount, before + 2);
+        expect(m.view, TuiView.browse);
+      },
+    );
+
     test('hardware form keeps PIN and undo state private at $size', () async {
       final m = model();
       await m.open();

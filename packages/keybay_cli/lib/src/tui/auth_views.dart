@@ -154,6 +154,7 @@ final class _HardwareFormState extends State<HardwareForm>
     ),
   );
   final _labelFocus = FocusNode();
+  final _submitFocus = FocusNode();
   String? _validation;
   TuiModel get model => widget.model;
   bool get enrolling => model.view == TuiView.hardware;
@@ -185,11 +186,12 @@ final class _HardwareFormState extends State<HardwareForm>
     await model.hardwareAttempt(label: label, pin: pin);
     if (!mounted || model.ending) return;
     TuiBinding.of(context).addPostFrameCallback((_) {
-      if (mounted &&
-          !model.busy &&
-          model.hardwareNeedsPin &&
-          model.hardwareCanRetry) {
-        _pin.focus.requestFocus();
+      if (mounted && !model.busy && model.hardwareCanRetry) {
+        if (model.hardwareNeedsPin) {
+          _pin.focus.requestFocus();
+        } else if (!enrolling) {
+          _submitFocus.requestFocus();
+        }
       }
     });
   }
@@ -199,6 +201,7 @@ final class _HardwareFormState extends State<HardwareForm>
     _pin.dispose();
     _label.dispose();
     _labelFocus.dispose();
+    _submitFocus.dispose();
     super.dispose();
   }
 
@@ -215,6 +218,8 @@ final class _HardwareFormState extends State<HardwareForm>
             label: enrolling ? 'Add' : 'Unlock',
             shortcut: 'Enter',
             variant: ButtonVariant.success,
+            focusNode: _submitFocus,
+            autofocus: !enrolling && !model.hardwareNeedsPin,
             onPressed: waiting || !model.hardwareCanRetry ? null : _submit,
           ),
           TuiAction(
