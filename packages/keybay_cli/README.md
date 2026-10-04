@@ -191,8 +191,8 @@ Settings keeps **Security** and **Data** in a left sidebar, with the selected
 category’s content beside it. The filled highlight marks keyboard focus;
 each list’s current row keeps its `›` marker when focus moves elsewhere.
 Security shows passphrase
-protection and the five-minute native idle-exit policy, and lets you add, change or
-remove the passphrase. A mismatched confirmation keeps both entries masked,
+protection, passkey count and the five-minute native idle-exit policy. It offers
+Add passphrase when absent, Add hardware key, and removal of enrolled methods. A mismatched confirmation keeps both entries masked,
 marks the confirmation field red, and lets you correct it in place.
 The idle timeout is not currently user-configurable. The browser UX preview
 disables it and shows `Idle exit: Off`.
@@ -237,6 +237,39 @@ The UI disables Fleury debug/hot reload and refuses `FLEURY_*` runtime settings
 or an active Dart VM service before opening the SDK. Fleury currently uses an
 exact Git revision; release builds wait for a reviewed hosted Fleury release.
 Source and native archive builds remain supported.
+
+### Hardware keys in the TUI
+
+A build with the Keypass native adapter can add a hardware passkey from
+Settings → Security → **Add hardware key**. Connect one compatible FIDO2 key,
+optionally name it, and choose Add. Touch the key when it flashes. If the key
+requires a PIN, enter its existing PIN in the masked field and submit; rejected
+PINs are never retried automatically. Cancel waits for the operation to finish.
+
+On reopening, select an enrolled method and choose Unlock. Multiple enrollments
+are allowed; the TUI uses the selected method's exact saved ID and RP. Security
+→ **Unlock methods** removes a selected enrollment after confirmation. Remaining
+methods are alternatives; removing the last one returns to platform-only
+protection. Removal does not delete the passkey from the physical key.
+
+This hardware route needs no website. The CLI owns a stable hardware RP;
+ordinary unsigned CLI processes do not use system passkeys. Other commands
+currently support passphrase unlock only, so keep a passphrase alternative
+when using `run`, `get`, `set`, `list` or `rm`.
+
+For the attended macOS test from a source checkout, run:
+
+```sh
+./tool/build_cli_hardware_test.sh
+open 'build/hardware-tui-test/Start hardware test.command'
+```
+
+This requires Dart, CMake, libfido2 and OpenSSL development dependencies. The
+script builds the pinned native adapter beside the test executable and uses a
+disposable vault and test RP. Build and operation receipts stay in that output
+directory. This local build is not portable release packaging; physical-device,
+Linux USB and signed distribution qualification remain separate gates. See the
+[integration plan](../../doc/reviews/2026-10-04-tui-passkeys-plan.md).
 
 ### Local browser UX preview
 
@@ -381,12 +414,12 @@ with terminal controls escaped. Assignments that can make the program run other
 code, such as `PATH`, `LD_*`, `DYLD_*`, `NODE_OPTIONS`, `BASH_ENV`, `PYTHON*`
 and `GIT_*`, are marked; the marking is a review aid, not a complete list.
 
-Without a passphrase, any program running as you can use `keybay list` and
+Without an additional unlock method, any program running as you can use `keybay list` and
 `keybay run` to read every value, without a terminal or prompt. On macOS that
 also bypasses the Keychain prompt an unrelated program would otherwise meet.
 Add a passphrase in `keybay open` → Settings → Security when that matters.
 
-Passphrase setup/change/removal is available in `keybay open` → Settings → Security;
+Unlock-method enrollment/removal is available in `keybay open` → Settings → Security;
 these standalone commands do not add a second management interface. Opening the
 SDK can also invoke trusted OS/provider UI, including without a terminal.
 Record operations never invoke it.

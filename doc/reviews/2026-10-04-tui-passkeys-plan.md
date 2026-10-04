@@ -1,27 +1,44 @@
 # Hardware passkeys in the Keybay TUI
 
-Date: October 4, 2026. Status: implementation plan, not device qualification.
+Date: October 4, 2026. Status: local implementation ready for attended testing; no TUI device qualification yet.
 Depends on [PR 88](https://github.com/danReynolds/keybay/pull/88) and the
 accepted [SDK contract](../sdk.md#add-passkey-protection).
 
 ## Readiness
 
 The SDK is sufficient for a first macOS USB integration without changing its
-public API. The current TUI cannot perform that test yet: it accepts only a
-passphrase and discards the SDK's method hints and passkey error details.
+public API. The native TUI now retains method hints and typed provider failures, and
+implements the hardware flow below.
 
 | Layer | Current evidence | Work before a real TUI test |
 | --- | --- | --- |
 | Keybay SDK | Explicit add/list/remove, authentication-only open, exact method selection, PIN ownership and operation cancellation; automated vault tests | Exercise the default Keypass adapter with a real key and native Keybay store |
 | Desktop hardware adapter | Keypass implements macOS/Linux USB using libfido2; prior Keypass device tests are separate evidence | Build the pinned native source, place the library beside the test executable, verify loading |
-| TUI | Passphrase screens, masked drafts, serialized operations, foreground checks and terminal cleanup | Hardware enrollment, method chooser, PIN input, cancellation and typed failure handling |
+| TUI | Hardware enrollment, exact method selection, masked PIN input, cancellation and typed failures; SDK-backed model/widget regressions | Attended physical enrollment and fresh-process unlock |
 | CLI commands | Passphrase-only `get`, `set`, `list`, `rm`, `run` | Initially give accurate TUI guidance for hardware-only stores; attended hardware unlock parity before shipping general CLI support |
 | Distribution | CLI archive currently contains one executable; the local hardware dylib links Homebrew libfido2/OpenSSL | Bundle/locate dependencies, include notices, update archive/formula checks and qualify signed runtime loading |
 | Public CI/release | Keypass is a private SSH Git dependency | Resolve dependency distribution; do not waive the publication gate |
 
-The SDK is ready to consume locally; the TUI and release packaging are not yet
-implemented. No further passkey architecture research is needed for the first
+The SDK and TUI are ready to consume locally; portable release packaging remains
+unimplemented. No further passkey architecture research is needed for the first
 USB test. Native lifecycle and packaging details still need qualification.
+
+## Local test build
+
+`tool/build_cli_hardware_test.sh` builds the pinned Keypass USB adapter and an
+AOT TUI executable under `build/hardware-tui-test`. It creates a persistent,
+unique disposable Keybay application identity and a separate `.test` RP. Open
+`Start hardware test.command` there to run it in Terminal. The harness seeds
+one synthetic marker, verifies it on every successful open, and records
+operation outcomes and process IDs without PINs or key material. It does not
+open the normal CLI vault. Quit and relaunch the same executable for the
+fresh-process unlock test.
+
+The first local build passed the native adapter CTest (1/1); read-only discovery
+loaded ABI 1 and returned no connected devices in 26 ms. The CLI suite passed 245 tests (18 hardware cases using a fake provider);
+38 native terminal PTY checks, 45 root tooling/demo tests, Dart analysis and
+the browser demo compile also passed. These are separate from physical-device proof. The pending native
+cancellation/discovery timing and signed distribution gates below still apply.
 
 ## User flow
 

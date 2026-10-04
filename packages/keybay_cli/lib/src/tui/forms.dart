@@ -91,7 +91,11 @@ final class _UnlockFormState extends State<UnlockForm>
 
   void _back() {
     eraseDrafts();
-    unawaited(model.close());
+    if (model.canChooseAnotherMethod && !model.busy) {
+      model.navigate(TuiView.unlockMethods);
+    } else {
+      unawaited(model.close());
+    }
   }
 
   Future<void> _submit() async {

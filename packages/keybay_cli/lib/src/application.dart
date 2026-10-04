@@ -20,7 +20,11 @@ const int exitInteraction = 4;
 
 typedef ManifestLoader = Future<Manifest> Function(String path);
 typedef SessionOpener =
-    Future<KeybaySession> Function({KeybayCredential? credential});
+    Future<KeybaySession> Function({
+      KeybayCredential? credential,
+      String? methodId,
+      PasskeyCancellation? cancellation,
+    });
 typedef SecretValueReader =
     Future<Uint8List> Function({required String key, required bool fromStdin});
 typedef PassphraseReader = Future<Uint8List> Function({String? summary});

@@ -35,13 +35,17 @@ Future<void> main(List<String> arguments) async {
       idleWarning: shortIdle
           ? const Duration(milliseconds: 150)
           : tuiIdleWarning,
-      openSession: ({credential}) async {
+      openSession: ({credential, methodId, cancellation}) async {
         if (delayedUnlock && credential != null) {
           final gate = Completer<void>();
           store.gateNextOperation(gate.future);
           Timer(const Duration(milliseconds: 400), gate.complete);
         }
-        final opened = await store.open(credential: credential);
+        final opened = await store.open(
+          credential: credential,
+          methodId: methodId,
+          cancellation: cancellation,
+        );
         if (delayed && first) {
           first = false;
           stderr.writeln('test:opening');

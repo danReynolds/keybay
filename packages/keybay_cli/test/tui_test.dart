@@ -219,7 +219,7 @@ void main() {
     await tester.settle();
     expect(model.status, isEmpty);
     expect(tester.semantics().where(role: SemanticRole.notification), isEmpty);
-    expect(model.protected, isTrue);
+    expect(model.hasPassphrase, isTrue);
     expect(model.keys, ['acme/a', 'acme/z']);
     expect(store.deriver.lastBorrowedInputIsCleared, isTrue);
   });
@@ -512,9 +512,13 @@ void main() {
       model.dispose();
       var opens = 0;
       model = createNativeTuiModel(
-        openSession: ({credential}) {
+        openSession: ({credential, methodId, cancellation}) {
           opens++;
-          return store.open(credential: credential);
+          return store.open(
+            credential: credential,
+            methodId: methodId,
+            cancellation: cancellation,
+          );
         },
         resetStore: store.reset,
         authorize: () {
@@ -594,7 +598,7 @@ void main() {
     final phrase = bytes('secret-passphrase');
     await model.addPassphrase(phrase);
     expect(phrase, everyElement(0));
-    expect(model.protected, isTrue);
+    expect(model.hasPassphrase, isTrue);
     final value = bytes('line one\nline two');
     model.navigate(TuiView.create);
     await model.save('acme/new', value, replace: false);
@@ -609,11 +613,11 @@ void main() {
     model.navigate(TuiView.clear);
     await model.clearRecords();
     expect(model.keys, isEmpty);
-    expect(model.protected, isTrue);
+    expect(model.hasPassphrase, isTrue);
     expect(model.hasSession, isTrue);
     model.navigate(TuiView.removePassphrase);
     await model.removePassphrase();
-    expect(model.protected, isFalse);
+    expect(model.hasPassphrase, isFalse);
   });
 
   test('simple and namespaced names remain distinct through CRUD', () async {
@@ -1485,7 +1489,7 @@ void main() {
               await tester.settle();
             }
           }
-          expect(model.protected, protected);
+          expect(model.hasPassphrase, protected);
           tester.sendKey(const KeyEvent(KeyCode.escape));
           await tester.settle();
           expect(model.view, TuiView.browse);
@@ -1717,7 +1721,7 @@ void main() {
             );
           }
           expect(model.keys, ['acme/a', 'acme/z']);
-          expect(model.protected, protected);
+          expect(model.hasPassphrase, protected);
           tester.sendKey(const KeyEvent(KeyCode.escape));
           await tester.settle();
           expect(model.view, entry.value.$1);
@@ -2037,7 +2041,7 @@ void main() {
       expect(tester.find(byType(ValueView)), hasLength(2));
       tester.sendKey(const KeyEvent(KeyCode.s, modifiers: {KeyModifier.ctrl}));
       await tester.settle();
-      expect(model.protected, isTrue);
+      expect(model.hasPassphrase, isTrue);
       await model.close();
       tester.pumpWidget(const SizedBox());
       model.dispose();
@@ -2203,7 +2207,7 @@ void main() {
       tester.type('sr-passphrase');
       tester.sendKey(const KeyEvent(KeyCode.s, modifiers: {KeyModifier.ctrl}));
       await tester.settle();
-      expect(model.protected, isFalse);
+      expect(model.hasPassphrase, isFalse);
       expect(tester.renderToString(), contains('Confirm your passphrase.'));
       tester.type('sr-passphrase');
       tester.sendKey(const KeyEvent(KeyCode.r, modifiers: {KeyModifier.ctrl}));
@@ -2239,7 +2243,7 @@ void main() {
       );
       tester.sendKey(const KeyEvent(KeyCode.s, modifiers: {KeyModifier.ctrl}));
       await tester.settle();
-      expect(model.protected, isTrue);
+      expect(model.hasPassphrase, isTrue);
       model.navigate(TuiView.reset);
       await tester.settle();
       tester.type(resetConfirmation);
@@ -3094,7 +3098,7 @@ void main() {
         await tester.settle();
         expect(inputs[0].text, 'first-draft');
         expect(inputs[1].text, 'other-draft');
-        expect(model.protected, isFalse);
+        expect(model.hasPassphrase, isFalse);
         expect(model.status, isEmpty);
         expect(tester.renderToString(), contains("Passphrases don't match."));
         expect(tester.renderToString(), isNot(contains('first-draft')));
@@ -3150,7 +3154,7 @@ void main() {
           const KeyEvent(KeyCode.s, modifiers: {KeyModifier.ctrl}),
         );
         await tester.settle();
-        expect(model.protected, isTrue);
+        expect(model.hasPassphrase, isTrue);
         expect(model.view, TuiView.security);
         expect(tester.renderToString(), contains('Passphrase: On'));
         for (final input in inputs) {
@@ -3213,7 +3217,7 @@ void main() {
         expect(input.text, isEmpty);
         expect(input.canUndo, isFalse);
       }
-      expect(model.protected, isFalse);
+      expect(model.hasPassphrase, isFalse);
       expect(
         tester.renderToString(),
         isNot(contains("Passphrases don't match.")),
@@ -3233,7 +3237,7 @@ void main() {
       tester.paste('x' * 20000);
       await tester.settle();
       expect(model.view, TuiView.browse);
-      expect(model.protected, isFalse);
+      expect(model.hasPassphrase, isFalse);
       expect(tester.find(byType(TextArea)), isEmpty);
       expect(model.status, contains('draft was discarded'));
     },
@@ -3333,9 +3337,13 @@ void main() {
     model.dispose();
     var opens = 0;
     model = createNativeTuiModel(
-      openSession: ({credential}) {
+      openSession: ({credential, methodId, cancellation}) {
         opens++;
-        return store.open(credential: credential);
+        return store.open(
+          credential: credential,
+          methodId: methodId,
+          cancellation: cancellation,
+        );
       },
       resetStore: store.reset,
       authorize: () {},

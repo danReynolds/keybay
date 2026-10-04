@@ -61,19 +61,34 @@ final class _SettingsScreenState extends State<SettingsScreen> {
 
   List<_SettingsAction> get _categoryActions => [
     if (!_data) ...[
-      if (!model.protected)
+      if (!model.hasPassphrase)
         (
           shortcut: 'p',
           label: 'Add passphrase',
           view: TuiView.passphrase,
           description: 'Require a passphrase when opening this store.',
         ),
-      if (model.protected)
+      if (model.hasPassphrase && !model.hasPasskeys)
         (
           shortcut: 'x',
           label: 'Remove passphrase',
           view: TuiView.removePassphrase,
           description: 'Remove the passphrase. Keep platform protection.',
+        ),
+      if (model.supportsHardware)
+        (
+          shortcut: 'h',
+          label: 'Add hardware key',
+          view: TuiView.hardware,
+          description:
+              'Add a physical FIDO2 key as an alternative unlock method.',
+        ),
+      if (model.hasPasskeys)
+        (
+          shortcut: 'm',
+          label: 'Unlock methods',
+          view: TuiView.methods,
+          description: 'Inspect or remove a configured unlock method.',
         ),
     ] else ...[
       (
@@ -86,7 +101,7 @@ final class _SettingsScreenState extends State<SettingsScreen> {
         shortcut: 'r',
         label: 'Reset Keybay',
         view: TuiView.reset,
-        description: 'Delete all saved keys and remove the passphrase.',
+        description: 'Delete all saved keys and remove their unlock methods.',
       ),
     ],
   ];
@@ -95,6 +110,10 @@ final class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     _menu.currentIndex = _data ? 1 : 0;
     final actions = _categoryActions;
+    _actions.currentIndex = (_actions.currentIndex ?? 0).clamp(
+      0,
+      actions.length - 1,
+    );
     return KeyBindings(
       bindings: [
         KeyBinding(KeyCode.escape, onTrigger: (_) => _open(TuiView.browse)),
@@ -217,56 +236,59 @@ final class _SettingsScreenState extends State<SettingsScreen> {
     ),
   );
 
-  Widget _content(List<_SettingsAction> actions, {required bool narrow}) =>
-      LayoutBuilder(
-        builder: (_, size) {
-          final labelWidth = ((size.maxCols ?? 56) - 6).clamp(1, 100);
-          final menuRows = actions.fold(
-            0,
-            (rows, action) =>
-                rows + ((action.label.length + 1) / labelWidth).ceil(),
-          );
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                _data ? 'Data' : 'Security',
-                style: const CellStyle(bold: true),
-              ),
-              const SizedBox(height: 1),
-              if (!_data) ...[
-                Text(
-                  'Passphrase: ${model.protected ? 'On' : 'Off'}',
-                  // Amber is Keybay's "note this" role, not its error role:
-                  // platform-only is supported, but it is the weaker state and
-                  // should not be the quieter of the two.
-                  style: model.protected
-                      ? context.accents.accent
-                      : context.accents.attention,
-                ),
-                Text(
-                  'Idle exit: ${_idleExitLabel(model.idleTimeout)}',
-                  style: context.theme.mutedStyle,
-                ),
-                const SizedBox(height: 1),
-              ],
-              SizedBox(
-                // A stable key keeps the shared focus node attached as the
-                // surrounding content changes with the category.
-                key: const ValueKey('settings-actions'),
-                height: menuRows,
-                child: _actionList(actions),
-              ),
-              const SizedBox(height: 1),
-              Text(
-                actions[_actions.currentIndex ?? 0].description,
-                maxLines: narrow ? 3 : 2,
-                style: context.theme.mutedStyle,
-              ),
-            ],
-          );
-        },
+  Widget _content(
+    List<_SettingsAction> actions, {
+    required bool narrow,
+  }) => LayoutBuilder(
+    builder: (_, size) {
+      final labelWidth = ((size.maxCols ?? 56) - 6).clamp(1, 100);
+      final menuRows = actions.fold(
+        0,
+        (rows, action) =>
+            rows + ((action.label.length + 1) / labelWidth).ceil(),
       );
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(_data ? 'Data' : 'Security', style: const CellStyle(bold: true)),
+          const SizedBox(height: 1),
+          if (!_data) ...[
+            Text(
+              'Passphrase: ${model.hasPassphrase ? 'On' : 'Off'}',
+              // Amber is Keybay's "note this" role, not its error role:
+              // platform-only is supported, but it is the weaker state and
+              // should not be the quieter of the two.
+              style: model.hasPassphrase
+                  ? context.accents.accent
+                  : context.accents.attention,
+            ),
+            if (model.hasPasskeys)
+              Text(
+                'Passkeys: ${model.methods.where((m) => m.rpId != null).length}',
+              ),
+            Text(
+              'Idle exit: ${_idleExitLabel(model.idleTimeout)}',
+              style: context.theme.mutedStyle,
+            ),
+            const SizedBox(height: 1),
+          ],
+          SizedBox(
+            // A stable key keeps the shared focus node attached as the
+            // surrounding content changes with the category.
+            key: const ValueKey('settings-actions'),
+            height: menuRows,
+            child: _actionList(actions),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            actions[_actions.currentIndex ?? 0].description,
+            maxLines: narrow ? 3 : 2,
+            style: context.theme.mutedStyle,
+          ),
+        ],
+      );
+    },
+  );
 
   Widget _actionList(List<_SettingsAction> actions) => FocusDetector(
     onFocusChange: (_) => setState(() {}),

@@ -165,7 +165,7 @@ def main():
         p.receive(b"Passphrases don't match.")
         # Correction works in place: both fields survived, focus is on confirm.
         os.write(p.master, b'\x7ft\x13')
-        p.receive(b'Passphrase protection updated.')
+        p.receive(b'Passphrase added.')
         assert b'disposable-draft' not in p.output
         assert b'disposable-drafX' not in p.output
         p.output.clear()

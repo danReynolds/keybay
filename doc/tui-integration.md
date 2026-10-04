@@ -1,10 +1,11 @@
 # Foreground TUI integration
 
-The current TUI supports passphrase unlock. The
+The native TUI supports passphrase and hardware-passkey enrollment, selection,
+unlock and removal. System passkeys are shown as unavailable in the ordinary
+CLI. Removal refuses to leave only unsupported system methods. The
 [hardware-passkey integration plan](reviews/2026-10-04-tui-passkeys-plan.md)
-tracks method selection, native packaging and the first real vault test.
-Until that integration lands, removal refuses to leave a mixed vault requiring
-only passkeys that this UI cannot use.
+records the automated evidence and outstanding physical-device and packaging
+qualification. The browser demo remains synthetic and hides hardware actions.
 
 `keybay open` remains inside `keybay_cli`. The SDK's storage, crypto and
 provider boundaries are unchanged. Its ordinary Dart resolver also supports
@@ -15,7 +16,7 @@ and settles at most one SDK action at a time.
 The implementation has these internal modules:
 
 - `tui/store.dart`: the small storage contract shared by the native TUI and
-  website demo. Borrowed value and passphrase bytes are consumed or copied
+  website demo. Borrowed value, passphrase and PIN bytes are consumed or copied
   before an adapter returns its future, so callers can immediately erase them.
 - `tui/native_model.dart`: the production SDK adapter, including redacted error
   classification. It preserves the SDK's credential and session ownership.
@@ -33,6 +34,10 @@ The implementation has these internal modules:
   bounded revealed-value column.
 - `tui/settings.dart`: the Security and Data categories and their action lists.
 - `tui/forms.dart`: one small widget per Unlock, New/Edit, passphrase and reset form.
+- `tui/auth_views.dart`: bounded method chooser and hardware enrollment/unlock
+  form. PINs are always masked; a provider request enables a deliberate PIN
+  submission, with no retry or PIN caching. Cancel signals the native operation
+  and waits for it to drain before permitting another attempt.
 - `tui/secret_draft.dart`: draft ownership, erasure, byte validation and shared
   masked/revealed field lifecycle.
 - `tui/runner.dart`: controlling-terminal checks, filtered native events,
@@ -122,7 +127,7 @@ Settings has a persistent left sidebar for Security and Data with content beside
 it, at both supported minimum sizes. ↑/↓ changes the displayed category without
 invoking an action. Enter/→ focuses content, ← returns to the sidebar, and Tab
 moves between sidebar, content and Back. Escape/Back exits Settings. Security
-contains passphrase state, its actions and the host's idle-exit policy; Data
+contains passphrase state, passkey count, add/remove actions and the host's idle-exit policy; Data
 contains Clear/Reset. Cancellation returns to the originating category.
 The native timeout defaults to five minutes, with a thirty-second warning;
 there is no user-facing timeout setting. The annotation preview disables the
@@ -182,7 +187,8 @@ label. Padding belongs between action cells, not inside the shortcut/label pair.
 accounts for wrapped titles and action rows at the supported minimum size.
 Renaming is outside scope and requires no new SDK API.
 A single return-view value restores the invoking screen on form cancellation;
-Unlock cancellation closes the invocation. No route stack is introduced.
+Unlock cancellation returns to the method chooser when alternatives exist;
+otherwise it closes the invocation. No route stack is introduced.
 Ctrl+S saves a record/passphrase form and Ctrl+R toggles disclosure, including
 while a field is focused. Labels carry the chords; plain letters remain input.
 These use existing Fleury key bindings, outside its editor keymap, and native

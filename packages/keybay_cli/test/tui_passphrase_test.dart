@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:keybay/keybay.dart';
 import 'package:keybay_cli/src/tui/model.dart';
 import 'package:keybay_cli/src/tui/native_model.dart';
+import 'package:keybay_cli/src/tui/store.dart';
 import 'package:test/test.dart';
 
 import '../../keybay/test/support/v2_test_keybay.dart';
@@ -18,7 +19,7 @@ void main() {
     const PasskeyCredential.system(rpId: 'vault.example.com'),
   ]) {
     test(
-      'TUI preserves its last usable method (${credential.route.name})',
+      'TUI removal requires a usable survivor (${credential.route.name})',
       () async {
         final provider = TestPasskeyProvider();
         final store = V2TestKeybay(keypassClient: provider.client);
@@ -46,6 +47,14 @@ void main() {
         await model.open(utf8.encode('correct'));
         model.navigate(TuiView.removePassphrase);
         await model.removePassphrase();
+        if (credential.route == PasskeyRoute.hardware) {
+          expect(model.view, TuiView.security);
+          expect(model.hasPassphrase, isFalse);
+          final reopened = await store.open(credential: credential);
+          expect(await reopened.get('service/token'), 'retained');
+          await reopened.close();
+          return;
+        }
         expect(model.status, contains('cannot unlock the remaining passkeys'));
         expect(store.files.liveGeneration, generation);
         await model.close();
@@ -62,7 +71,7 @@ void main() {
 
   for (final withPassphrase in [false, true]) {
     test(
-      'TUI offers only its supported auth UI (mixed: $withPassphrase)',
+      'TUI lists configured unlock choices (mixed: $withPassphrase)',
       () async {
         final provider = TestPasskeyProvider();
         final store = V2TestKeybay(keypassClient: provider.client);
@@ -93,14 +102,19 @@ void main() {
         });
         await model.open();
         if (withPassphrase) {
-          expect(model.view, TuiView.unlock);
+          expect(model.view, TuiView.unlockMethods);
+          model.chooseUnlock(
+            model.unlockMethods.firstWhere(
+              (m) => m.kind == TuiAuthKind.passphrase,
+            ),
+          );
           await model.open(utf8.encode('correct'));
           expect(model.view, TuiView.browse);
           expect(model.keys, ['service/token']);
-          expect(model.protected, isTrue);
+          expect(model.hasPassphrase, isTrue);
         } else {
-          expect(model.view, TuiView.failed);
-          expect(model.status, contains('does not yet support passkey unlock'));
+          expect(model.view, TuiView.unlockMethods);
+          expect(model.unlockMethods.single.kind, TuiAuthKind.hardware);
           expect(model.hasSession, isFalse);
           expect(model.resetFromFailure, isFalse);
         }
@@ -138,12 +152,12 @@ void main() {
           expect(model.view, isNot(TuiView.passphrase));
           model.navigate(TuiView.removePassphrase);
           await model.removePassphrase();
-          expect(model.protected, isFalse);
+          expect(model.hasPassphrase, isFalse);
         }
         model.navigate(TuiView.passphrase);
         final typed = utf8.encode('secret-passphrase');
         await model.addPassphrase(Uint8List.fromList(typed));
-        expect(model.protected, isTrue);
+        expect(model.hasPassphrase, isTrue);
         await model.close();
         model.dispose();
 

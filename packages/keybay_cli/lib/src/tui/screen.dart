@@ -5,6 +5,7 @@ import 'package:fleury_widgets/fleury_widgets_web.dart'
     show Dialog, ToastHandle, ToastSeverity, Toaster;
 
 import 'chrome.dart';
+import 'auth_views.dart';
 import 'forms.dart';
 import 'model.dart';
 import 'settings.dart';
@@ -29,6 +30,8 @@ final class KeybayTui extends StatelessWidget {
     TuiView.edit,
     TuiView.passphrase,
     TuiView.reset,
+    TuiView.hardware,
+    TuiView.hardwareUnlock,
   };
 
   @override
@@ -109,6 +112,30 @@ final class KeybayTui extends StatelessWidget {
         model: model,
         tooSmall: tooSmall,
       ),
+      TuiView.methods ||
+      TuiView.unlockMethods => AuthMethodsScreen(model: model),
+      TuiView.hardware || TuiView.hardwareUnlock => HardwareForm(
+        key: ValueKey(model.view),
+        model: model,
+        tooSmall: tooSmall,
+      ),
+      TuiView.removeMethod => _confirmation(
+        context,
+        'Remove this unlock method?',
+        [
+          Text(safeTuiLabel(model.selectedMethod?.label ?? ''), maxLines: 2),
+          Text(
+            model.methods.length == 1
+                ? 'This leaves platform protection alone.'
+                : 'One of the remaining unlock methods will still be required.',
+          ),
+          if (model.selectedMethod?.rpId != null)
+            const Text('The passkey remains on its key or provider.'),
+        ],
+        action: 'Remove',
+        confirm: model.removeSelectedMethod,
+        cancel: TuiView.methods,
+      ),
       TuiView.recovery => _panel(
         context,
         'Forgot your passphrase?',
@@ -159,11 +186,13 @@ final class KeybayTui extends StatelessWidget {
         'Your Keybay store is ready',
         [
           const Text(
-            'Platform protection is active. Without a passphrase, any program running as you can read these values through Keybay. Add one to require it when opening the store.',
+            'Platform protection is active. Add an unlock method to require a passphrase or hardware key when opening this store.',
           ),
         ],
         [
           _go(context, 'Add passphrase', TuiView.passphrase),
+          if (model.supportsHardware)
+            _go(context, 'Add hardware key', TuiView.hardware),
           _go(
             context,
             'Continue with platform protection',
@@ -205,7 +234,7 @@ final class KeybayTui extends StatelessWidget {
         'Remove passphrase protection?',
         [
           const Text(
-            'This reduces protection. Any program running as you will be able to read these values through Keybay.',
+            'Removing the final unlock method leaves platform protection alone.',
           ),
         ],
         action: 'Remove passphrase',

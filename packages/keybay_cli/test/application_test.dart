@@ -165,7 +165,7 @@ void main() {
       final app = _application(
         harness: harness,
         lifetime: lifetime,
-        opener: ({credential}) async {
+        opener: ({credential, methodId, cancellation}) async {
           final session = await harness.open(credential: credential);
           opened.complete();
           await resume.future;
@@ -547,7 +547,7 @@ void main() {
             expect(harness.credentialOpenCalls, 0);
             expect(
               errors.toString(),
-              contains('does not yet support passkey unlock'),
+              contains('this command does not support passkey unlock'),
             );
             expect(errors.toString(), isNot(contains('reset')));
             expect(output.toString(), isEmpty);
@@ -825,10 +825,18 @@ final class _Harness {
 
   bool get allSessionsClosed => sessions.every((session) => session.isClosed);
 
-  Future<KeybaySession> open({KeybayCredential? credential}) async {
+  Future<KeybaySession> open({
+    KeybayCredential? credential,
+    String? methodId,
+    PasskeyCancellation? cancellation,
+  }) async {
     openCalls++;
     if (credential != null) credentialOpenCalls++;
-    final delegate = await store.open(credential: credential);
+    final delegate = await store.open(
+      credential: credential,
+      methodId: methodId,
+      cancellation: cancellation,
+    );
     final tracked = _TrackingSession(this, delegate);
     sessions.add(tracked);
     return tracked;

@@ -79,7 +79,7 @@ void main() {
       ),
     );
     final opened = await store.open(phrase: bytes('demo-password'));
-    expect(await opened.passphraseId(), isNotNull);
+    expect(await opened.listMethods(), hasLength(1));
     await opened.close();
     store.dispose();
   });

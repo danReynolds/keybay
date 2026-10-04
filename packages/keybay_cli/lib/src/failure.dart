@@ -42,8 +42,8 @@ CliFailure failureForKeybay(KeybayException error) {
         when error.authMethods.whereType<PassphraseMethod>().isEmpty &&
             error.authMethods.whereType<PasskeyMethod>().isNotEmpty =>
       <String>[
-        'error: this CLI does not yet support passkey unlock.',
-        'Use a build of this application that supports the configured method.',
+        'error: this command does not support passkey unlock.',
+        'Use keybay open for hardware keys. System passkeys require a supported app host.',
       ],
     KeybayErrorCode.authRequired || KeybayErrorCode.unlockFailed => <String>[
       'error: Keybay authentication failed.',
