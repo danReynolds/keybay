@@ -1,5 +1,11 @@
 # Foreground TUI integration
 
+The current TUI supports passphrase unlock. The
+[hardware-passkey integration plan](reviews/2026-10-04-tui-passkeys-plan.md)
+tracks method selection, native packaging and the first real vault test.
+Until that integration lands, removal refuses to leave a mixed vault requiring
+only passkeys that this UI cannot use.
+
 `keybay open` remains inside `keybay_cli`. The SDK's storage, crypto and
 provider boundaries are unchanged. Its ordinary Dart resolver also supports
 Pub workspace activation by selecting the owning package from bounded local

@@ -93,12 +93,21 @@ final class _NativeTuiSession implements TuiSession {
   });
   @override
   Future<void> removePassphrase(String id) => _nativeOperation(() async {
-    final method = (await session.auth.list())
+    final methods = await session.auth.list();
+    final method = methods
         .whereType<PassphraseMethod>()
         .where((method) => method.id == id)
         .firstOrNull;
     if (method == null) {
       throw const TuiStoreException('The passphrase is no longer configured.');
+    }
+    // Until this UI can use passkeys, keep its only supported unlock method.
+    // This is a UI restriction; the SDK still permits explicit removal.
+    if (methods.whereType<PasskeyMethod>().isNotEmpty) {
+      throw const TuiStoreException(
+        'This TUI cannot unlock the remaining passkeys. Remove the passphrase '
+        'using a build that supports those methods.',
+      );
     }
     await session.auth.remove(method);
   });

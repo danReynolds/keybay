@@ -3,8 +3,8 @@ part of 'keybay_v2.dart';
 /// Authentication input for a passkey operation.
 /// Construction presents no UI. A hardware PIN borrows caller-owned bytes,
 /// just like a passphrase; operations snapshot and clear their own copy.
-/// Keybay obtains and disposes the Keypass result internally. RP scope does not change Keybay's
-/// host identity, file location or mandatory platform protection.
+/// Keybay obtains and disposes the Keypass result internally. RP scope does not
+/// change Keybay's host identity, file location or mandatory platform protection.
 final class PasskeyCredential extends KeybayCredential {
   const PasskeyCredential.system({required this.rpId, this.displayName})
     : route = PasskeyRoute.system,

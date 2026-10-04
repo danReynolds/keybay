@@ -129,7 +129,16 @@ final class Vault extends ChangeNotifier {
       });
 
   Future<void> removePassphrase() => _withSession((session) async {
-    for (final method in await session.auth.list()) {
+    final methods = await session.auth.list();
+    // This demo cannot yet reopen a passkey-only vault. Leave the SDK's more
+    // general removal policy available to consumers that support that route.
+    if (methods.whereType<PasskeyMethod>().isNotEmpty) {
+      throw StateError(
+        'This demo cannot unlock the remaining passkeys. Remove the passphrase '
+        'using a build that supports those methods.',
+      );
+    }
+    for (final method in methods) {
       if (method is PassphraseMethod) await session.auth.remove(method);
     }
     await _refresh(session);

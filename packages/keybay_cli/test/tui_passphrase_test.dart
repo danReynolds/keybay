@@ -13,6 +13,53 @@ import '../../keybay/test/support/v2_test_keybay.dart';
 import '../../keybay/test/support/v2_passkey_backend.dart';
 
 void main() {
+  for (final credential in [
+    const PasskeyCredential.hardware(rpId: 'vault.example.com'),
+    const PasskeyCredential.system(rpId: 'vault.example.com'),
+  ]) {
+    test(
+      'TUI preserves its last usable method (${credential.route.name})',
+      () async {
+        final provider = TestPasskeyProvider();
+        final store = V2TestKeybay(keypassClient: provider.client);
+        final seeded = await store.open();
+        await seeded.auth.add(credential);
+        await seeded.auth.add(
+          PassphraseCredential(phrase: utf8.encode('correct')),
+        );
+        await seeded.set('service/token', 'retained');
+        await seeded.close();
+        final generation = store.files.liveGeneration;
+        final model = createNativeTuiModel(
+          openSession: store.open,
+          resetStore: store.reset,
+          authorize: () {},
+          onExit: () {},
+        );
+        addTearDown(() async {
+          await model.close();
+          model.dispose();
+          await store.dispose();
+          provider.expectReleased();
+          provider.clear();
+        });
+        await model.open(utf8.encode('correct'));
+        model.navigate(TuiView.removePassphrase);
+        await model.removePassphrase();
+        expect(model.status, contains('cannot unlock the remaining passkeys'));
+        expect(store.files.liveGeneration, generation);
+        await model.close();
+        final reopened = await store.open(
+          credential: PassphraseCredential(phrase: utf8.encode('correct')),
+        );
+        expect(await reopened.get('service/token'), 'retained');
+        expect(await reopened.auth.list(), hasLength(2));
+        expect(provider.operationCount, 1);
+        await reopened.close();
+      },
+    );
+  }
+
   for (final withPassphrase in [false, true]) {
     test(
       'TUI offers only its supported auth UI (mixed: $withPassphrase)',

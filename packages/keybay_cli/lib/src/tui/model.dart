@@ -530,8 +530,7 @@ final class TuiModel extends ChangeNotifier {
           await _closeSession();
           view = TuiView.failed;
           resetFromFailure = false;
-          text =
-              'The session is no longer usable. Reopen to authenticate the current state.';
+          text = '$text\nReopen to authenticate the current state.';
         }
         if (text.isEmpty) {
           _clearStatus();

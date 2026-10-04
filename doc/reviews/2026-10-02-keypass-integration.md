@@ -1,5 +1,47 @@
 # Keypass integration engineering review
 
+## PR cleanup and TUI readiness — October 4, 2026
+
+Reviewed PR 88 at `d6fabe4579166d43881686b8589289a0ac465ec9`, after refreshing
+the PR and upstream refs. GitHub had no submitted reviews or inline review
+threads. This follow-up is a local engineering review, not a new independent
+review or physical-device qualification. The earlier separate agent reviews
+remain scoped to their recorded revisions.
+
+The review traced credential snapshots, method selection/binding, enrollment
+and removal rotation, cancellation/cleanup, and the CLI's native/TUI boundary.
+It found a reproducible UI lockout: a mixed vault could be opened with its
+passphrase, then have that passphrase removed by the current passphrase-only
+TUI or demo, leaving only passkeys those UIs cannot use. Both now refuse that
+removal before mutation. Four regressions (system/hardware survivors in each
+UI) failed before the fix and pass after it, including unchanged storage and
+reopen checks. The SDK's explicit removal policy is unchanged. TUI failures
+also retain their redacted explanation when closing the session, rather than
+replacing actionable guidance with a generic failure. API comments now
+distinguish method IDs used by open from method objects used by remove.
+
+Fresh validation on macOS ARM64 / Dart 3.12.2:
+
+- Full SDK: 589 passed, three D-Bus-daemon skips.
+- Full CLI: 227 passed.
+- Flutter demo: ten passed; analysis clean.
+- Repository tooling and shared web demo: 45 passed.
+- SDK/CLI source/tests and shared web-demo analysis: clean.
+
+The [TUI integration plan](2026-10-04-tui-passkeys-plan.md) records the concrete
+next work. No new public SDK API is needed for the first hardware USB flow.
+The UI needs method selection, PIN/cancellation views and more precise failure
+handling. The distribution scripts do not yet package the hardware library;
+the local Keypass dylib links Homebrew libfido2/OpenSSL and is not a portable
+release artifact. Native cancellation/drain latency remains a test obligation,
+especially during readiness discovery, which currently uses its own signal.
+Prior Keypass device receipts do not prove a native Keybay vault round trip.
+
+PR CI is still blocked: the current macOS job failed during dependency
+resolution with `git@github.com: Permission denied (publickey)` while fetching
+Keypass. The exact dependency pin and release gates remain unchanged. The PR
+stays a draft; this review does not authorize treating it as release-ready.
+
 ## Accepted add/remove contract — October 4, 2026
 
 The consumer API is now `auth.add(credential, label:)`, `auth.list()`, and

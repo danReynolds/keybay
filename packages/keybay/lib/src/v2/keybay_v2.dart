@@ -151,7 +151,8 @@ final class KeybayException implements Exception {
 sealed class AuthMethod {
   const AuthMethod._(this.id, this._storeId, {required this.label});
 
-  /// Opaque stable identifier used to remove this configured method.
+  /// Opaque stable identifier used to select this method when opening a store.
+  /// Pass the method object itself to [KeybayAuthManager.remove].
   final String id;
 
   /// Human-readable enrollment name. It is not used to select a credential.
