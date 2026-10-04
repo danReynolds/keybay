@@ -636,3 +636,50 @@ nested Linux host/ABI when Docker is used. CI invokes the same selectors.
 
 Flatpak CLI packaging, Snap, Windows and mobile CLI distribution remain outside
 this release scope. These CLI changes do not broaden the SDK's security claims.
+
+
+## Hardware command and packaging follow-up (2026-10-04)
+
+The local hardware feature is ready for the attended Keybay test. CLI commands
+now select an enrolled hardware/passphrase method, preserve piped input and
+redirected output, mask PINs, and cancel/drain the provider before restoring the
+terminal. The TUI still owns enrollment and removal. No open operation creates
+a credential.
+
+The Keypass readiness cancellation fix is merged in
+[Keypass PR 2](https://github.com/danReynolds/keypass/pull/2). Keybay pins
+`cdca9e336ca82f70bd57be73f2d9ee7450ec7af4`; all ten platform CI jobs passed for
+that commit. The trusted backend readiness contract now accepts cancellation;
+the consumer Keypass API is unchanged. Its Dart suite passed 159 tests.
+
+Local validation on macOS ARM64 / Dart 3.12.2:
+
+- 254 CLI tests, 38 general TUI PTY cases, 18 hardware TUI cases and 13 hardware
+  command cases; 22 hidden-input checks, command/exec/clipboard checks.
+- 589 SDK tests passed with three environment-gated skips, including the exact
+  dependency-source firewall recheck; 45 repository tooling tests passed.
+- Code analysis, shell lint, strict archive guards and Homebrew renderer checks.
+  The publishable SDK still reports its existing Git-dependency warning; the
+  publication gate has not been suppressed.
+- Pinned native adapter CTest, relocated ABI loading, Developer ID signing of
+  the split runtime/module and native companions, exact code-hash constraints,
+  and help/version through an extracted `bin` symlink. A different same-team
+  module fails constraint verification. These checks never opened the product
+  vault or performed a device ceremony.
+
+Linux ARM64 Docker validation used glibc 2.41, libfido2 1.17.0, OpenSSL 3.5.7
+and CBOR 0.10.2. Native CTest and relocated ABI loading passed, as did all
+18 hardware TUI and 13 hardware command PTY cases. The PTY provider is fake,
+and the container runs as root; this is terminal/control-flow evidence, not
+ordinary-user USB permissions or physical Linux qualification. The resize
+harness now waits for its masked paste to render before sending SIGWINCH,
+since Linux does not order the signal behind terminal input.
+
+The disposable launcher is rebuilt by `tool/build_cli_hardware_test.sh`. It
+retains the previous test identity and provides both TUI and command launchers.
+Remaining feature validation is attended enrollment, reopening, command unlock,
+cancellation/disconnection timing and removal with the physical key.
+Published release-kit companion integration, public dependency resolution,
+notarization and installed upgrades remain separate release work. See
+[native packaging](cli-hardware-packaging.md) and
+[release readiness](release-readiness.md).

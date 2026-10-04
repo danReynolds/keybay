@@ -14,16 +14,25 @@ The October 2 passkey integration adds a development-only, exact-commit Keypass
 dependency and a new authenticated methods format. Its engineering review and
 regressions do not renew the older physical-device evidence. Keypass must become
 available to consumers, then be released on pub.dev and substituted for the Git
-pin before Keybay passes its unchanged publication gate. CLI/demo passkey UI
-and end-to-end Keybay vault tests with native passkey providers remain separate
-work; the SDK accepts system and hardware credentials.
+pin before Keybay passes its unchanged publication gate. The CLI hardware UI is implemented; demo passkey UI and end-to-end native
+Keybay vault qualification remain separate work; the SDK accepts system and hardware credentials.
+
+The October 4 hardware follow-up implements TUI enrollment/removal, hardware
+unlock for ordinary commands, and local native dependency bundling. Local
+signed split-runtime loading and extracted help/version checks pass. See
+[hardware packaging](cli-hardware-packaging.md) for the exact evidence. The
+private dependency/publication gate and final installed-distribution gate remain.
+The current release-kit checkout already supports a signed Dart runtime/module
+bundle; carrying the new hardware companions through its release stages remains
+integration work. The older single-file description below records the original
+September finding, not the current release-kit implementation.
 
 ## Remaining work, in order
 
 | Priority | Work | Completion evidence |
 | --- | --- | --- |
 | P0, Keypass | Resolve repository distribution and publish a reviewed hosted Keypass version; replace the SDK's exact Git pin with that version. | Consumer resolution, reviewed closure, unchanged SDK publish dry-run and exact-candidate CI pass. No permission to publish is implied by implementation approval. |
-| P0, native macOS | Build and package a dedicated signed Dart runtime, signed AOT module and launcher through release-kit. Update the archive contract and Homebrew installation together. | Reproducible bundle from the release candidate, stable application/signing identity, and successful launch after signing. |
+| P0, native macOS | Carry the locally qualified runtime/module and hardware library companions through release-kit staging, signing, archive and Homebrew publication. | Reproducible bundle from the release candidate, stable application/signing identity, and successful launch after signing. |
 | P0, native CLI | Qualify the actual installed packages and upgrades on macOS ARM64, Linux x64 and Linux ARM64, as configured in `release.toml`. | Artifact hashes, observed OS/ABI, protected-store continuity, CLI/TUI/child-process checks, and macOS notarization/downloaded-launch evidence. A source build or ad-hoc archive is insufficient. |
 | P0, Fleury | Publish reviewed Fleury and fleury_widgets versions that include [danReynolds/fleury#269](https://github.com/danReynolds/fleury/pull/269) (`93816cde`), then replace the CLI's exact Git pins with them. rk refuses to release a unit built from Git dependencies (RK-DART-201), even when they are pinned to a commit. | Reviewed dependency closure and installed CLI checks. Fleury publication is a separate release action; it has not happened as part of this work. |
 | P1 | Reconcile documentation, assess the latest security-monitoring results and validate the final candidate. | Current installation/release claims, no unresolved applicable blocking findings, full manual CI on the exact final main commit, and retained package/archive receipts. |

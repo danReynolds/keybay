@@ -253,9 +253,11 @@ methods are alternatives; removing the last one returns to platform-only
 protection. Removal does not delete the passkey from the physical key.
 
 This hardware route needs no website. The CLI owns a stable hardware RP;
-ordinary unsigned CLI processes do not use system passkeys. Other commands
-currently support passphrase unlock only, so keep a passphrase alternative
-when using `run`, `get`, `set`, `list` or `rm`.
+ordinary CLI processes do not use system passkeys. `run`, `get`, `set`, `list`
+and `rm` can unlock with an enrolled hardware key or passphrase. One supported
+method is used directly; several produce a numbered choice. PIN input and
+hardware instructions use the controlling terminal, leaving piped stdin and
+redirected stdout alone. Commands do not enroll new methods.
 
 For the attended macOS test from a source checkout, run:
 
@@ -267,8 +269,10 @@ open 'build/hardware-tui-test/Start hardware test.command'
 This requires Dart, CMake, libfido2 and OpenSSL development dependencies. The
 script builds the pinned native adapter beside the test executable and uses a
 disposable vault and test RP. Build and operation receipts stay in that output
-directory. This local build is not portable release packaging; physical-device,
-Linux USB and signed distribution qualification remain separate gates. See the
+directory. After enrolling, quit and reopen to verify fresh-process unlock,
+then run `Test command unlock.command` from the same directory. Both launchers
+use the same disposable vault. The build bundles its native dependencies;
+physical-device and published distribution qualification remain separate. See the
 [integration plan](../../doc/reviews/2026-10-04-tui-passkeys-plan.md).
 
 ### Local browser UX preview
@@ -392,11 +396,13 @@ print or transmit them.
 
 ## Authentication and lifetime
 
-Platform protection is always present. If the store also requires a passphrase,
-`set`, `get`, `rm`, `list`, and a secret-referencing `run` each make one hidden
-passphrase attempt through the controlling terminal. Wrong input exits; there
-is no automatic retry, background unlock agent, or cache between commands.
-A value pipe remains separate from the passphrase, and `run` leaves stdin for
+Platform protection is always present. `set`, `get`, `rm`, `list`, and a
+secret-referencing `run` authenticate an additional method when configured.
+The selected passphrase is read once with input hidden. A hardware operation
+asks for the key's existing PIN only after the provider requires it; a rejected
+PIN exits without retry. Ctrl+C cancels and waits for provider cleanup before
+restoring the terminal. No credential is cached between commands.
+A value pipe remains separate from authentication, and `run` leaves stdin for
 the child. Help, version, and literal-only `run` never open Keybay.
 
 Use a passphrase for high-value credentials on ordinary desktop hosts. Their
@@ -406,8 +412,8 @@ that program can obtain the platform root and encrypted file.
 
 Before `run` reads any referenced value, the terminal shows the canonical
 executable, arguments, and every manifest environment name. For a protected
-store this precedes the passphrase prompt, which is the approval. Without a
-passphrase the summary is shown whenever a terminal is attached, but nothing is
+store this precedes the method choice or authentication prompt. Without an
+additional method the summary is shown whenever a terminal is attached, but nothing is
 asked: it makes a launch visible, not approved. References show their key names;
 literal values and secret values are omitted. Paths and arguments are quoted
 with terminal controls escaped. Assignments that can make the program run other
@@ -417,7 +423,7 @@ and `GIT_*`, are marked; the marking is a review aid, not a complete list.
 Without an additional unlock method, any program running as you can use `keybay list` and
 `keybay run` to read every value, without a terminal or prompt. On macOS that
 also bypasses the Keychain prompt an unrelated program would otherwise meet.
-Add a passphrase in `keybay open` → Settings → Security when that matters.
+Add a passphrase or hardware key in `keybay open` → Settings → Security when that matters.
 
 Unlock-method enrollment/removal is available in `keybay open` → Settings → Security;
 these standalone commands do not add a second management interface. Opening the
@@ -510,8 +516,10 @@ A missing prerequisite is blocked (69), never a pass. Core regression includes
 hardware enrollment/unlock terminal scenarios using a fake passkey provider:
 PIN masking, deliberate retry, cancellation, interruption, idle exit and
 foreground loss. These do not access a physical key and do not replace attended
-hardware qualification. The core archive/signature
-checks establish structure only; final signed distribution and upgrade evidence
+hardware qualification. Core also builds and relocates the hardware adapter,
+loads only its ABI metadata, and checks archive integrity. See
+[native packaging](../../doc/cli-hardware-packaging.md) for signed builds;
+ final signed distribution and upgrade evidence
 remain a separate release gate. Generic Dart installation is not qualified by
 these checks.
 

@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 import io
+import json
+import hashlib
+from cli_hardware_bundle import REVISION, NOTICES
 import pathlib
 import shlex
 import subprocess
@@ -85,6 +88,11 @@ def main() -> int:
         sentinel = tmp / "executed"
         valid = tmp / "valid-untrusted.tar.gz"
         with tarfile.open(valid, "w:gz") as archive:
+            files = {name: b'native fixture' for name in ('libkeypass_hardware.dylib', 'libfido2.1.dylib', 'libcrypto.3.dylib', 'libcbor.0.14.dylib', NOTICES)}
+            metadata = {'schema': 1, 'platform': 'macos', 'architecture': 'arm64', 'keypassRevision': REVISION,
+                        'files': {n: hashlib.sha256(v).hexdigest() for n,v in files.items()}}
+            add_file(archive, 'hardware.json', json.dumps(metadata).encode())
+            for name, data in files.items(): add_file(archive, name, data)
             add_file(archive, "LICENSE")
             add_file(archive, "README.md")
             add_directory(archive, "example")
@@ -95,6 +103,9 @@ def main() -> int:
                 add_file(archive, f"example/quickstart/{name}", data, mode)
             payload = f"#!/bin/sh\ntouch {shlex.quote(str(sentinel))}\n".encode()
             add_file(archive, "keybay", payload, 0o755)
+            add_file(archive, "keybay-runtime", payload, 0o755)
+            add_file(archive, "keybay.aot", payload)
+            add_file(archive, "LICENSE.dart")
         result = subprocess.run(
             ["./tool/verify_cli_archive.sh", str(valid)],
             cwd=repo,
@@ -104,6 +115,19 @@ def main() -> int:
         )
         if result.returncode != 0:
             raise AssertionError(f"valid archive failed validation: {result.stderr!r}")
+        for case in ('corrupt-library', 'unexpected-library', 'manifest-path-traversal', 'missing-library'):
+            altered = tmp / (case + '.tar.gz')
+            with tarfile.open(valid) as source, tarfile.open(altered, 'w:gz') as target:
+                for member in source:
+                    data = source.extractfile(member).read() if member.isfile() else None
+                    if case == 'missing-library' and member.name == 'libcrypto.3.dylib': continue
+                    if case == 'corrupt-library' and member.name == 'libcrypto.3.dylib': data = b'bad'; member.size = len(data)
+                    if case == 'manifest-path-traversal' and member.name == 'hardware.json':
+                        item = json.loads(data); item['files']['../../escape'] = item['files'].pop('libcrypto.3.dylib')
+                        data = json.dumps(item).encode(); member.size = len(data)
+                    target.addfile(member, io.BytesIO(data) if data is not None else None)
+                if case == 'unexpected-library': add_file(target, 'injected.dylib')
+            reject(repo, altered, case)
         if sentinel.exists():
             raise AssertionError("structural archive validation executed the candidate")
 

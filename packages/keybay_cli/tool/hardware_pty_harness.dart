@@ -41,6 +41,14 @@ Future<void> main(List<String> arguments) async {
   await seed.set('acme/key', 'disposable-value');
   if (scenario.startsWith('unlock-')) {
     await seed.auth.add(credential, label: 'Disposable hardware key');
+    if (arguments.contains('--two-methods')) {
+      await seed.auth.add(credential, label: 'Backup hardware key');
+    }
+    if (arguments.contains('--with-passphrase')) {
+      final phrase = utf8.encode('disposable-passphrase');
+      await seed.auth.add(PassphraseCredential(phrase: phrase));
+      phrase.fillRange(0, phrase.length, 0);
+    }
   }
   await seed.close();
   ownedInputs.clear();
@@ -82,8 +90,9 @@ Future<void> main(List<String> arguments) async {
   record('ready', {'pid': pid});
   try {
     final shortIdle = arguments.contains('--idle');
+    final commandAt = arguments.indexOf('--command');
     exitCode = await runKeybay(
-      ['open'],
+      commandAt < 0 ? ['open'] : arguments.sublist(commandAt + 1),
       resetStore: store.reset,
       idleTimeout: shortIdle
           ? const Duration(seconds: 2)

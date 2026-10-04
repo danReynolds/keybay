@@ -50,6 +50,7 @@ Future<int> runKeybay(
       openSession: openSession,
       readSecretValue: input.read,
       readPassphrase: input.readPassphrase,
+      authTerminal: input,
       authorizeSecretOutput: output.authorize,
       authorizeSecretInput: input.authorize,
       lifetime: lifetime,

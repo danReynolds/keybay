@@ -73,8 +73,13 @@ def render(version: str, directory: pathlib.Path) -> str:
     end
   end
 
+  preserve_rpath
+
   def install
-    bin.install "keybay"
+    libexec.install "keybay", "hardware.json", "THIRD_PARTY_NOTICES.txt"
+    libexec.install Dir["*.dylib", "*.so", "*.so.*"]
+    libexec.install "keybay-runtime", "keybay.aot", "LICENSE.dart" if OS.mac?
+    bin.install_symlink libexec/"keybay"
     prefix.install "README.md"
     pkgshare.install "example"
   end

@@ -97,7 +97,7 @@ void main() {
   });
 
   test('Keypass Git source and resolved revision are the reviewed commit', () {
-    const commit = '78cbf68a52b9e11f22434059fcde8069a97b2bad';
+    const commit = 'cdca9e336ca82f70bd57be73f2d9ee7450ec7af4';
     const url = 'git@github.com:danReynolds/keypass.git';
     final spec = File('pubspec.yaml').readAsStringSync();
     expect(spec, contains('url: $url\n      ref: $commit'));
@@ -110,8 +110,16 @@ void main() {
       r'^  keypass:\n([\s\S]*?)(?=^  \w|\Z)',
       multiLine: true,
     ).firstMatch(lock)!.group(1)!;
-    expect(entry, contains('ref: "$commit"'));
-    expect(entry, contains('resolved-ref: "$commit"'));
+    for (final field in ['ref', 'resolved-ref']) {
+      expect(
+        RegExp(
+          '^      $field: (?:$commit|"$commit")'
+          r'$',
+          multiLine: true,
+        ).hasMatch(entry),
+        isTrue,
+      );
+    }
     expect(entry, contains('url: "$url"'));
     expect(entry, contains('source: git'));
   });

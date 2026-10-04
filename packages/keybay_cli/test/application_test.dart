@@ -547,7 +547,7 @@ void main() {
             expect(harness.credentialOpenCalls, 0);
             expect(
               errors.toString(),
-              contains('this command does not support passkey unlock'),
+              contains('no supported unlock method is available in this CLI'),
             );
             expect(errors.toString(), isNot(contains('reset')));
             expect(output.toString(), isEmpty);

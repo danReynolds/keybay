@@ -133,8 +133,9 @@ final class _TestPasskeyBackend implements kp.PasskeyBackend {
   int disposeCount = 0;
 
   @override
-  Future<kp.PasskeyAvailability> availability() async =>
-      const kp.PasskeyAvailability.ready();
+  Future<kp.PasskeyAvailability> availability({
+    kp.PasskeyCancellation? cancellation,
+  }) async => const kp.PasskeyAvailability.ready();
 
   @override
   Future<kp.PasskeyBinding> register(

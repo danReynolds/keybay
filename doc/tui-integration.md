@@ -357,3 +357,12 @@ The synthetic render pass checks repeated-copy, persistent-error, focus and
 viewport behavior at 40×24 and 80×20. The actual copy-error text wraps without
 covering action buttons. This does not claim arbitrary unbounded messages can
 never obscure an overlay's underlying content.
+
+
+Hardware authentication is also available to `get`, `set`, `list`, `rm` and
+secret-referencing `run`. The command adapter owns a controlling-terminal
+attachment while the key is active, reads its existing PIN only on request,
+and drains cancellation before restoring terminal modes. It never reads the
+command's stdin for authentication. See [native packaging and physical test
+handoff](cli-hardware-packaging.md) for the disposable launchers and the
+separate release qualification boundary.

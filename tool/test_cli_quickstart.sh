@@ -54,13 +54,12 @@ if [[ -n "${KEYBAY_BINARY:-}" ]]; then
   keybay_binary="$(cd "$(dirname "$KEYBAY_BINARY")" && pwd)/$(basename "$KEYBAY_BINARY")"
   quickstart_dir="${KEYBAY_QUICKSTART_DIR:-packages/keybay_cli/example/quickstart}"
 else
-  dart run keybay:keybay_compile \
-    packages/keybay_cli/bin/keybay.dart -o "$tmp/compiled-keybay"
+  bash tool/build_cli_release.sh "$tmp/candidate"
   version="$(awk '$1 == "version:" { print $2 }' packages/keybay_cli/pubspec.yaml)"
   archive="$tmp/keybay-$version-test.tar.gz"
-  ./tool/package_cli_release.sh "$tmp/compiled-keybay" "$archive"
+  ./tool/package_cli_release.sh "$tmp/candidate/keybay" "$archive" "$tmp/candidate"
   ./tool/verify_cli_archive.sh "$archive"
-  ./tool/verify_cli_binary.sh "$tmp/compiled-keybay" "$version"
+  ./tool/verify_cli_binary.sh "$tmp/candidate/keybay" "$version"
   mkdir "$tmp/release"
   tar -xzf "$archive" -C "$tmp/release"
   keybay_binary="$tmp/release/keybay"

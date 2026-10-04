@@ -92,6 +92,7 @@ jobs:
         working-directory: packages/keybay_cli
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb xclip xauth
+      - run: bash tool/install_cli_hardware_build_deps.sh
       - run: ./tool/test_cli.sh
       - if: runner.os == 'Linux'
         run: dart run tool/test_release.dart
@@ -139,6 +140,7 @@ jobs:
       - run: dart test -x integration
         working-directory: packages/keybay_cli
       - run: sudo apt-get update && sudo apt-get install -y xvfb xclip xauth
+      - run: bash tool/install_cli_hardware_build_deps.sh
       - run: ./tool/test_cli.sh core
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -176,6 +178,7 @@ jobs:
       - run: ./tool/test_e2e.sh macos
       - run: KEYBAY_INTEGRATION=1 dart test test/v2_macos_unentitled_integration_test.dart --name 'public Keybay facade'
         working-directory: packages/keybay
+      - run: bash tool/install_cli_hardware_build_deps.sh
       - run: ./tool/test_cli.sh core macos
       # Package, verify, extract, and execute the exact README onboarding loop
       # against the fixed-appId product. GitHub-hosted runners are disposable
@@ -199,6 +202,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libsecret-tools gnome-keyring dbus libglib2.0-bin xvfb xclip xauth
       - run: dart pub get --enforce-lockfile
       - run: ./tool/test_e2e.sh linux
+      - run: bash tool/install_cli_hardware_build_deps.sh
       - run: ./tool/test_cli.sh core linux
       # Real Secret Service round-trip: a throwaway D-Bus session with a fresh
       # gnome-keyring unlocked by a known password (secrets component only).

@@ -108,7 +108,18 @@ def main():
         p.receive(b'Enter the existing PIN')
         assert not termios.tcgetattr(p.master)[3] & termios.ECHO
         # Bracketed paste is one native event, followed by blur and two resizes.
-        os.write(p.master, b'\x1b[200~' + PIN + b'\x1b[201~\x1b[O')
+        os.write(p.master, b'\x1b[200~' + PIN + b'\x1b[201~')
+        # SIGWINCH and terminal bytes are independent queues on Linux. Wait
+        # until the paste was accepted before testing draft preservation.
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            plain = re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]', b'', bytes(p.output))
+            if ('•' * len(PIN)).encode() in plain: break
+            if select.select([p.master], [], [], .02)[0]:
+                p.output.extend(os.read(p.master, 65536))
+        else:
+            raise AssertionError('PIN paste was not painted before resize')
+        os.write(p.master, b'\x1b[O')
         fcntl.ioctl(p.master, termios.TIOCSWINSZ, struct.pack('HHHH', 12, 30, 0, 0))
         p.receive(b'Draft kept hidden.')
         fresh(p)
@@ -210,7 +221,7 @@ def main():
             fcntl.ioctl(p.master, termios.TIOCSWINSZ, struct.pack('HHHH', 24, 80, 0, 0))
             tui_pid = None
             try:
-                p.receive(b'$ ')
+                p.receive(b'# ' if os.geteuid() == 0 else b'$ ')
                 command = shlex.join([cli, p.scenario, str(p.receipt)])
                 os.write(p.master, ("PS1='KB''-HW$ '; set -m; " + command + '\n').encode())
                 tui_pid = wait_event(p, 'ready')['pid']

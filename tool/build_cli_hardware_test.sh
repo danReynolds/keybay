@@ -7,22 +7,9 @@ repo="$PWD"
 output="$repo/build/hardware-tui-test"
 mkdir -p "$output"
 chmod 700 "$output"
-keypass_source="$(python3 - <<'PY'
-import json
-from pathlib import Path
-from urllib.parse import urljoin, urlparse, unquote
-p = Path('.dart_tool/package_config.json').resolve()
-package = next(x for x in json.loads(p.read_text())['packages'] if x['name'] == 'keypass')
-print(unquote(urlparse(urljoin(p.as_uri(), package['rootUri'])).path))
-PY
-)"
-revision=78cbf68a52b9e11f22434059fcde8069a97b2bad
-[[ "$(git -C "$keypass_source" rev-parse HEAD)" == "$revision" ]] || { echo 'Unexpected Keypass revision' >&2; exit 1; }
-[[ -z "$(git -C "$keypass_source" status --porcelain -- native/hardware)" ]] || { echo 'Modified Keypass native source' >&2; exit 1; }
-cmake -S "$keypass_source/native/hardware" -B "$output/native" -DCMAKE_BUILD_TYPE=Release
-cmake --build "$output/native" --parallel 4
-ctest --test-dir "$output/native" --output-on-failure
-cp "$output/native/libkeypass_hardware.dylib" "$output/libkeypass_hardware.dylib"
+revision="$(python3 -c 'import sys; sys.path.insert(0, "tool"); from cli_hardware_bundle import REVISION; print(REVISION)')"
+bash tool/build_cli_hardware.sh "$output/hardware-build"
+python3 tool/cli_hardware_bundle.py install "$output/hardware-build/bundle" "$output"
 if [[ ! -f "$output/application-id" ]]; then
   python3 - "$output/application-id" <<'PY'
 from pathlib import Path
@@ -36,14 +23,23 @@ hardware_rp=io.github.danreynolds.keybay.cli.test
 dart compile exe \
   -Dkeybay.application_id="$application_id" \
   -Dkeybay.hardware_rp_id="$hardware_rp" \
-  packages/keybay_cli/tool/hardware_tui_harness.dart -o "$output/keybay-hardware-test"
+  packages/keybay_cli/tool/hardware_tui_harness.dart -o "$output/.keybay-hardware-test.build"
+mv -f "$output/.keybay-hardware-test.build" "$output/keybay-hardware-test"
 cat > "$output/Start hardware test.command" <<'LAUNCH'
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")"
 exec ./keybay-hardware-test open
 LAUNCH
-chmod 700 "$output/Start hardware test.command"
+cat > "$output/Test command unlock.command" <<'LAUNCH'
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")"
+./keybay-hardware-test list
+printf '\nPress Enter to close.'
+read -r _
+LAUNCH
+chmod 700 "$output/Start hardware test.command" "$output/Test command unlock.command"
 python3 - "$output" "$revision" <<'PY'
 import hashlib, json, subprocess, sys
 from pathlib import Path
@@ -54,7 +50,8 @@ receipt={
  'keybayTrackedChanges': bool(subprocess.check_output(['git','status','--porcelain','--untracked-files=no'], text=True).strip()),
  'applicationId': (out/'application-id').read_text(),
  'files': {name: hashlib.sha256((out/name).read_bytes()).hexdigest() for name in ['keybay-hardware-test','libkeypass_hardware.dylib']},
- 'scope': 'Local macOS test with installed libfido2/OpenSSL; not a portable release',
+ 'scope': 'Disposable macOS hardware test with bundled native dependencies; no device ceremony performed by this build',
+ 'hardwareBundle': json.loads((out/'hardware.json').read_text()),
 }
 (out/'build-receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
 PY

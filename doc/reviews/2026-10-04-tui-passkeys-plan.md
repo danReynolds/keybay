@@ -13,15 +13,15 @@ implements the hardware flow below.
 | Layer | Current evidence | Work before a real TUI test |
 | --- | --- | --- |
 | Keybay SDK | Explicit add/list/remove, authentication-only open, exact method selection, PIN ownership and operation cancellation; automated vault tests | Exercise the default Keypass adapter with a real key and native Keybay store |
-| Desktop hardware adapter | Keypass implements macOS/Linux USB using libfido2; prior Keypass device tests are separate evidence | Build the pinned native source, place the library beside the test executable, verify loading |
+| Desktop hardware adapter | Pinned native builds and relocated ABI loading pass on macOS ARM64 and Linux ARM64 in Docker | Physical USB lifecycle and latency |
 | TUI | Hardware enrollment, exact method selection, masked PIN input, cancellation and typed failures; SDK-backed model/widget regressions | Attended physical enrollment and fresh-process unlock |
-| CLI commands | Passphrase-only `get`, `set`, `list`, `rm`, `run` | Initially give accurate TUI guidance for hardware-only stores; attended hardware unlock parity before shipping general CLI support |
-| Distribution | CLI archive currently contains one executable; the local hardware dylib links Homebrew libfido2/OpenSSL | Bundle/locate dependencies, include notices, update archive/formula checks and qualify signed runtime loading |
+| CLI commands | Hardware/passphrase method selection, terminal-only PIN input, cancellation/drain; 13 real PTY scenarios pass with fake providers on macOS and Linux | Fresh-process command unlock with the physical key |
+| Distribution | Local archive now carries relocatable native dependencies, notices, and macOS split runtime; signed loading and relocated help/version pass | Release-kit hardware-companion integration, notarized downloads and installed upgrades remain publication work |
 | Public CI/release | Keypass is a private SSH Git dependency | Resolve dependency distribution; do not waive the publication gate |
 
-The SDK and TUI are ready to consume locally; portable release packaging remains
-unimplemented. No further passkey architecture research is needed for the first
-USB test. Native lifecycle and packaging details still need qualification.
+The SDK, TUI and command paths are ready for the attended local USB test.
+[Local packaging](../cli-hardware-packaging.md) is implemented and checked;
+this does not complete published distribution qualification.
 
 ## Local test build
 
@@ -177,12 +177,10 @@ them to hardware. No browser helper or hosted Keypass service is added.
 
 ### 4. CLI parity and distribution
 
-For the first TUI probe, preserve current passphrase support in other commands.
-Hardware-only failures must direct users to `keybay open` without initializing
-or downgrading the store. Before advertising general CLI hardware support,
-extend the attended command unlock path to the same explicit method selection,
-PIN ownership and cancellation behavior. Do not steal a command's piped stdin
-for PIN input or contaminate stdout/child environments with prompts.
+Implemented: command unlock uses the sole supported method directly or asks
+for an explicit choice. It forwards the selected method ID/RP, reads the existing
+PIN only after `pinRequired`, clears its owned bytes, and drains cancellation.
+It leaves piped stdin, redirected stdout and the child's environment alone.
 
 Update `tool/package_cli_release.sh`, `tool/verify_cli_archive.sh`, archive
 tests and Homebrew packaging together when shipping native libraries. macOS
@@ -205,8 +203,9 @@ Automated tests precede the physical ceremony:
 - Cancel while waiting, exit/idle/foreground loss, cancellation during discovery,
   late success after dismissal and terminal restoration. Measure native drain
   latency rather than assuming that a cancelled Dart future stopped device I/O.
-  Keypass's current readiness discovery uses its own signal; verify this bound
-  before claiming prompt cancellation at every phase.
+  Keypass PR 2 now forwards the operation signal into readiness discovery and
+  waits for cleanup. Native OS enumeration still has to return before libfido2
+  can finish cancelling; do not claim a hard physical latency bound.
 - Fleury tests at 40×24 and 80×20, keyboard-only navigation, masked PIN and
   redacted semantics, pasted control characters in labels, plus existing TUI,
   web-demo and CLI regressions. A fake provider is not hardware proof.

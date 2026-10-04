@@ -7,8 +7,19 @@ final class CommandLifetime {
   final Completer<void> _cancelled = Completer<void>();
   final List<StreamSubscription<ProcessSignal>> _signals = [];
   int? _status;
+  final Set<void Function()> _cancelListeners = {};
 
   Future<void> get cancelled => _cancelled.future;
+
+  /// Return a remover so completed operations do not retain native callbacks.
+  void Function() onCancel(void Function() listener) {
+    if (_status != null) {
+      listener();
+      return () {};
+    }
+    _cancelListeners.add(listener);
+    return () => _cancelListeners.remove(listener);
+  }
 
   void start() {
     for (final signal in [
@@ -25,6 +36,10 @@ final class CommandLifetime {
   void cancel([int status = 130]) {
     if (_status != null) return;
     _status = status;
+    for (final listener in List.of(_cancelListeners)) {
+      listener();
+    }
+    _cancelListeners.clear();
     _cancelled.complete();
   }
 

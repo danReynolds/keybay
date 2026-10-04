@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:keybay/keybay.dart';
 
 import 'command.dart';
+import 'auth_terminal.dart';
 import 'environment.dart';
 import 'failure.dart';
 import 'manifest.dart';
@@ -45,12 +46,14 @@ final class CliApplication {
     required this.stdout,
     required this.stderr,
     required this.showLaunchSummary,
+    this.authTerminal,
   }) : parentEnvironment = Map<String, String>.unmodifiable(parentEnvironment);
 
   final ManifestLoader loadManifest;
   final SessionOpener openSession;
   final SecretValueReader readSecretValue;
   final PassphraseReader readPassphrase;
+  final AuthTerminal? authTerminal;
   final SecretOutputAuthorizer authorizeSecretOutput;
   final void Function({required bool fromStdin}) authorizeSecretInput;
   final CommandLifetime lifetime;
@@ -261,26 +264,92 @@ final class CliApplication {
   }
 
   Future<KeybaySession> _openAuthenticatedSession({String? summary}) async {
+    late final List<AuthMethod> methods;
     try {
       return await openSession();
     } on KeybayException catch (error) {
-      if (error.code != KeybayErrorCode.authRequired ||
-          error.authMethods.whereType<PassphraseMethod>().isEmpty) {
-        rethrow;
-      }
+      if (error.code != KeybayErrorCode.authRequired) rethrow;
+      methods = error.authMethods
+          .where(
+            (method) =>
+                method is PassphraseMethod ||
+                authTerminal != null &&
+                    method is PasskeyMethod &&
+                    method.route == PasskeyRoute.hardware,
+          )
+          .toList();
+      if (methods.isEmpty) rethrow;
     }
 
     lifetime.check();
+    final selected = methods.length == 1
+        ? methods.single
+        : await authTerminal!.chooseMethod(methods, summary: summary);
+    if (!methods.contains(selected)) throw StateError('Invalid auth selection');
+    if (methods.length > 1) summary = null; // The chooser already displayed it.
+    lifetime.check();
+    if (selected is PasskeyMethod) {
+      return _openHardware(selected, summary: summary);
+    }
     final passphrase = await readPassphrase(summary: summary);
     try {
       lifetime.check();
       final opening = openSession(
         credential: PassphraseCredential(phrase: passphrase),
+        methodId: selected.id,
       );
       _clear(passphrase);
       return await opening;
     } finally {
       _clear(passphrase);
+    }
+  }
+
+  Future<KeybaySession> _openHardware(
+    PasskeyMethod method, {
+    String? summary,
+  }) async {
+    final prompt = await authTerminal!.hardware(method, summary: summary);
+    final detach = lifetime.onCancel(prompt.cancellation.cancel);
+    KeybaySession? session;
+    try {
+      prompt.check();
+      lifetime.check();
+      Future<KeybaySession> attempt([Uint8List? pin]) => openSession(
+        credential: PasskeyCredential.hardware(rpId: method.rpId, pin: pin),
+        methodId: method.id,
+        cancellation: prompt.cancellation,
+      );
+      try {
+        session = await attempt();
+      } on KeybayException catch (error) {
+        lifetime.check();
+        if (error.code != KeybayErrorCode.passkeyOperationFailed ||
+            error.passkeyCode != PasskeyErrorCode.pinRequired) {
+          rethrow;
+        }
+        final pin = await prompt.readPin();
+        try {
+          prompt.check();
+          lifetime.check();
+          final opening = attempt(pin);
+          _clear(pin);
+          session = await opening;
+        } finally {
+          _clear(pin);
+        }
+      }
+      prompt.check();
+      await prompt.close();
+      lifetime.check();
+      return session;
+    } on Object {
+      await session?.close();
+      lifetime.check();
+      rethrow;
+    } finally {
+      detach();
+      await prompt.close();
     }
   }
 

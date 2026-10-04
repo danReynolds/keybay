@@ -79,37 +79,6 @@ final class _NativeAuthMethod implements TuiAuthMethod {
   };
 }
 
-String _hardwareFailure(PasskeyErrorCode? code) => switch (code) {
-  PasskeyErrorCode.pinRequired =>
-    'Enter the existing PIN for your hardware key.',
-  PasskeyErrorCode.pinInvalid =>
-    'That PIN was rejected. Check it before trying again.',
-  PasskeyErrorCode.pinBlocked =>
-    'The hardware PIN is blocked. Stop and use another unlock method.',
-  PasskeyErrorCode.pinTemporarilyBlocked =>
-    'The key temporarily blocked PIN attempts. Reconnect it before a deliberate retry.',
-  PasskeyErrorCode.pinChangeRequired =>
-    'The key requires a PIN change in its management app.',
-  PasskeyErrorCode.deviceUnavailable =>
-    'No hardware key is available. Connect your key and try again.',
-  PasskeyErrorCode.deviceSelectionRequired =>
-    'Connect only the hardware key you want to use.',
-  PasskeyErrorCode.credentialUnavailable =>
-    'This key does not have the selected passkey. Use the matching key.',
-  PasskeyErrorCode.credentialStorageFull =>
-    'The hardware key has no room for another passkey.',
-  PasskeyErrorCode.prfUnavailable || PasskeyErrorCode.verificationUnavailable =>
-    'This key cannot provide the encryption and verification capabilities Keybay requires.',
-  PasskeyErrorCode.cancelled => 'The hardware operation was cancelled.',
-  PasskeyErrorCode.timeout =>
-    'The key did not finish in time. Retry when you are ready to touch it.',
-  PasskeyErrorCode.backendUnavailable || PasskeyErrorCode.hostUnavailable =>
-    'The hardware adapter is unavailable. Use a Keybay build with hardware support.',
-  PasskeyErrorCode.busy =>
-    'A hardware operation is still finishing. Wait before retrying.',
-  _ => 'Hardware verification did not complete. Check the key before retrying.',
-};
-
 Future<T> _nativeOperation<T>(Future<T> Function() operation) async {
   try {
     return await operation();
@@ -117,7 +86,7 @@ Future<T> _nativeOperation<T>(Future<T> Function() operation) async {
     final hardware = error.code == KeybayErrorCode.passkeyOperationFailed;
     throw TuiStoreException(
       hardware
-          ? _hardwareFailure(error.passkeyCode)
+          ? hardwareFailureMessage(error.passkeyCode)
           : failureForKeybay(error).lines.join('\n'),
       hardware: hardware,
       needsPin:

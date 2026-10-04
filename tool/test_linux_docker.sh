@@ -65,6 +65,7 @@ container="$(docker create "${options[@]}" \
       dart pub get --enforce-lockfile
       if [[ "$1" == cli ]]; then
         result=0
+        bash tool/install_cli_hardware_build_deps.sh
         bash tool/test_cli.sh core linux || result=$?
         cp "$(find build/regression -name report.json -print -quit)" /build/cli-linux.json
         exit "$result"
