@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 /// The storage operations used by the TUI. The native adapter delegates to
@@ -28,8 +29,10 @@ abstract interface class TuiAuthMethod {
 /// Binding is synchronous so cancellation cannot race adapter setup.
 final class TuiCancellation {
   bool _cancelled = false;
+  final _stopped = Completer<void>();
   void Function()? _callback;
   bool get isCancelled => _cancelled;
+  Future<void> get cancelled => _stopped.future;
   void bind(void Function() callback) {
     _callback = callback;
     if (_cancelled) callback();
@@ -39,6 +42,7 @@ final class TuiCancellation {
   void cancel() {
     if (_cancelled) return;
     _cancelled = true;
+    _stopped.complete();
     _callback?.call();
   }
 }
@@ -81,6 +85,7 @@ final class TuiStoreException implements Exception {
     this.methods = const [],
     this.hardware = false,
     this.needsPin = false,
+    this.pinRejected = false,
     this.retryHardware = true,
   });
 
@@ -95,5 +100,6 @@ final class TuiStoreException implements Exception {
   /// open, unlike a storage/commit failure with an ambiguous outcome.
   final bool hardware;
   final bool needsPin;
+  final bool pinRejected;
   final bool retryHardware;
 }

@@ -29,10 +29,14 @@ def main():
         nonlocal passed
         with tempfile.TemporaryDirectory(prefix='keybay-hardware-pty-') as directory:
             receipt = Path(directory) / 'receipt.json'
-            p = Invocation(cli, [scenario, str(receipt), *(['--idle'] if idle else [])])
+            two_methods = scenario.startswith('unlock-') and action == cancel_retry
+            p = Invocation(cli, [scenario, str(receipt),
+                                 *(['--idle'] if idle else []),
+                                 *(['--two-methods'] if two_methods else [])])
             p.history = bytearray()
             p.receipt = receipt
             p.scenario = scenario
+            p.two_methods = two_methods
             fcntl.ioctl(p.master, termios.TIOCSWINSZ, struct.pack('HHHH', *size, 0, 0))
             try:
                 action(p)
@@ -77,17 +81,22 @@ def main():
 
     def begin(p):
         if p.scenario.startswith('unlock-'):
-            p.receive(b'Choose an unlock method')
-            os.write(p.master, b'\r')
-            p.receive(b'Unlock with hardware key')
+            if p.two_methods:
+                p.receive(b'Choose an unlock method')
+                os.write(p.master, b'\r')
+            p.receive(b'Unlock Keybay')
+            if not p.two_methods:
+                plain = re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]', b'', bytes(p.output))
+                assert b'[Enter] Unlock' not in plain
+            # Choosing a key (or opening with only one) starts it directly.
         else:
             p.receive(b'acme/key')
             os.write(p.master, b's')
             p.receive(b'Security')
             os.write(p.master, b'h')
             p.receive(b'Name (optional)')
-        fresh(p)
-        os.write(p.master, b'\r')
+            fresh(p)
+            os.write(p.master, b'\r')
         wait_event(p, 'attempt')
 
     def success(p, count):
@@ -105,7 +114,7 @@ def main():
 
     def pin_resize(p):
         begin(p)
-        p.receive(b'Enter the existing PIN')
+        p.receive(b'Hardware key PIN')
         assert not termios.tcgetattr(p.master)[3] & termios.ECHO
         # Bracketed paste is one native event, followed by blur and two resizes.
         os.write(p.master, b'\x1b[200~' + PIN + b'\x1b[201~')
@@ -124,13 +133,13 @@ def main():
         p.receive(b'Draft kept hidden.')
         fresh(p)
         fcntl.ioctl(p.master, termios.TIOCSWINSZ, struct.pack('HHHH', 24, 80, 0, 0))
-        p.receive(b'Enter the existing PIN')
+        p.receive(b'Hardware key PIN')
         os.write(p.master, b'\x1b[I\r')
         success(p, 2)
 
     def rejected_pin(p):
         begin(p)
-        p.receive(b'Enter the existing PIN')
+        p.receive(b'Hardware key PIN')
         os.write(p.master, PIN + b'\r')
         p.receive(b'That PIN was rejected.')
         fresh(p)
@@ -143,7 +152,7 @@ def main():
 
     def blocked_pin(p):
         begin(p)
-        p.receive(b'Enter the existing PIN')
+        p.receive(b'Hardware key PIN')
         os.write(p.master, PIN + b'\r')
         p.receive(b'The hardware PIN is blocked.')
         os.write(p.master, b'\r\r\x03')
@@ -165,14 +174,27 @@ def main():
             p.receive(b'Security')
             os.write(p.master, b'h')
             p.receive(b'Name (optional)')
+            assert len([e for e in events(p) if e['event'] == 'attempt']) == 1
+            fresh(p)
+            os.write(p.master, b'\r')
         else:
             p.receive(b'Choose an unlock method')
+            assert len([e for e in events(p) if e['event'] == 'attempt']) == 1
+            fresh(p)
             os.write(p.master, b'\r')
-            p.receive(b'Unlock with hardware key')
-        assert len([e for e in events(p) if e['event'] == 'attempt']) == 1
-        fresh(p)
-        os.write(p.master, b'\r')
         success(p, 2)
+
+    def quit_only_method(p):
+        begin(p)
+        p.receive(b'Quit')
+        plain = re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]', b'', bytes(p.output))
+        assert b'[Esc] Quit' in plain
+        os.write(p.master, b'\x1b')
+        p.finish(0)
+        data = events(p)
+        assert [e['event'] for e in data][-3:] == ['cancelled', 'drained', 'finished'], data
+        assert data[-1]['attempts'] == 1, data
+        assert not data[-1]['generationChanged'], data
 
     def terminate_wait(p):
         begin(p)
@@ -185,7 +207,7 @@ def main():
 
     def interrupt_pin(p):
         begin(p)
-        p.receive(b'Enter the existing PIN')
+        p.receive(b'Hardware key PIN')
         os.write(p.master, PIN + b'\x03')
         p.finish(130)
         final = events(p)[-1]
@@ -209,6 +231,8 @@ def main():
         check(f'{mode}-pin', interrupt_pin)
         check(f'{mode}-wait', idle_wait, idle=True)
 
+    check('unlock-wait', quit_only_method)
+
     # An interactive shell can reclaim its terminal while the TUI is stopped.
     # Resume the TUI in the background and require cancellation before cleanup.
     # All processes and terminals here belong to this disposable test session.
@@ -218,6 +242,7 @@ def main():
             p.history = bytearray()
             p.receipt = Path(directory) / 'receipt.json'
             p.scenario = f'{mode}-wait'
+            p.two_methods = False
             fcntl.ioctl(p.master, termios.TIOCSWINSZ, struct.pack('HHHH', 24, 80, 0, 0))
             tui_pid = None
             try:

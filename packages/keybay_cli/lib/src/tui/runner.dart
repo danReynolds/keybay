@@ -12,6 +12,8 @@ import 'clipboard.dart';
 import 'model.dart';
 import 'native_model.dart';
 import 'screen.dart';
+import 'store.dart';
+import 'unlock_preference.dart';
 
 bool tuiForeground() =>
     terminalIsControllingForeground(0) && terminalIsControllingForeground(1);
@@ -31,6 +33,8 @@ Future<int> runTui({
   required Future<void> Function() resetStore,
   Duration idleTimeout = tuiIdleTimeout,
   Duration idleWarning = tuiIdleWarning,
+  UnlockPreference? unlockPreference,
+  Future<bool> Function(TuiCancellation)? hardwareConnected,
 }) async {
   authorizeTui();
   if (Platform.environment.entries.any(
@@ -71,6 +75,8 @@ Future<int> runTui({
     copyText: systemCopy(),
     onExit: requestExit,
     idleTimeout: idleTimeout,
+    unlockPreference: unlockPreference,
+    hardwareConnected: hardwareConnected,
   );
   bool accept(TuiEvent event) {
     if (!tuiForeground()) {

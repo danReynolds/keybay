@@ -2499,7 +2499,7 @@ void main() {
     );
   }
 
-  test('form Cancel returns to its origin; unlock Cancel exits', () async {
+  test('form Cancel returns to its origin; unlock Quit exits', () async {
     final tester = FleuryTester();
     addTearDown(tester.dispose);
     await model.open();
@@ -2537,7 +2537,7 @@ void main() {
     await tester.invokeSemanticAction(
       SemanticAction.activate,
       role: SemanticRole.button,
-      label: 'Cancel',
+      label: 'Quit',
     );
     await tester.settle();
     expect(model.ending, isTrue);

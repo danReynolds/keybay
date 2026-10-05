@@ -6,6 +6,7 @@ import '../application.dart' show SessionOpener;
 import '../failure.dart';
 import 'model.dart';
 import 'store.dart';
+import 'unlock_preference.dart';
 
 // This is the CLI's hardware scope, not a website or an SDK-wide default.
 const cliHardwareRpId = String.fromEnvironment(
@@ -23,8 +24,16 @@ TuiModel createNativeTuiModel({
   required void Function() onExit,
   Duration? idleTimeout = tuiIdleTimeout,
   String hardwareRpId = cliHardwareRpId,
+  UnlockPreference? unlockPreference,
+  Future<bool> Function(TuiCancellation)? hardwareConnected,
+  Duration hardwarePollInterval = const Duration(milliseconds: 500),
+  Duration hardwareConnectionTimeout = const Duration(minutes: 2),
 }) => TuiModel(
   supportsHardware: true,
+  unlockPreference: unlockPreference,
+  hardwareConnected: hardwareConnected,
+  hardwarePollInterval: hardwarePollInterval,
+  hardwareConnectionTimeout: hardwareConnectionTimeout,
   openSession: ({phrase, method, pin, cancellation}) =>
       _nativeOperation(() async {
         final signal = cancellation == null ? null : PasskeyCancellation();
@@ -92,6 +101,7 @@ Future<T> _nativeOperation<T>(Future<T> Function() operation) async {
       needsPin:
           error.passkeyCode == PasskeyErrorCode.pinRequired ||
           error.passkeyCode == PasskeyErrorCode.pinInvalid,
+      pinRejected: error.passkeyCode == PasskeyErrorCode.pinInvalid,
       retryHardware: !const {
         PasskeyErrorCode.pinBlocked,
         PasskeyErrorCode.pinTemporarilyBlocked,

@@ -107,7 +107,7 @@ void main() {
   });
 
   test('Keypass Git source and resolved revision are the reviewed commit', () {
-    const commit = 'c44ba295a2309eead76108a7aa1b1f49711eccee';
+    const commit = 'e5fbdda99639d0b0693b3b0f60ca9825cd5fc336';
     const url = 'git@github.com:danReynolds/keypass.git';
     final spec = File('pubspec.yaml').readAsStringSync();
     expect(spec, contains('url: $url\n      ref: $commit'));

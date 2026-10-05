@@ -246,8 +246,17 @@ optionally name it, and choose Add. Touch the key when it flashes. If the key
 requires a PIN, enter its existing PIN in the masked field and submit; rejected
 PINs are never retried automatically. Cancel waits for the operation to finish.
 
-On reopening, select an enrolled method and choose Unlock. Multiple enrollments
-are allowed; the TUI uses the selected method's exact saved ID and RP. Security
+On reopening, the TUI goes directly to the last successfully used method. If
+there is no remembered choice, a single usable method starts directly; several
+offer a chooser. A hardware selection starts immediately: connect the key, then
+touch it when it flashes. **Other methods** cancels pending work before returning
+to the chooser. With only one usable method, Escape quits. Connection checks
+wait up to two minutes; failures require an explicit retry.
+
+The TUI remembers only a nonsecret method ID in local app state. Missing,
+removed or unavailable choices are ignored, and preference errors cannot block
+unlock. Multiple enrollments are allowed; the TUI uses the selected method's
+exact saved ID and RP. Security
 → **Unlock methods** removes a selected enrollment after confirmation. Remaining
 methods are alternatives; removing the last one returns to platform-only
 protection. Removal does not delete the passkey from the physical key.

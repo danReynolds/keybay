@@ -9,6 +9,7 @@ import '../display_safety.dart';
 import '../key.dart';
 import 'clipboard_contract.dart' show TuiCopyException;
 import 'store.dart';
+import 'unlock_preference.dart';
 
 enum TuiView {
   opening,
@@ -37,6 +38,8 @@ enum TuiView {
 
 enum _RecordAction { reveal, edit, copy }
 
+enum HardwarePhase { checking, connecting, verifying }
+
 const resetConfirmation = 'RESET';
 const tuiIdleTimeout = Duration(minutes: 5);
 const tuiNoticeDuration = Duration(seconds: 3);
@@ -62,6 +65,10 @@ final class TuiModel extends ChangeNotifier {
     required this.onExit,
     this.idleTimeout = tuiIdleTimeout,
     this.supportsHardware = false,
+    this.unlockPreference,
+    this.hardwareConnected,
+    this.hardwarePollInterval = const Duration(milliseconds: 500),
+    this.hardwareConnectionTimeout = const Duration(minutes: 2),
   });
 
   final TuiSessionOpener openSession;
@@ -75,6 +82,11 @@ final class TuiModel extends ChangeNotifier {
   final Duration? idleTimeout;
   TuiSession? _session;
   final bool supportsHardware;
+  final UnlockPreference? unlockPreference;
+  final Future<bool> Function(TuiCancellation)? hardwareConnected;
+  final Duration hardwarePollInterval;
+  final Duration hardwareConnectionTimeout;
+  String? _preferredMethodId;
   List<TuiAuthMethod> methods = const [];
   List<TuiAuthMethod> unlockMethods = const [];
   TuiAuthMethod? selectedMethod;
@@ -83,6 +95,7 @@ final class TuiModel extends ChangeNotifier {
   bool hardwareNeedsPin = false;
   bool hardwareCanRetry = true;
   String? hardwareError;
+  HardwarePhase hardwarePhase = HardwarePhase.checking;
   bool get cancellingHardware => _hardwareCancellation?.isCancelled ?? false;
   Uint8List? _value;
   String? _valueText;
@@ -114,7 +127,14 @@ final class TuiModel extends ChangeNotifier {
   bool get hasPassphrase =>
       methods.any((m) => m.kind == TuiAuthKind.passphrase);
   bool get hasPasskeys => methods.any((m) => m.kind != TuiAuthKind.passphrase);
-  bool get canChooseAnotherMethod => unlockMethods.length > 1;
+  List<TuiAuthMethod> get usableUnlockMethods => unlockMethods
+      .where(
+        (method) =>
+            method.kind == TuiAuthKind.passphrase ||
+            supportsHardware && method.kind == TuiAuthKind.hardware,
+      )
+      .toList();
+  bool get canChooseAnotherMethod => usableUnlockMethods.length > 1;
   bool get hasSession => _session != null;
   bool get revealed => view == TuiView.browse && _value != null;
   bool get ending => _ending;
@@ -248,12 +268,21 @@ final class TuiModel extends ChangeNotifier {
       clearBytes(phrase);
       return Future.value();
     }
+    final discovering = phrase == null;
     // Keep the same form through a credential check, including failed retries.
     if (view != TuiView.unlock) view = TuiView.opening;
     unlockError = null;
     resetFromFailure = false;
     return _perform(
       (token) async {
+        if (discovering) {
+          try {
+            _preferredMethodId = await unlockPreference?.read();
+          } on Object {
+            _preferredMethodId = null;
+          }
+          if (!_current(token)) return;
+        }
         TuiSession opened;
         try {
           authorize();
@@ -278,7 +307,30 @@ final class TuiModel extends ChangeNotifier {
       },
       opening: true,
       ownedInput: phrase,
-    );
+    ).then((_) async {
+      if (_ending) return;
+      if (hasSession) {
+        await _rememberUnlock();
+      } else if (discovering && view == TuiView.unlockMethods) {
+        final usable = usableUnlockMethods;
+        final preferred = usable
+            .where((m) => m.id == _preferredMethodId)
+            .firstOrNull;
+        final method = preferred ?? (usable.length == 1 ? usable.single : null);
+        if (method != null) await chooseUnlock(method);
+      }
+    });
+  }
+
+  Future<void> _rememberUnlock() async {
+    final id = _unlockMethod?.id;
+    if (id == null || !hasSession) return;
+    _preferredMethodId = id;
+    try {
+      await unlockPreference?.write(id);
+    } on Object {
+      // A remembered choice is optional; successful authentication is not.
+    }
   }
 
   Future<void> _refresh() async {
@@ -507,7 +559,7 @@ final class TuiModel extends ChangeNotifier {
     }, protection: true);
   }
 
-  void chooseUnlock(TuiAuthMethod method) {
+  Future<void> chooseUnlock(TuiAuthMethod method) async {
     if (busy || _ending || hasSession || !unlockMethods.contains(method)) {
       return;
     }
@@ -518,6 +570,7 @@ final class TuiModel extends ChangeNotifier {
           ? TuiView.unlock
           : TuiView.hardwareUnlock,
     );
+    if (method.kind == TuiAuthKind.hardware) await hardwareAttempt();
   }
 
   void selectMethod(TuiAuthMethod method) {
@@ -545,61 +598,106 @@ final class TuiModel extends ChangeNotifier {
       return Future.value();
     }
     hardwareError = null;
+    hardwarePhase = !enrolling && pin == null && hardwareConnected != null
+        ? HardwarePhase.checking
+        : HardwarePhase.verifying;
     final cancellation = TuiCancellation();
     _hardwareCancellation = cancellation;
     return _perform(
-      (token) async {
-        try {
-          authorize();
-          if (enrolling) {
-            final adding = _session!.addHardwareKey(
-              label: label,
-              pin: pin,
-              cancellation: cancellation,
-            );
-            clearBytes(pin);
-            await adding;
-            await _refresh();
-            if (!_ending) {
-              view = TuiView.security;
-              message(
-                cancellation.isCancelled
-                    ? 'Hardware key added before cancellation completed.'
-                    : 'Hardware key added.',
-              );
+          (token) async {
+            try {
+              authorize();
+              if (!enrolling && pin == null && hardwareConnected != null) {
+                if (!await _waitForHardware(token, cancellation)) return;
+                authorize();
+              }
+              if (enrolling) {
+                final adding = _session!.addHardwareKey(
+                  label: label,
+                  pin: pin,
+                  cancellation: cancellation,
+                );
+                clearBytes(pin);
+                await adding;
+                await _refresh();
+                if (!_ending) {
+                  view = TuiView.security;
+                  message(
+                    cancellation.isCancelled
+                        ? 'Hardware key added before cancellation completed.'
+                        : 'Hardware key added.',
+                  );
+                }
+              } else {
+                final opening = openSession(
+                  method: _unlockMethod,
+                  pin: pin,
+                  cancellation: cancellation,
+                );
+                clearBytes(pin);
+                final opened = await opening;
+                if (!_current(token) || cancellation.isCancelled) {
+                  await opened.close();
+                  return;
+                }
+                _session = opened;
+                await _refresh();
+                if (_current(token)) {
+                  view = TuiView.browse;
+                  _clearStatus();
+                }
+              }
+            } finally {
+              clearBytes(pin);
             }
-          } else {
-            final opening = openSession(
-              method: _unlockMethod,
-              pin: pin,
-              cancellation: cancellation,
-            );
-            clearBytes(pin);
-            final opened = await opening;
-            if (!_current(token) || cancellation.isCancelled) {
-              await opened.close();
-              return;
-            }
-            _session = opened;
-            await _refresh();
-            if (_current(token)) {
-              view = TuiView.browse;
-              _clearStatus();
-            }
+          },
+          opening: !enrolling,
+          protection: enrolling,
+          hardware: true,
+          ownedInput: pin,
+        )
+        .then((_) async {
+          if (!enrolling &&
+              !cancellation.isCancelled &&
+              !_ending &&
+              hasSession) {
+            await _rememberUnlock();
           }
-        } finally {
-          clearBytes(pin);
-        }
-      },
-      opening: !enrolling,
-      protection: enrolling,
-      hardware: true,
-      ownedInput: pin,
-    ).whenComplete(() {
-      if (identical(_hardwareCancellation, cancellation)) {
-        _hardwareCancellation = null;
+        })
+        .whenComplete(() {
+          if (identical(_hardwareCancellation, cancellation)) {
+            _hardwareCancellation = null;
+          }
+        });
+  }
+
+  Future<bool> _waitForHardware(int token, TuiCancellation cancellation) async {
+    final elapsed = Stopwatch()..start();
+    while (_current(token) && !cancellation.isCancelled) {
+      authorize();
+      final connected = await hardwareConnected!(cancellation);
+      if (!_current(token) || cancellation.isCancelled) return false;
+      if (connected) {
+        hardwarePhase = HardwarePhase.verifying;
+        notifyListeners();
+        return true;
       }
-    });
+      if (elapsed.elapsed >= hardwareConnectionTimeout) {
+        throw const TuiStoreException(
+          'No key connected. Connect it and try again.',
+          hardware: true,
+        );
+      }
+      if (hardwarePhase != HardwarePhase.connecting) {
+        hardwarePhase = HardwarePhase.connecting;
+        notifyListeners();
+      }
+      await Future.any([
+        Future<void>.delayed(hardwarePollInterval),
+        cancellation.cancelled,
+      ]);
+    }
+    return false;
   }
 
   Future<void> cancelHardware() async {
@@ -614,7 +712,13 @@ final class TuiModel extends ChangeNotifier {
     if (_ending || view == TuiView.failed || view == TuiView.security) return;
     // A pending callback must fully drain before navigation permits a retry.
     _hardwareCancellation = null;
-    navigate(hasSession ? TuiView.security : TuiView.unlockMethods);
+    if (hasSession) {
+      navigate(TuiView.security);
+    } else if (canChooseAnotherMethod) {
+      navigate(TuiView.unlockMethods);
+    } else {
+      await close();
+    }
   }
 
   Future<void> removeSelectedMethod() {
@@ -690,7 +794,9 @@ final class TuiModel extends ChangeNotifier {
             !failure.invalidatesSession) {
           hardwareNeedsPin = hardwareNeedsPin || failure.needsPin;
           hardwareCanRetry = failure.retryHardware;
-          hardwareError = failure.message;
+          hardwareError = failure.needsPin && !failure.pinRejected
+              ? null
+              : failure.message;
           // Stay on the form for a deliberate retry, with no cached PIN.
           if (hasSession && !failure.needsPin) {
             hardwareError =

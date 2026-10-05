@@ -12,6 +12,8 @@ import 'secret_output.dart';
 import 'lifetime.dart';
 import 'tui/runner.dart';
 import 'tui/model.dart' show tuiIdleTimeout, tuiIdleWarning;
+import 'tui/store.dart' show TuiCancellation;
+import 'tui/unlock_preference.dart';
 
 Future<int> runKeybay(
   List<String> arguments, {
@@ -19,6 +21,8 @@ Future<int> runKeybay(
   Future<void> Function() resetStore = Keybay.reset,
   Duration idleTimeout = tuiIdleTimeout,
   Duration idleWarning = tuiIdleWarning,
+  UnlockPreference? unlockPreference,
+  Future<bool> Function(TuiCancellation)? hardwareConnected,
 }) async {
   if (!ProcessHardening.apply()) {
     stderr.writeln('error: could not disable core dumps for this process.');
@@ -34,6 +38,8 @@ Future<int> runKeybay(
         resetStore: resetStore,
         idleTimeout: idleTimeout,
         idleWarning: idleWarning,
+        unlockPreference: unlockPreference,
+        hardwareConnected: hardwareConnected,
       );
     }
     lifetime.start();

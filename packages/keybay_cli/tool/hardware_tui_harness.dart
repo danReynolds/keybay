@@ -5,6 +5,8 @@ import 'dart:typed_data';
 
 import 'package:keybay/keybay.dart';
 import 'package:keybay_cli/src/entrypoint.dart';
+import 'package:keybay_cli/src/tui/hardware_connection.dart';
+import 'package:keybay_cli/src/unlock_preference_file.dart';
 
 const _identity = String.fromEnvironment('keybay.application_id');
 const _rp = String.fromEnvironment('keybay.hardware_rp_id');
@@ -45,6 +47,12 @@ Future<void> main(List<String> arguments) async {
   _record('started');
   exitCode = await runKeybay(
     arguments.isEmpty ? ['open'] : arguments,
+    hardwareConnected: hardwareConnected,
+    unlockPreference: FileUnlockPreference(
+      File(
+        '${File(Platform.resolvedExecutable).parent.path}/unlock-method.json',
+      ),
+    ),
     openSession: ({credential, methodId, cancellation}) async {
       KeybaySession? session;
       try {

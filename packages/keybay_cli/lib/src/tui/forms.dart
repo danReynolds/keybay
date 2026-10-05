@@ -63,8 +63,7 @@ final class FormShell extends StatelessWidget {
   );
 }
 
-/// Unlock an existing protected store. Cancelling closes the invocation
-/// because there is no authenticated screen to return to.
+/// Unlock an existing protected store, or return to its other usable methods.
 final class UnlockForm extends StatefulWidget {
   const UnlockForm({super.key, required this.model, this.tooSmall = false});
   final TuiModel model;
@@ -146,7 +145,13 @@ final class _UnlockFormState extends State<UnlockForm>
             variant: ButtonVariant.warning,
             onPressed: model.busy ? null : toggleReveal,
           ),
-          TuiAction(label: 'Cancel', shortcut: 'Esc', onPressed: _back),
+          TuiAction(
+            label: model.canChooseAnotherMethod && !model.busy
+                ? 'Other methods'
+                : 'Quit',
+            shortcut: 'Esc',
+            onPressed: _back,
+          ),
         ],
       ),
       footer: Column(

@@ -15,7 +15,7 @@ import subprocess
 import sys
 import tempfile
 
-REVISION = "c44ba295a2309eead76108a7aa1b1f49711eccee"
+REVISION = "e5fbdda99639d0b0693b3b0f60ca9825cd5fc336"
 MANIFEST = "hardware.json"
 NOTICES = "THIRD_PARTY_NOTICES.txt"
 MAC = (r"libkeypass_hardware\.dylib", r"libfido2\.1\.dylib",

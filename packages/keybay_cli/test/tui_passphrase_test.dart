@@ -71,7 +71,7 @@ void main() {
 
   for (final withPassphrase in [false, true]) {
     test(
-      'TUI lists configured unlock choices (mixed: $withPassphrase)',
+      'TUI chooses only when several methods are usable (mixed: $withPassphrase)',
       () async {
         final provider = TestPasskeyProvider();
         final store = V2TestKeybay(keypassClient: provider.client);
@@ -103,7 +103,7 @@ void main() {
         await model.open();
         if (withPassphrase) {
           expect(model.view, TuiView.unlockMethods);
-          model.chooseUnlock(
+          await model.chooseUnlock(
             model.unlockMethods.firstWhere(
               (m) => m.kind == TuiAuthKind.passphrase,
             ),
@@ -113,13 +113,17 @@ void main() {
           expect(model.keys, ['service/token']);
           expect(model.hasPassphrase, isTrue);
         } else {
-          expect(model.view, TuiView.unlockMethods);
+          expect(model.view, TuiView.browse);
           expect(model.unlockMethods.single.kind, TuiAuthKind.hardware);
-          expect(model.hasSession, isFalse);
+          expect(model.hasSession, isTrue);
           expect(model.resetFromFailure, isFalse);
         }
-        expect(store.files.liveGeneration, generation);
-        expect(provider.operationCount, 1);
+        // Successful hardware open persists its assertion counter.
+        expect(
+          store.files.liveGeneration,
+          withPassphrase ? generation : generation! + 1,
+        );
+        expect(provider.operationCount, withPassphrase ? 1 : 2);
       },
     );
   }

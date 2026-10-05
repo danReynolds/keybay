@@ -47,7 +47,7 @@ final class _AuthMethodsScreenState extends State<AuthMethodsScreen> {
     final method = current;
     if (method == null || model.busy) return;
     if (unlocking) {
-      model.chooseUnlock(method);
+      unawaited(model.chooseUnlock(method));
     } else {
       model.selectMethod(method);
       model.navigate(TuiView.removeMethod);
@@ -156,8 +156,31 @@ final class _HardwareFormState extends State<HardwareForm>
   final _labelFocus = FocusNode();
   final _submitFocus = FocusNode();
   String? _validation;
+  bool _wasBusy = false;
   TuiModel get model => widget.model;
   bool get enrolling => model.view == TuiView.hardware;
+
+  @override
+  void initState() {
+    super.initState();
+    _wasBusy = model.busy;
+    model.addListener(_changed);
+  }
+
+  void _changed() {
+    final finished = _wasBusy && !model.busy;
+    _wasBusy = model.busy;
+    if (!finished || model.ending || !model.hardwareCanRetry) return;
+    TuiBinding.of(context).addPostFrameCallback((_) {
+      if (!mounted || model.busy || model.ending) return;
+      if (model.hardwareNeedsPin) {
+        _pin.focus.requestFocus();
+      } else if (!enrolling && model.hardwareError != null) {
+        _submitFocus.requestFocus();
+      }
+    });
+  }
+
   void _back() {
     _pin.erase();
     unawaited(model.cancelHardware());
@@ -198,6 +221,7 @@ final class _HardwareFormState extends State<HardwareForm>
 
   @override
   void dispose() {
+    model.removeListener(_changed);
     _pin.dispose();
     _label.dispose();
     _labelFocus.dispose();
@@ -210,38 +234,57 @@ final class _HardwareFormState extends State<HardwareForm>
     if (widget.tooSmall) return ResizePrompt(model: model, draft: true);
     final waiting = model.busy;
     return FormShell(
-      title: enrolling ? 'Add hardware key' : 'Unlock with hardware key',
+      title: enrolling ? 'Add hardware key' : 'Unlock Keybay',
       bindings: [KeyBinding(KeyCode.escape, onTrigger: (_) => _back())],
       actions: ActionGrid(
         actions: [
+          if (enrolling ||
+              !waiting &&
+                  (model.hardwareNeedsPin || model.hardwareError != null))
+            TuiAction(
+              label: enrolling
+                  ? 'Add'
+                  : model.hardwareNeedsPin
+                  ? 'Continue'
+                  : 'Try again',
+              shortcut: 'Enter',
+              variant: ButtonVariant.success,
+              focusNode: _submitFocus,
+              autofocus: !enrolling && !model.hardwareNeedsPin,
+              onPressed: waiting || !model.hardwareCanRetry ? null : _submit,
+            ),
           TuiAction(
-            label: enrolling ? 'Add' : 'Unlock',
-            shortcut: 'Enter',
-            variant: ButtonVariant.success,
-            focusNode: _submitFocus,
-            autofocus: !enrolling && !model.hardwareNeedsPin,
-            onPressed: waiting || !model.hardwareCanRetry ? null : _submit,
-          ),
-          TuiAction(
-            label: model.cancellingHardware ? 'Cancelling…' : 'Cancel',
+            label: model.cancellingHardware
+                ? 'Cancelling…'
+                : enrolling
+                ? 'Cancel'
+                : model.canChooseAnotherMethod
+                ? 'Other methods'
+                : 'Quit',
             shortcut: 'Esc',
+            autofocus: !enrolling && waiting,
             onPressed: model.cancellingHardware ? null : _back,
           ),
         ],
       ),
       body: (cols, rows, actionRows) => [
+        if (!enrolling) ...[
+          Text(safeTuiLabel(model.hardwareLabel), maxLines: 1),
+          const SizedBox(height: 1),
+        ],
         if (waiting) ...[
           Text(
             model.cancellingHardware
                 ? 'Waiting for the key to stop…'
-                : 'Touch your key when it flashes.',
+                : switch (model.hardwarePhase) {
+                    HardwarePhase.checking => 'Checking for a hardware key…',
+                    HardwarePhase.connecting => 'Connect your hardware key.',
+                    HardwarePhase.verifying =>
+                      'Touch your key when it flashes.',
+                  },
             style: context.accents.attention,
           ),
-          Text(
-            enrolling
-                ? 'Setup may ask more than once.'
-                : 'Keep the key connected until unlock finishes.',
-          ),
+          if (enrolling) const Text('Setup may ask more than once.'),
         ] else ...[
           if (enrolling && !model.hardwareNeedsPin) ...[
             const Text('Name (optional)'),
@@ -256,8 +299,7 @@ final class _HardwareFormState extends State<HardwareForm>
               ),
               focus: _labelFocus,
             ),
-          ] else if (!enrolling)
-            Text(safeTuiLabel(model.hardwareLabel), maxLines: 1),
+          ],
           if (model.hardwareNeedsPin) ...[
             const Text('Hardware key PIN'),
             field(
@@ -287,12 +329,13 @@ final class _HardwareFormState extends State<HardwareForm>
               invalid: _validation != null,
             ),
           ],
-          Text(
-            model.hardwareNeedsPin
-                ? 'Use your key’s existing PIN.'
-                : 'Connect one hardware key. Touch it when it flashes.',
-            maxLines: 2,
-          ),
+          if (model.hardwareNeedsPin || enrolling)
+            Text(
+              model.hardwareNeedsPin
+                  ? 'Use your key’s existing PIN.'
+                  : 'Connect one hardware key. Touch it when it flashes.',
+              maxLines: 2,
+            ),
         ],
         const SizedBox(height: 1),
         SizedBox(
