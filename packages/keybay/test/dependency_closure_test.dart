@@ -44,18 +44,28 @@ void main() {
 
     const expected = <String, String>{
       'args': '2.7.0',
+      'code_assets': '2.1.0',
       'collection': '1.19.1',
       'convert': '3.1.2',
       'crypto': '3.0.7',
       'cryptography': '2.9.0',
       'dbus': '0.7.15',
       'ffi': '2.2.0',
+      'hooks': '2.2.0',
       'keypass': '0.1.0-dev.2',
-      'meta': '1.18.3',
+      'logging': '1.3.0',
+      'meta': '1.19.0',
+      'path': '1.9.1',
       'petitparser': '7.0.2',
       'pointycastle': '4.0.0',
+      'pub_semver': '2.2.0',
+      'record_use': '1.1.1',
+      'source_span': '1.10.2',
+      'string_scanner': '1.4.1',
+      'term_glyph': '1.2.2',
       'typed_data': '1.4.0',
       'xml': '7.0.1',
+      'yaml': '3.1.3',
     };
     expect(
       closure,
@@ -97,7 +107,7 @@ void main() {
   });
 
   test('Keypass Git source and resolved revision are the reviewed commit', () {
-    const commit = 'cdca9e336ca82f70bd57be73f2d9ee7450ec7af4';
+    const commit = 'c44ba295a2309eead76108a7aa1b1f49711eccee';
     const url = 'git@github.com:danReynolds/keypass.git';
     final spec = File('pubspec.yaml').readAsStringSync();
     expect(spec, contains('url: $url\n      ref: $commit'));

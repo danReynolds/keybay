@@ -43,6 +43,9 @@ Future<void> main(List<String> arguments) async {
         'compile',
         separateModule ? 'aot-snapshot' : 'exe',
         '-Dkeybay.application_id=${identity.stableValue}',
+        // Custom AOT packagers ship a reviewed sibling-library bundle. Normal
+        // source consumers use Keypass's automatic Dart code assets instead.
+        '-Dkeypass.hardware.manual_bundle=true',
         if (packageConfig != null)
           '--packages=${File.fromUri(packageConfig).path}',
         '-o',

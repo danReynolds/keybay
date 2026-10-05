@@ -40,7 +40,7 @@ dependencies:
   keypass:
     git:
       url: git@github.com:danReynolds/keypass.git
-      ref: cdca9e336ca82f70bd57be73f2d9ee7450ec7af4
+      ref: c44ba295a2309eead76108a7aa1b1f49711eccee
 
 dev_dependencies:
   lints: ^5.0.0

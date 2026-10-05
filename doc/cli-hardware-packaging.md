@@ -61,6 +61,25 @@ build against the supported baseline and test the installed artifact there.
 Ordinary users also need their distribution's FIDO USB HID access rules. Do not
 run Keybay as root to work around missing device access.
 
+## Source execution
+
+Keypass now owns a Dart code-assets hook. `dart run` and `dart test` prepare the
+adapter and its dependency closure on a matching desktop build host. `dart
+build cli` produces a relocatable `bin`/`lib` bundle. The consumer no longer
+needs a native-library path in ordinary source execution. The native development
+prerequisites above still apply.
+
+The custom signed-runtime build in this document explicitly uses Keypass's
+manual-bundle compatibility mode. It retains the tested signing/layout contract
+until the release builder can consume code assets in that format. This is
+separate from automatic local hook preparation; do not switch the signed release
+to the SDK's single-file executable without requalifying its hardened launch.
+
+Dart 3.12's hook discovery is sensitive to invocation cwd. A generic rk local
+bootstrap prepares hooks in the owning project and then launches the original
+entrypoint with the caller cwd. A previously prepared cache alone is insufficient
+proof; qualification covers cold launch and native source edits from another cwd.
+
 ## Physical test handoff
 
 `bash tool/build_cli_hardware_test.sh` preserves a unique disposable application

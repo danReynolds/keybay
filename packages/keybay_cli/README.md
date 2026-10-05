@@ -259,7 +259,15 @@ method is used directly; several produce a numbered choice. PIN input and
 hardware instructions use the controlling terminal, leaving piped stdin and
 redirected stdout alone. Commands do not enroll new methods.
 
-For the attended macOS test from a source checkout, run:
+Source runs now use Keypass's Dart build hook to compile and load the desktop
+hardware adapter automatically. Build hosts need the prerequisites installed by
+`bash tool/install_cli_hardware_build_deps.sh`; end users of a native release do
+not. A hook-aware `rk use local -p keybay_cli` keeps the normal `keybay` command
+on this checkout and prepares assets in the owning project before launching it.
+Older rk local launchers can skip hooks when called outside the project; reselect
+Local after updating rk to its hook-aware launcher.
+
+For a disposable attended macOS test from a source checkout, run:
 
 ```sh
 ./tool/build_cli_hardware_test.sh

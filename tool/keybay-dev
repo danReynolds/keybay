@@ -9,5 +9,7 @@ if [ ! -f "$packages" ]; then
   exit 69
 fi
 
+keybay_caller_directory="$PWD"
+cd "$repo"
 exec dart --packages="$packages" run \
-  "$repo/packages/keybay_cli/bin/keybay.dart" "$@"
+  "$repo/tool/keybay_dev_bootstrap.dart" "$keybay_caller_directory" "$@"

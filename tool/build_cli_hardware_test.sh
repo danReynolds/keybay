@@ -20,7 +20,7 @@ fi
 application_id="$(cat "$output/application-id")"
 [[ "$application_id" == keybay-cli-hardware-test-* ]] || exit 1
 hardware_rp=io.github.danreynolds.keybay.cli.test
-dart compile exe \
+dart compile exe -Dkeypass.hardware.manual_bundle=true \
   -Dkeybay.application_id="$application_id" \
   -Dkeybay.hardware_rp_id="$hardware_rp" \
   packages/keybay_cli/tool/hardware_tui_harness.dart -o "$output/.keybay-hardware-test.build"
