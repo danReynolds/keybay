@@ -1,4 +1,5 @@
 import 'package:fleury/fleury_core.dart';
+import 'appearance.dart';
 
 /// Keybay's palette declared once, as framework colour roles rather than as
 /// scattered ANSI indices. Both the framework's own controls — fields, lists,
@@ -30,15 +31,14 @@ final class KeybayAccents {
     required this.placeholder,
   });
 
-  factory KeybayAccents.from(ColorScheme scheme) => KeybayAccents(
-    accent: CellStyle(foreground: scheme.success, bold: true),
-    attention: CellStyle(foreground: scheme.warning, bold: true),
-    // Grey rather than dim, so unfilled input stays distinct from a disabled
-    // field — the framework's widget-level default is dim.
-    placeholder: const CellStyle(foreground: RgbColor(0x90, 0x90, 0x90)),
-  );
+  factory KeybayAccents.from(ColorScheme scheme, {bool highContrast = false}) =>
+      KeybayAccents(
+        accent: CellStyle(foreground: scheme.primary, bold: true),
+        attention: CellStyle(foreground: scheme.warning, bold: true),
+        placeholder: CellStyle(dim: !highContrast),
+      );
 
-  /// Primary actions and success.
+  /// Brand and primary actions, independent of semantic success colors.
   final CellStyle accent;
 
   /// Disclosure: reveal, and revealed text itself.
@@ -48,26 +48,47 @@ final class KeybayAccents {
   final CellStyle placeholder;
 }
 
-/// The theme handed to the whole invocation. `mutedStyle` is left at the
-/// framework default, which is already the dim attribute Keybay wants.
+/// The default theme, also used by standalone widgets and tests. The app
+/// rebuilds its theme when the appearance preference changes.
 ///
 /// `interactiveStyle` deliberately suppresses the framework's focus cue:
 /// Keybay draws its own — a cyan field border and an inverse action label — and
 /// letting both apply would double the treatment on every control.
-final keybayTheme = ThemeData(
-  colorScheme: keybayColors,
-  // The current row needs a background that stays readable under the inverse
-  // focus cue painted over it, rather than the default inverse.
-  selectionStyle: const CellStyle(
-    foreground: RgbColor(0xa7, 0xd7, 0xb7),
-    background: RgbColor(0x27, 0x3e, 0x31),
-    bold: true,
-  ),
-  focusedStyle: CellStyle(foreground: keybayColors.focus, bold: true),
-  errorStyle: CellStyle(foreground: keybayColors.error, bold: true),
-  interactiveStyle: const CellStyle.interactive(focused: CellStyle.none),
-  extensions: [KeybayAccents.from(keybayColors)],
-);
+final keybayTheme = keybayThemeFor(const TuiAppearance());
+
+ThemeData keybayThemeFor(TuiAppearance appearance) {
+  final high = appearance.contrast == TuiContrast.high;
+  final colors = keybayColors.copyWith(
+    primary: switch (appearance.accent) {
+      TuiAccent.green => const AnsiColor(2),
+      TuiAccent.cyan => const AnsiColor(6),
+      TuiAccent.blue => const AnsiColor(4),
+      TuiAccent.magenta => const AnsiColor(5),
+    },
+  );
+  return ThemeData(
+    colorScheme: colors,
+    mutedStyle: CellStyle(dim: !high),
+    // Terminal-default inverse remains readable with light, dark and NO_COLOR.
+    selectionStyle: const CellStyle(inverse: true, bold: true),
+    focusedStyle: CellStyle(
+      foreground: colors.focus,
+      bold: true,
+      underline: high,
+    ),
+    errorStyle: CellStyle(
+      foreground: colors.error,
+      bold: true,
+      underline: true,
+    ),
+    borderStyle: BorderStyle.single,
+    interactiveStyle: CellStyle.interactive(
+      focused: CellStyle.none,
+      disabled: CellStyle(dim: !high),
+    ),
+    extensions: [KeybayAccents.from(colors, highContrast: high)],
+  );
+}
 
 /// Framework roles are already reachable as `context.theme.errorStyle` through
 /// Fleury's own `FleuryThemeContext`; this adds only Keybay's three.

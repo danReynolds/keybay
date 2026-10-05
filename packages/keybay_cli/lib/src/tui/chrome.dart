@@ -3,8 +3,37 @@ import 'dart:async';
 import 'package:fleury/fleury_core.dart';
 
 import 'model.dart';
+import 'theme.dart';
 
 export 'theme.dart';
+
+/// A content-sized frame with the brand inset into its top edge. Text replaces
+/// border cells directly; no opaque background overrides the terminal theme.
+final class KeybayFrame extends StatelessWidget {
+  const KeybayFrame({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    fit: StackFit.passthrough,
+    children: [
+      Container(
+        border: BoxBorder(cellStyle: context.theme.mutedStyle),
+        padding: const EdgeInsets.all(1),
+        child: child,
+      ),
+      Positioned(
+        left: 2,
+        top: 0,
+        child: Text(
+          ' keybay ',
+          style: context.accents.accent,
+          allowSelect: false,
+        ),
+      ),
+    ],
+  );
+}
 
 bool _printableAscii(int point) => point >= 32 && point <= 126;
 
@@ -13,9 +42,7 @@ const keyTextPolicy = TextEditPolicy(
   allowCodePoint: _printableAscii,
 );
 
-/// Pending-operation indicator. Messages are toasts now; "still working" is
-/// not a message — a toast that auto-dismisses cannot represent it — so it
-/// keeps its own reserved row.
+/// Pending-operation indicator that remains visible until the work finishes.
 final class BusyIndicator extends StatelessWidget {
   const BusyIndicator({
     super.key,
@@ -319,10 +346,10 @@ final class TuiAction extends StatelessWidget {
     focusNode: focusNode,
     autofocus: autofocus,
     onPressed: onPressed,
-    style: const CellStyle.interactive(
-      focused: CellStyle(inverse: true),
-      hovered: CellStyle(underline: true),
-      disabled: CellStyle(dim: true),
+    style: CellStyle.interactive(
+      focused: const CellStyle(inverse: true),
+      hovered: const CellStyle(underline: true),
+      disabled: context.theme.mutedStyle,
     ),
     child: Row(
       mainAxisSize: MainAxisSize.min,

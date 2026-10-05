@@ -147,7 +147,7 @@ final class _VaultState extends State<Vault> {
       TuiAction(
         label: 'New key',
         shortcut: 'n',
-        variant: ButtonVariant.success,
+        variant: ButtonVariant.primary,
         focusNode: _newFocus,
         autofocus: names.isEmpty,
         onPressed: callbacks['n'],
@@ -251,192 +251,201 @@ final class _VaultState extends State<Vault> {
       child: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
-          maxWidth: 80,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              FocusDetector(
-                onFocusChange: (_) => setState(() {}),
-                child: Row(
-                  children: [
-                    Text(
-                      '/ ',
-                      style: _searchFocus.hasFocus
-                          ? context.theme.focusedStyle
-                          : context.accents.accent,
-                    ),
-                    Expanded(
-                      child: TextInput(
-                        controller: _search,
-                        focusNode: _searchFocus,
-                        semanticLabel: 'Search key names',
-                        placeholder: 'Find a key…',
-                        placeholderStyle: context.accents.placeholder,
-                        clipboardPolicy: TextClipboardPolicy.disabled,
-                        onChanged: (text) {
-                          model.search(text);
-                          _list.jumpToIndex(0);
-                        },
-                        onSubmit: (_) => _focusResults(selectFirst: true),
-                        onEscape: _leaveSearch,
+          maxWidth: 84,
+          child: KeybayFrame(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                FocusDetector(
+                  onFocusChange: (_) => setState(() {}),
+                  child: Row(
+                    children: [
+                      Text(
+                        '/ ',
+                        style: _searchFocus.hasFocus
+                            ? context.theme.focusedStyle
+                            : context.accents.accent,
                       ),
-                    ),
-                    const SizedBox(width: 2),
-                    Text(
-                      '${names.length} ${names.length == 1 ? 'key' : 'keys'}',
-                      style: context.theme.mutedStyle,
-                    ),
-                  ],
+                      Expanded(
+                        child: TextInput(
+                          controller: _search,
+                          focusNode: _searchFocus,
+                          semanticLabel: 'Search key names',
+                          placeholder: 'Find a key…',
+                          placeholderStyle: context.accents.placeholder,
+                          clipboardPolicy: TextClipboardPolicy.disabled,
+                          onChanged: (text) {
+                            model.search(text);
+                            _list.jumpToIndex(0);
+                          },
+                          onSubmit: (_) => _focusResults(selectFirst: true),
+                          onEscape: _leaveSearch,
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        '${names.length} ${names.length == 1 ? 'key' : 'keys'}',
+                        style: context.theme.mutedStyle,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const Rule(),
-              if (MediaQuery.sizeOf(context).rows > 24)
-                const SizedBox(height: 1),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (_, size) {
-                    final valueRows = ((size.maxRows ?? 8) ~/ 2).clamp(1, 6);
-                    // Reserve a stable gutter when the list can scroll,
-                    // including expansion of its current row on disclosure.
-                    final scrolling =
-                        names.length + valueRows - 1 > (size.maxRows ?? 8);
-                    final width = (size.maxCols ?? 80) - (scrolling ? 1 : 0);
-                    return names.isEmpty
-                        ? Text(
-                            model.keys.isEmpty
-                                // New key already holds focus; say so rather
-                                // than leaving a bare dead end.
-                                ? 'No keys yet — press n to add one'
-                                : 'No matching keys',
-                          )
-                        : ListView.builder(
-                            controller: _list,
-                            focusNode: _listFocus,
-                            autofocus: true,
-                            scrollbar: scrolling,
-                            edgeBehavior: EdgeBehavior.bubble,
-                            itemCount: names.length,
-                            itemKeyBuilder: (i) => names[i],
-                            onFocusedItemChanged: (i) {
-                              if (i < names.length &&
-                                  names[i] != model.selectedKey) {
-                                model.select(names[i]);
-                              }
-                            },
-                            onSelect: (_) => _actions['e']?.call(),
-                            itemBuilder: (_, i, selected) {
-                              final focused = selected && _listFocus.hasFocus;
-                              final rowStyle = focused
-                                  ? context.theme.selectionStyle
-                                  : selected
-                                  ? CellStyle(
-                                      foreground: context
-                                          .theme
-                                          .selectionStyle
-                                          .foreground,
-                                    )
-                                  : CellStyle.none;
-                              final value = selected ? revealed : null;
-                              final name = safeTuiText(names[i]);
-                              final nameCells = escapedLineWidth(names[i]);
-                              var nameWidth = nameCells.clamp(
-                                1,
-                                value == null ? width - 12 : (width - 4) ~/ 2,
-                              );
-                              // Give the name its natural width whenever the
-                              // whole value still fits beside it.
-                              if (value != null &&
-                                  nameCells > nameWidth &&
-                                  nameCells + longest + 4 <= width) {
-                                nameWidth = nameCells;
-                              }
-                              // A row click selects; Enter is the explicit edit action.
-                              return GestureDetector(
-                                onTapDown: (_) {
-                                  _list.currentIndex = i;
+                const Rule(),
+                if (MediaQuery.sizeOf(context).rows > 24)
+                  const SizedBox(height: 1),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (_, size) {
+                      final valueRows = ((size.maxRows ?? 8) ~/ 2).clamp(1, 6);
+                      // Reserve a stable gutter when the list can scroll,
+                      // including expansion of its current row on disclosure.
+                      final scrolling =
+                          names.length + valueRows - 1 > (size.maxRows ?? 8);
+                      final width = (size.maxCols ?? 80) - (scrolling ? 1 : 0);
+                      return names.isEmpty
+                          ? Text(
+                              model.keys.isEmpty
+                                  // New key already holds focus; say so rather
+                                  // than leaving a bare dead end.
+                                  ? 'No keys yet — press n to add one'
+                                  : 'No matching keys',
+                            )
+                          : ListView.builder(
+                              controller: _list,
+                              focusNode: _listFocus,
+                              autofocus: true,
+                              scrollbar: scrolling,
+                              edgeBehavior: EdgeBehavior.bubble,
+                              itemCount: names.length,
+                              itemKeyBuilder: (i) => names[i],
+                              onFocusedItemChanged: (i) {
+                                if (i < names.length &&
+                                    names[i] != model.selectedKey) {
                                   model.select(names[i]);
-                                  _listFocus.requestFocus();
-                                },
-                                child: Container(
-                                  color: selected && _listFocus.hasFocus
-                                      ? context.theme.selectionStyle.background
-                                      : null,
-                                  child: DefaultTextStyle(
-                                    style: rowStyle,
-                                    child: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          selected ? '› ' : '  ',
-                                          allowSelect: false,
-                                        ),
-                                        SizedBox(
-                                          width: nameWidth,
-                                          child: Text(
-                                            name,
-                                            maxLines: selected ? valueRows : 1,
-                                            softWrap: selected,
-                                            overflow: TextOverflow.ellipsis,
+                                }
+                              },
+                              onSelect: (_) => _actions['e']?.call(),
+                              itemBuilder: (_, i, selected) {
+                                final focused = selected && _listFocus.hasFocus;
+                                final rowStyle = focused
+                                    ? context.theme.selectionStyle
+                                    : selected
+                                    ? CellStyle(
+                                        foreground: context
+                                            .theme
+                                            .selectionStyle
+                                            .foreground,
+                                      )
+                                    : CellStyle.none;
+                                final value = selected ? revealed : null;
+                                final name = safeTuiText(names[i]);
+                                final nameCells = escapedLineWidth(names[i]);
+                                var nameWidth = nameCells.clamp(
+                                  1,
+                                  value == null ? width - 12 : (width - 4) ~/ 2,
+                                );
+                                // Give the name its natural width whenever the
+                                // whole value still fits beside it.
+                                if (value != null &&
+                                    nameCells > nameWidth &&
+                                    nameCells + longest + 4 <= width) {
+                                  nameWidth = nameCells;
+                                }
+                                // A row click selects; Enter is the explicit edit action.
+                                return GestureDetector(
+                                  onTapDown: (_) {
+                                    _list.currentIndex = i;
+                                    model.select(names[i]);
+                                    _listFocus.requestFocus();
+                                  },
+                                  child: Container(
+                                    color: selected && _listFocus.hasFocus
+                                        ? context
+                                              .theme
+                                              .selectionStyle
+                                              .background
+                                        : null,
+                                    child: DefaultTextStyle(
+                                      style: rowStyle,
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            selected ? '› ' : '  ',
                                             allowSelect: false,
                                           ),
-                                        ),
-                                        const SizedBox(width: 2),
-                                        Expanded(
-                                          child: value != null
-                                              ? DefaultTextStyle(
-                                                  style:
-                                                      context.accents.attention,
-                                                  child: ValueView(
-                                                    key: ValueKey(
-                                                      model.selectedKey,
+                                          SizedBox(
+                                            width: nameWidth,
+                                            child: Text(
+                                              name,
+                                              maxLines: selected
+                                                  ? valueRows
+                                                  : 1,
+                                              softWrap: selected,
+                                              overflow: TextOverflow.ellipsis,
+                                              allowSelect: false,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 2),
+                                          Expanded(
+                                            child: value != null
+                                                ? DefaultTextStyle(
+                                                    style: context
+                                                        .accents
+                                                        .attention,
+                                                    child: ValueView(
+                                                      key: ValueKey(
+                                                        model.selectedKey,
+                                                      ),
+                                                      text: value,
+                                                      focusNode: _valueFocus,
+                                                      maxRows: valueRows,
+                                                      textAlign:
+                                                          TextAlign.right,
                                                     ),
-                                                    text: value,
-                                                    focusNode: _valueFocus,
-                                                    maxRows: valueRows,
-                                                    textAlign: TextAlign.right,
-                                                  ),
-                                                )
-                                              : const SizedBox(
-                                                  height: 1,
-                                                  child: Align(
-                                                    alignment:
-                                                        Alignment.topRight,
-                                                    child: Text(
-                                                      '••••••••',
-                                                      allowSelect: false,
-                                                      style: CellStyle(
-                                                        dim: true,
+                                                  )
+                                                : SizedBox(
+                                                    height: 1,
+                                                    child: Align(
+                                                      alignment:
+                                                          Alignment.topRight,
+                                                      child: Text(
+                                                        '••••••••',
+                                                        allowSelect: false,
+                                                        style: context
+                                                            .theme
+                                                            .mutedStyle,
                                                       ),
                                                     ),
                                                   ),
-                                                ),
-                                        ),
-                                      ],
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                ),
-                              );
-                            },
-                          );
-                  },
+                                );
+                              },
+                            );
+                    },
+                  ),
                 ),
-              ),
-              const Rule(),
-              const SizedBox(height: 1),
-              ActionGrid(actions: actions, maxColumns: 4),
-              const SizedBox(height: 1),
-              // Actions advertise their own shortcuts. Reserve this row for
-              // app-specific behavior, including the current meaning of Esc.
-              SizedBox(
-                height: 1,
-                child: Text(
-                  _hint,
-                  style: context.theme.mutedStyle,
-                  allowSelect: false,
+                const Rule(),
+                const SizedBox(height: 1),
+                ActionGrid(actions: actions, maxColumns: 4),
+                const SizedBox(height: 1),
+                // Actions advertise their own shortcuts. Reserve this row for
+                // app-specific behavior, including the current meaning of Esc.
+                SizedBox(
+                  height: 1,
+                  child: Text(
+                    _hint,
+                    style: context.theme.mutedStyle,
+                    allowSelect: false,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

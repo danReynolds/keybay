@@ -40,24 +40,26 @@ final class FormShell extends StatelessWidget {
     child: Align(
       alignment: Alignment.center,
       child: ConstrainedBox(
-        maxWidth: 60,
-        child: LayoutBuilder(
-          builder: (_, size) {
-            final cols = size.maxCols ?? 60;
-            final rows = size.maxRows ?? 17;
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(title, allowSelect: false, style: titleStyle),
-                if (subtitle != null) subtitle!,
-                const SizedBox(height: 1),
-                ...body(cols, rows, actions.rowsFor(cols)),
-                actions,
-                if (footer != null) footer!,
-              ],
-            );
-          },
+        maxWidth: 64,
+        child: KeybayFrame(
+          child: LayoutBuilder(
+            builder: (_, size) {
+              final cols = size.maxCols ?? 60;
+              final rows = size.maxRows ?? 17;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(title, allowSelect: false, style: titleStyle),
+                  if (subtitle != null) subtitle!,
+                  const SizedBox(height: 1),
+                  ...body(cols, rows, actions.rowsFor(cols)),
+                  actions,
+                  if (footer != null) footer!,
+                ],
+              );
+            },
+          ),
         ),
       ),
     ),
@@ -136,15 +138,8 @@ final class _UnlockFormState extends State<UnlockForm>
           TuiAction(
             label: 'Unlock',
             shortcut: 'Enter',
-            variant: ButtonVariant.success,
+            variant: ButtonVariant.primary,
             onPressed: model.busy ? null : _submit,
-          ),
-          TuiAction(
-            label: revealed ? 'Hide' : 'Reveal',
-            shortcut: 'Ctrl+R',
-            reservedLabel: 'Reveal',
-            variant: ButtonVariant.warning,
-            onPressed: model.busy ? null : toggleReveal,
           ),
           TuiAction(
             label: model.canChooseAnotherMethod && !model.busy
@@ -175,9 +170,25 @@ final class _UnlockFormState extends State<UnlockForm>
         ],
       ),
       body: (cols, rows, actionRows) => [
-        Text(
-          'Passphrase${discloses(_phrase)}',
-          style: revealed ? context.accents.attention : CellStyle.none,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                'Passphrase${discloses(_phrase)}',
+                style: revealed
+                    ? context.accents.attention
+                    : context.theme.mutedStyle,
+              ),
+            ),
+            const SizedBox(width: 1),
+            TuiAction(
+              label: revealed ? 'Hide' : 'Reveal',
+              shortcut: 'Ctrl+R',
+              reservedLabel: 'Reveal',
+              onPressed: model.busy ? null : toggleReveal,
+            ),
+          ],
         ),
         secretField(
           TextInput(
@@ -321,7 +332,7 @@ final class _RecordFormState extends State<RecordForm>
           TuiAction(
             label: 'Save',
             shortcut: 'Ctrl+S',
-            variant: ButtonVariant.success,
+            variant: ButtonVariant.primary,
             onPressed: model.busy ? null : _submit,
           ),
           TuiAction(
@@ -493,9 +504,9 @@ final class _PassphraseFormState extends State<PassphraseForm>
     }
     return FormShell(
       title: 'Add passphrase',
-      subtitle: const Text(
+      subtitle: Text(
         'No recovery for a lost passphrase.',
-        style: CellStyle(foreground: AnsiColor(3)),
+        style: context.accents.attention,
         maxLines: 3,
       ),
       bindings: [
@@ -508,7 +519,7 @@ final class _PassphraseFormState extends State<PassphraseForm>
           TuiAction(
             label: 'Save',
             shortcut: 'Ctrl+S',
-            variant: ButtonVariant.success,
+            variant: ButtonVariant.primary,
             onPressed: model.busy ? null : _submit,
           ),
           TuiAction(

@@ -10,6 +10,9 @@ import '../key.dart';
 import 'clipboard_contract.dart' show TuiCopyException;
 import 'store.dart';
 import 'unlock_preference.dart';
+import 'appearance.dart';
+
+export 'appearance.dart';
 
 enum TuiView {
   opening,
@@ -23,6 +26,7 @@ enum TuiView {
   settings,
   security,
   data,
+  appearance,
   passphrase,
   removePassphrase,
   methods,
@@ -66,10 +70,34 @@ final class TuiModel extends ChangeNotifier {
     this.idleTimeout = tuiIdleTimeout,
     this.supportsHardware = false,
     this.unlockPreference,
+    TuiAppearance appearance = const TuiAppearance(),
+    this.saveAppearance,
     this.hardwareConnected,
     this.hardwarePollInterval = const Duration(milliseconds: 500),
     this.hardwareConnectionTimeout = const Duration(minutes: 2),
-  });
+  }) : _appearance = appearance;
+
+  TuiAppearance _appearance;
+  TuiAppearance get appearance => _appearance;
+  final Future<void> Function(TuiAppearance)? saveAppearance;
+  Future<void> _appearanceWrites = Future.value();
+
+  /// Apply immediately, serialize saves, and flush before closing the TUI.
+  void setAppearance(TuiAppearance value) {
+    if (_ending || busy || value == _appearance) return;
+    _appearance = value;
+    notifyListeners();
+    _appearanceWrites = _appearanceWrites.then((_) async {
+      try {
+        await saveAppearance?.call(value);
+      } on Object {
+        message(
+          'Appearance changed for this session, but could not be saved.',
+          failure: true,
+        );
+      }
+    });
+  }
 
   final TuiSessionOpener openSession;
   final Future<void> Function() resetStore;
@@ -906,6 +934,7 @@ final class TuiModel extends ChangeNotifier {
       await _pending;
       await _closeSession();
     } finally {
+      await _appearanceWrites;
       onExit();
     }
   }

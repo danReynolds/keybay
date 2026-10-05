@@ -225,13 +225,15 @@ void main() {
                 'process_executor.dart',
                 'clipboard.dart',
                 'unlock_preference_file.dart',
+                'appearance_file.dart',
               ]),
               reason:
                   'Only reviewed manifest, metadata, clipboard and nonsecret preference code may construct File objects.',
             );
           }
           final reviewedSource =
-              entity.path.endsWith('/unlock_preference_file.dart')
+              entity.path.endsWith('/unlock_preference_file.dart') ||
+                  entity.path.endsWith('/appearance_file.dart')
               ? source.replaceAll(
                   'stage.writeAsString(',
                   'ReviewedPreferenceWrite(',

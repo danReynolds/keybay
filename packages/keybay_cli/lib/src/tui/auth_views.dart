@@ -67,67 +67,69 @@ final class _AuthMethodsScreenState extends State<AuthMethodsScreen> {
     child: Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
-        maxWidth: 60,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              unlocking ? 'Choose an unlock method' : 'Unlock methods',
-              style: const CellStyle(bold: true),
-            ),
-            const SizedBox(height: 1),
-            Expanded(
-              child: methods.isEmpty
-                  ? const Text('No additional unlock methods.')
-                  : ListView.builder(
-                      controller: _list,
-                      focusNode: _focus,
-                      autofocus: true,
-                      itemCount: methods.length,
-                      onFocusedItemChanged: (_) => setState(() {}),
-                      onSelect: (_) => _choose(),
-                      itemBuilder: (_, index, highlighted) => Text(
-                        '${highlighted ? '›' : ' '} ${safeTuiLabel(methods[index].label)}',
-                        maxLines: 1,
-                        style: highlighted
-                            ? context.theme.selectionStyle
-                            : context.theme.textStyle,
-                      ),
-                    ),
-            ),
-            if (current case final method?) ...[
+        maxWidth: 64,
+        child: KeybayFrame(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
               Text(
-                '${methodKind(method)} · ${method.id.substring(0, method.id.length.clamp(0, 8))}',
-                maxLines: 2,
+                unlocking ? 'Choose an unlock method' : 'Unlock methods',
+                style: const CellStyle(bold: true),
               ),
-              if (method.rpId != null)
+              const SizedBox(height: 1),
+              Expanded(
+                child: methods.isEmpty
+                    ? const Text('No additional unlock methods.')
+                    : ListView.builder(
+                        controller: _list,
+                        focusNode: _focus,
+                        autofocus: true,
+                        itemCount: methods.length,
+                        onFocusedItemChanged: (_) => setState(() {}),
+                        onSelect: (_) => _choose(),
+                        itemBuilder: (_, index, highlighted) => Text(
+                          '${highlighted ? '›' : ' '} ${safeTuiLabel(methods[index].label)}',
+                          maxLines: 1,
+                          style: highlighted
+                              ? context.theme.selectionStyle
+                              : context.theme.textStyle,
+                        ),
+                      ),
+              ),
+              if (current case final method?) ...[
                 Text(
-                  safeTuiText(method.rpId!),
+                  '${methodKind(method)} · ${method.id.substring(0, method.id.length.clamp(0, 8))}',
                   maxLines: 2,
-                  style: context.theme.mutedStyle,
                 ),
-            ],
-            const SizedBox(height: 1),
-            ActionGrid(
-              actions: [
-                TuiAction(
-                  label: unlocking ? 'Unlock' : 'Remove…',
-                  shortcut: 'Enter',
-                  onPressed:
-                      model.busy ||
-                          current == null ||
-                          unlocking && current!.kind == TuiAuthKind.system
-                      ? null
-                      : _choose,
-                ),
-                TuiAction(
-                  label: unlocking ? 'Quit' : 'Back',
-                  shortcut: 'Esc',
-                  onPressed: _back,
-                ),
+                if (method.rpId != null)
+                  Text(
+                    safeTuiText(method.rpId!),
+                    maxLines: 2,
+                    style: context.theme.mutedStyle,
+                  ),
               ],
-            ),
-          ],
+              const SizedBox(height: 1),
+              ActionGrid(
+                actions: [
+                  TuiAction(
+                    label: unlocking ? 'Unlock' : 'Remove…',
+                    shortcut: 'Enter',
+                    onPressed:
+                        model.busy ||
+                            current == null ||
+                            unlocking && current!.kind == TuiAuthKind.system
+                        ? null
+                        : _choose,
+                  ),
+                  TuiAction(
+                    label: unlocking ? 'Quit' : 'Back',
+                    shortcut: 'Esc',
+                    onPressed: _back,
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     ),
@@ -248,7 +250,7 @@ final class _HardwareFormState extends State<HardwareForm>
                   ? 'Continue'
                   : 'Try again',
               shortcut: 'Enter',
-              variant: ButtonVariant.success,
+              variant: ButtonVariant.primary,
               focusNode: _submitFocus,
               autofocus: !enrolling && !model.hardwareNeedsPin,
               onPressed: waiting || !model.hardwareCanRetry ? null : _submit,

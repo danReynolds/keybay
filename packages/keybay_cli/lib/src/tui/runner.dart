@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:fleury/fleury.dart';
 
 import '../application.dart' show SessionOpener, exitFailure;
+import '../appearance_file.dart';
 import '../ignored_signals.dart';
 import '../secret_output.dart';
 import '../terminal.dart';
@@ -68,6 +69,9 @@ Future<int> runTui({
     idle = Timer(idleTimeout, stop);
   }
 
+  final appearancePreference = FileAppearancePreference.forCurrentUser();
+  final appearance =
+      await appearancePreference?.read() ?? const TuiAppearance();
   model = createNativeTuiModel(
     openSession: openSession,
     resetStore: resetStore,
@@ -76,6 +80,8 @@ Future<int> runTui({
     onExit: requestExit,
     idleTimeout: idleTimeout,
     unlockPreference: unlockPreference,
+    appearance: appearance,
+    saveAppearance: appearancePreference?.write,
     hardwareConnected: hardwareConnected,
   );
   bool accept(TuiEvent event) {

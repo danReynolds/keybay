@@ -189,7 +189,11 @@ Delete, Clear and Remove passphrase use compact centered confirmations.
 Cancel has initial focus; Tab or arrow keys move to the confirming action.
 An empty vault focuses New key. Clicking an action also gives it keyboard focus.
 
-Settings keeps **Security** and **Data** in a left sidebar, with the selected
+The centered frame carries a plain `keybay` title in its top border. It sizes
+around forms and gives lists and settings the available room. The terminal's
+font, default text color and background remain in control.
+
+Settings keeps **Security**, **Data** and **Appearance** in a left sidebar, with the selected
 category’s content beside it. The filled highlight marks keyboard focus;
 each list’s current row keeps its `›` marker when focus moves elsewhere.
 Security shows passphrase
@@ -206,6 +210,19 @@ managed store, and exits without creating a replacement. There is no passphrase
 recovery. Unlock offers a neutral “Forgot passphrase?” link; reset is available
 from that explanation, followed by the typed confirmation. Record changes from other processes follow the SDK's normal concurrent
 write rules; reopen to refresh external changes.
+
+Appearance offers **Accent** (Green, Cyan, Blue or Magenta) and **Contrast**
+(Normal or High). Changes apply immediately; Enter or a click selects a choice.
+High contrast removes dim text and strengthens focus cues. Accent changes the
+title and primary actions; warning and error colors retain their meaning.
+`NO_COLOR=1 keybay` disables colors while preserving focus, selection and
+validation cues.
+
+Appearance is saved locally outside the encrypted store, so it also applies
+before unlocking. macOS uses `~/Library/Application Support/keybay/appearance.json`;
+Linux uses `$XDG_CONFIG_HOME/keybay/appearance.json`, defaulting to
+`~/.config/keybay/appearance.json`. Missing or malformed preferences use the
+defaults. A save failure keeps the choice for the current session and reports it.
 
 The UI needs the foreground controlling terminal on both stdin and stdout.
 Use at least 80×20 cells, or 40×24 for the narrow layout. Resizing or reported
