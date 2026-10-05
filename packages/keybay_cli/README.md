@@ -159,7 +159,9 @@ control. Disabled actions also disable their shortcuts.
 
 Short terminals reserve more space for records and show a scrollbar when the
 list can overflow. A 35-key store displays seven ordinary rows at 80×20 and nine
-at 40×24; taller terminals retain more spacious layout.
+at 40×24. Larger terminals center the app within a 104-column, 32-row area;
+compact forms and prompts are centered within that area. Smaller windows use
+their available space, keeping actions visible.
 
 Green marks primary actions and success; amber marks disclosure; red marks
 destructive actions and errors. The focused field has a cyan border. Button

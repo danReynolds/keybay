@@ -7,9 +7,10 @@ import 'secret_draft.dart';
 
 export 'secret_draft.dart';
 
-/// Shared form shell: a centred 60-column body, its title, the action grid and
-/// the accelerators that reach them. The body is sized against the same row
-/// budget as the actions so they stay visible at the supported minimum.
+/// Shared form shell: a vertically and horizontally centred 60-column body,
+/// its title, the action grid and the accelerators that reach them.
+/// The body shares the actions' row budget so both stay visible at the
+/// supported minimum.
 final class FormShell extends StatelessWidget {
   const FormShell({
     super.key,
@@ -37,7 +38,7 @@ final class FormShell extends StatelessWidget {
   Widget build(BuildContext context) => KeyBindings(
     bindings: bindings,
     child: Align(
-      alignment: Alignment.topCenter,
+      alignment: Alignment.center,
       child: ConstrainedBox(
         maxWidth: 60,
         child: LayoutBuilder(

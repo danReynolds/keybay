@@ -53,25 +53,36 @@ final class KeybayTui extends StatelessWidget {
           final tooSmall =
               (size.maxCols ?? 80) < 40 || (size.maxRows ?? 24) < minimumRows;
           return FocusTraversalGroup(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SizedBox(
-                    height: tooSmall ? 0 : 2,
-                    child: Text('keybay', style: context.accents.accent),
+            child: Center(
+              child: ConstrainedBox(
+                // Keep the whole app together in a large terminal. Smaller
+                // windows retain the full space needed by forms and actions.
+                maxWidth: 104,
+                maxHeight: 32,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 2,
+                    vertical: 1,
                   ),
-                  Expanded(child: _current(context, tooSmall)),
-                  if (!tooSmall)
-                    BusyIndicator(
-                      model: model,
-                      compact: (size.maxRows ?? 24) <= 24,
-                      label: model.view == TuiView.unlock
-                          ? 'Unlocking'
-                          : 'Working',
-                    ),
-                ],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(
+                        height: tooSmall ? 0 : 2,
+                        child: Text('keybay', style: context.accents.accent),
+                      ),
+                      Expanded(child: _current(context, tooSmall)),
+                      if (!tooSmall)
+                        BusyIndicator(
+                          model: model,
+                          compact: (size.maxRows ?? 24) <= 24,
+                          label: model.view == TuiView.unlock
+                              ? 'Unlocking'
+                              : 'Working',
+                        ),
+                    ],
+                  ),
+                ),
               ),
             ),
           );
@@ -279,7 +290,7 @@ final class KeybayTui extends StatelessWidget {
       ),
     ],
     child: Align(
-      alignment: Alignment.topCenter,
+      alignment: Alignment.center,
       child: ConstrainedBox(
         maxWidth: 60,
         child: Column(

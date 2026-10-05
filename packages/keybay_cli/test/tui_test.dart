@@ -2805,10 +2805,13 @@ void main() {
         expect(screen, contains('Key'));
         expect(screen, contains('Value'));
         expectFormActions(tester);
-        expect(
-          screen.split('\n').indexWhere((row) => row.contains('[Ctrl+S] Save')),
-          lessThan(18),
+        final lines = screen.split('\n');
+        final titleRow = lines.indexWhere((row) => row.contains('New key'));
+        final saveRow = lines.indexWhere(
+          (row) => row.contains('[Ctrl+S] Save'),
         );
+        // The form stays compact even when centered in a taller terminal.
+        expect(saveRow - titleRow, lessThan(15));
         tester.type('test2');
         tester.sendKey(const KeyEvent(KeyCode.enter));
         await tester.settle();
