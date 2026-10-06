@@ -8,7 +8,7 @@ import 'package:test/test.dart';
 
 /// Supply-chain firewall (see doc/design.md): this workspace's complete runtime
 /// resolution is frozen by package, version, source, and the committed lockfile.
-/// The unpublished Keypass development dependency is pinned to one Git commit.
+/// Keypass is pinned to its reviewed hosted prerelease and archive hash.
 /// Downstream applications still resolve transitive ranges
 /// under their own lockfiles. This test fails CI when our reviewed tree shifts.
 void main() {
@@ -44,14 +44,14 @@ void main() {
 
     const expected = <String, String>{
       'args': '2.7.0',
-      'code_assets': '2.1.0',
+      'code_assets': '1.2.1',
       'collection': '1.19.1',
       'convert': '3.1.2',
       'crypto': '3.0.7',
       'cryptography': '2.9.0',
       'dbus': '0.7.15',
       'ffi': '2.2.0',
-      'hooks': '2.2.0',
+      'hooks': '2.0.2',
       'keypass': '0.1.0-dev.2',
       'logging': '1.3.0',
       'meta': '1.19.0',
@@ -59,7 +59,7 @@ void main() {
       'petitparser': '7.0.2',
       'pointycastle': '4.0.0',
       'pub_semver': '2.2.0',
-      'record_use': '1.1.1',
+      'record_use': '0.6.0',
       'source_span': '1.10.2',
       'string_scanner': '1.4.1',
       'term_glyph': '1.2.2',
@@ -76,12 +76,11 @@ void main() {
     );
 
     // Names alone don't prove provenance: a git/path override of a pinned
-    // dep keeps the name but swaps the code. Only the exact reviewed Keypass
-    // commit may use Git; every other dependency must remain hosted.
+    // dep keeps the name but swaps the code. Every dependency must remain hosted.
     for (final name in closure) {
       expect(
         byName[name]?['source'],
-        name == 'keypass' ? 'git' : 'hosted',
+        'hosted',
         reason:
             'package "$name" changed source — the reviewed resolution '
             'was overridden.',
@@ -106,13 +105,15 @@ void main() {
     expect(File('pubspec_overrides.yaml').existsSync(), isFalse);
   });
 
-  test('Keypass Git source and resolved revision are the reviewed commit', () {
-    const commit = 'e5fbdda99639d0b0693b3b0f60ca9825cd5fc336';
-    const url = 'https://github.com/danReynolds/keypass.git';
+  test('Keypass hosted archive is the reviewed release', () {
+    const hash =
+        '9c46f2bb0413b4f891d5e7eddce46830d2fa4c5c83ebad08b14333efe051c1ec';
     final spec = File('pubspec.yaml').readAsStringSync();
-    expect(spec, contains('url: $url\n      ref: $commit'));
-    // The independent SDK test runs with its own lock; workspace execution
-    // resolves the root lock two levels above this package.
+    expect(
+      spec,
+      contains(RegExp(r'^  keypass: 0\.1\.0-dev\.2$', multiLine: true)),
+    );
+    // Standalone SDK tests have their own lock; workspace tests use the root.
     final local = File('pubspec.lock');
     final lock = (local.existsSync() ? local : File('../../pubspec.lock'))
         .readAsStringSync();
@@ -120,17 +121,9 @@ void main() {
       r'^  keypass:\n([\s\S]*?)(?=^  \w|\Z)',
       multiLine: true,
     ).firstMatch(lock)!.group(1)!;
-    for (final field in ['ref', 'resolved-ref']) {
-      expect(
-        RegExp(
-          '^      $field: (?:$commit|"$commit")'
-          r'$',
-          multiLine: true,
-        ).hasMatch(entry),
-        isTrue,
-      );
-    }
-    expect(entry, contains('url: "$url"'));
-    expect(entry, contains('source: git'));
+    expect(entry, contains('sha256: "$hash"'));
+    expect(entry, contains('url: "https://pub.dev"'));
+    expect(entry, contains('source: hosted'));
+    expect(entry, contains('version: "0.1.0-dev.2"'));
   });
 }

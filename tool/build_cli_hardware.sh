@@ -21,12 +21,7 @@ print(unquote(urlparse(urljoin(p.as_uri(), package['rootUri'])).path))
 PY
 )"
 revision="$(python3 -c 'import sys; sys.path.insert(0, "tool"); from cli_hardware_bundle import REVISION; print(REVISION)')"
-[[ "$(git -C "$source" rev-parse HEAD)" == "$revision" ]] || {
-  echo 'Unexpected Keypass revision' >&2; exit 1;
-}
-[[ -z "$(git -C "$source" status --porcelain -- native/hardware LICENSE)" ]] || {
-  echo 'Modified Keypass native source or license' >&2; exit 1;
-}
+python3 tool/verify_keypass_source.py "$source"
 native="$output/native-$revision"
 cmp -s "$source/LICENSE" tool/licenses/keypass.txt || { echo 'Keypass license notice differs from the pinned source' >&2; exit 1; }
 cmake -S "$source/native/hardware" -B "$native" -DCMAKE_BUILD_TYPE=Release

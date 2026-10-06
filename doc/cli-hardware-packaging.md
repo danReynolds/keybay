@@ -1,8 +1,10 @@
 # Native CLI hardware builds
 
-The hardware route uses Keypass's exact Git revision, libfido2 >= 1.16,
+The hardware route uses the exact hosted Keypass prerelease, libfido2 >= 1.16,
 OpenSSL 3 and CBOR. `tool/build_cli_hardware.sh` resolves the source from Dart's
-package configuration, rejects a different revision or modified native source,
+package configuration and verifies native inputs against `tool/keypass-source.json`,
+which records the reviewed release commit, registry archive hash and file hashes.
+It rejects modified, missing, additional or linked native inputs,
 runs its native tests, and creates a relocatable bundle. It does not access a
 device or vault.
 
@@ -100,5 +102,5 @@ Fake-provider PTY tests and no-device ABI probes do not qualify these ceremonies
 OS enumeration cannot be forcibly interrupted inside libfido2; cancellation is
 forwarded immediately, but completion still waits for that OS call to return.
 Physical latency, disconnection and credential capability checks remain attended
-tests. Public dependency availability, notarization and installed upgrades are
+tests. Notarization and installed upgrades are
 separate release gates, tracked in [release readiness](release-readiness.md).

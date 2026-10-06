@@ -101,9 +101,7 @@ void main() {
           'root',
           reason: 'keybay must resolve from the workspace',
         );
-      } else if (name == 'fleury' ||
-          name == 'fleury_widgets' ||
-          name == 'keypass') {
+      } else if (name == 'fleury' || name == 'fleury_widgets') {
         expect(source, 'git');
       } else {
         expect(
@@ -113,7 +111,7 @@ void main() {
         );
       }
     }
-    // Keybay's companion firewall checks the exact Keypass Git SHA/source
+    // Keybay's companion firewall checks the exact Keypass hosted archive/source
     // and complete hosted closure. Keep the CLI's new verification dependency
     // versions explicit here as well.
     expect(byName['keypass']?['version'], '0.1.0-dev.2');
@@ -166,10 +164,13 @@ void main() {
       r'^      ref: ([0-9a-f]{40})\s*$',
       multiLine: true,
     ).allMatches(pubspec).map((match) => match.group(1)!).toList();
-    expect(pins, hasLength(3));
-    expect(pins.last, 'e5fbdda99639d0b0693b3b0f60ca9825cd5fc336');
+    expect(pins, hasLength(2));
     expect(
-      pins.take(2).toSet(),
+      pubspec,
+      contains(RegExp(r'^  keypass: 0\.1\.0-dev\.2$', multiLine: true)),
+    );
+    expect(
+      pins.toSet(),
       hasLength(1),
       reason: 'fleury and fleury_widgets must use the same reviewed commit',
     );

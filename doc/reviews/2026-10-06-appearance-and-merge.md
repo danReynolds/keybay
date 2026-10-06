@@ -73,6 +73,32 @@ reports only the three intentional exact-pin warnings. Publication itself is
 pending owner approval; no pub.dev upload has occurred. The SDK dependency must
 be switched to the resulting hosted release and all CI rerun before merge.
 
+## Approved hosted release
+
+The owner explicitly approved the permanent pub.dev release. Keypass
+`0.1.0-dev.2` is published from merged commit
+`e4c933a5a7a63ed51bdfa211e528a42659cd6f1c` (all eleven prerequisite CI jobs passed).
+The served archive has SHA-256
+`9c46f2bb0413b4f891d5e7eddce46830d2fa4c5c83ebad08b14333efe051c1ec`.
+All 103 published files match the release commit, accounting for the repository's
+explicit CRLF checkout rule for `native/android/gradlew.bat`.
+
+Both Keybay packages now use the exact hosted version. All three dependency
+locks resolve with enforcement; SDK and CLI source checks require hosted
+Keypass and the SDK checks the registry archive hash. Native builds verify a
+checked-in hash manifest for the release's native inputs and license instead
+of requiring a Git checkout. Six tests cover accepted published source and
+rejection of modified, missing, added and linked inputs. Bundle metadata still
+records the reviewed source commit and verifies its native companion hashes.
+
+Full workspace analysis, SDK dependency checks, 275 CLI tests, 39 general TUI
+PTY checks, 19 simulated hardware TUI checks, 13 simulated hardware command
+checks, and the Flutter demo's analysis and ten tests passed locally. The
+macOS CI delete-confirmation test previously accepted a key name from the
+still-arriving dialog as evidence of returning to the list. It now waits for
+the unique list footer before reopening the dialog. No production interaction
+was changed for this test synchronization fix. Final hosted CI remains required.
+
 ### Original blocker
 
 At the initial review, PR 88 depended on the private, unpublished `danReynolds/keypass` repository

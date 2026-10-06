@@ -26,11 +26,8 @@ dependencies:
       path: packages/fleury_widgets
   keybay: 0.2.0
   # Read-only hardware discovery for the TUI's connection-wait state. Keep the
-  # same reviewed revision as Keybay; authentication remains owned by Keybay.
-  keypass:
-    git:
-      url: https://github.com/danReynolds/keypass.git
-      ref: e5fbdda99639d0b0693b3b0f60ca9825cd5fc336
+  # same reviewed version as Keybay; authentication remains owned by Keybay.
+  keypass: 0.1.0-dev.2
 
 dev_dependencies:
   lints: ^5.0.0

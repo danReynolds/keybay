@@ -380,7 +380,10 @@ def main():
         p.receive(b'Delete this key?')
         p.output.clear()
         os.write(p.master, b'\r')  # Cancel owns initial focus.
-        p.receive(b'acme/key')
+        # The confirmation also contains acme/key. Wait for the list's footer
+        # so a late chunk of that dialog cannot masquerade as cancellation.
+        p.receive(b'Enter edit')
+        p.output.clear()
         os.write(p.master, b'd')
         p.receive(b'Delete this key?')
         os.write(p.master, b'\t\r')

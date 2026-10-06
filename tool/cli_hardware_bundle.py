@@ -15,7 +15,7 @@ import subprocess
 import sys
 import tempfile
 
-REVISION = "e5fbdda99639d0b0693b3b0f60ca9825cd5fc336"
+REVISION = json.loads(pathlib.Path(__file__).with_name("keypass-source.json").read_text())["revision"]
 MANIFEST = "hardware.json"
 NOTICES = "THIRD_PARTY_NOTICES.txt"
 MAC = (r"libkeypass_hardware\.dylib", r"libfido2\.1\.dylib",

@@ -10,19 +10,19 @@ been published in this closeout. This page tracks remaining work; dated
 qualification records retain the evidence and limitations of their original
 runs.
 
-The October 2 passkey integration adds a development-only, exact-commit Keypass
+The October 2 passkey integration adds an exact-pinned Keypass
 dependency and a new authenticated methods format. Its engineering review and
-regressions do not renew the older physical-device evidence. Keypass became public
-on October 6 and resolves through an exact HTTPS Git pin. It must still be
-released on pub.dev and substituted for the Git
-pin before Keybay passes its unchanged publication gate. The CLI hardware UI is implemented; demo passkey UI and end-to-end native
+regressions do not renew the older physical-device evidence. With explicit owner
+approval, Keypass became public and `0.1.0-dev.2` was published on pub.dev on
+October 6. The SDK and CLI now pin that hosted version and its reviewed archive.
+The CLI hardware UI is implemented; demo passkey UI and end-to-end native
 Keybay vault qualification remain separate work; the SDK accepts system and hardware credentials.
 
 The October 4 hardware follow-up implements TUI enrollment/removal, hardware
 unlock for ordinary commands, and local native dependency bundling. Local
 signed split-runtime loading and extracted help/version checks pass. See
 [hardware packaging](cli-hardware-packaging.md) for the exact evidence. The
-hosted dependency/publication gate and final installed-distribution gate remain.
+SDK publication and final installed-distribution gates remain.
 The current release-kit checkout already supports a signed Dart runtime/module
 bundle; carrying the new hardware companions through its release stages remains
 integration work. The older single-file description below records the original
@@ -32,7 +32,6 @@ September finding, not the current release-kit implementation.
 
 | Priority | Work | Completion evidence |
 | --- | --- | --- |
-| P0, Keypass | Publish a reviewed hosted Keypass version; replace the SDK's publicly accessible HTTPS Git pin with that version. | Consumer resolution, reviewed closure, unchanged SDK publish dry-run and exact-candidate CI pass. Repository visibility approval does not authorize a pub.dev release. |
 | P0, native macOS | Carry the locally qualified runtime/module and hardware library companions through release-kit staging, signing, archive and Homebrew publication. | Reproducible bundle from the release candidate, stable application/signing identity, and successful launch after signing. |
 | P0, native CLI | Qualify the actual installed packages and upgrades on macOS ARM64, Linux x64 and Linux ARM64, as configured in `release.toml`. | Artifact hashes, observed OS/ABI, protected-store continuity, CLI/TUI/child-process checks, and macOS notarization/downloaded-launch evidence. A source build or ad-hoc archive is insufficient. |
 | P0, Fleury | Publish reviewed Fleury and fleury_widgets versions that include [danReynolds/fleury#269](https://github.com/danReynolds/fleury/pull/269) (`93816cde`), then replace the CLI's exact Git pins with them. rk refuses to release a unit built from Git dependencies (RK-DART-201), even when they are pinned to a commit. | Reviewed dependency closure and installed CLI checks. Fleury publication is a separate release action; it has not happened as part of this work. |
