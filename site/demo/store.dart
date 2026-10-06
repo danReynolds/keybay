@@ -23,7 +23,12 @@ final class DemoStore {
   bool _initialized = true;
   int _generation = 0;
 
-  Future<TuiSession> open({Uint8List? phrase}) {
+  Future<TuiSession> open({
+    Uint8List? phrase,
+    TuiAuthMethod? method,
+    Uint8List? pin,
+    TuiCancellation? cancellation,
+  }) {
     // Validate borrowed input synchronously, before TuiModel clears it.
     if (_phrase != null) {
       if (phrase == null) {
@@ -85,9 +90,9 @@ final class _DemoSession implements TuiSession {
   }
 
   @override
-  Future<String?> passphraseId() async {
+  Future<List<TuiAuthMethod>> listMethods() async {
     check();
-    return store._phrase == null ? null : 'demo-passphrase';
+    return store._phrase == null ? const [] : const [_DemoPassphrase()];
   }
 
   @override
@@ -124,25 +129,47 @@ final class _DemoSession implements TuiSession {
   }
 
   @override
-  Future<void> changePassphrase(
-    Uint8List phrase, {
-    required bool replacing,
-  }) async {
+  Future<void> addPassphrase(Uint8List phrase) async {
     check();
+    if (store._phrase != null) {
+      throw const TuiStoreException('A passphrase is already configured.');
+    }
     final copy = Uint8List.fromList(phrase);
-    store._phrase?.fillRange(0, store._phrase!.length, 0);
     store._phrase = copy;
   }
 
   @override
-  Future<void> removePassphrase(String id) async {
+  Future<void> removeMethod(TuiAuthMethod method) async {
     check();
     store._phrase?.fillRange(0, store._phrase!.length, 0);
     store._phrase = null;
   }
 
   @override
+  Future<void> addHardwareKey({
+    required String label,
+    Uint8List? pin,
+    required TuiCancellation cancellation,
+  }) => Future.error(
+    const TuiStoreException(
+      'Hardware keys are unavailable in the website demo.',
+    ),
+  );
+
+  @override
   Future<void> close() async {
     closed = true;
   }
+}
+
+final class _DemoPassphrase implements TuiAuthMethod {
+  const _DemoPassphrase();
+  @override
+  String get id => 'demo-passphrase';
+  @override
+  String get label => 'Passphrase';
+  @override
+  TuiAuthKind get kind => TuiAuthKind.passphrase;
+  @override
+  String? get rpId => null;
 }

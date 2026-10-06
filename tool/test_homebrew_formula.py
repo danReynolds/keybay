@@ -53,6 +53,8 @@ def main() -> int:
                 raise AssertionError(f"formula omitted or duplicated {filename}")
         if 'pkgshare.install "example"' not in formula:
             raise AssertionError("formula did not install the packaged quickstart")
+        if 'bin.install_symlink libexec/"keybay"' not in formula or 'libexec.install Dir["*.dylib", "*.so", "*.so.*"]' not in formula:
+            raise AssertionError("formula separated native libraries from the resolved executable")
         linux_block = formula.split("  on_linux do\n", 1)[1].split("\n  end", 1)[0]
         if 'depends_on "libsecret"' not in linux_block:
             raise AssertionError("formula did not install Linux's secret-tool client")

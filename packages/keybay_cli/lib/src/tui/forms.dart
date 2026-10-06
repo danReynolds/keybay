@@ -7,9 +7,10 @@ import 'secret_draft.dart';
 
 export 'secret_draft.dart';
 
-/// Shared form shell: a centred 60-column body, its title, the action grid and
-/// the accelerators that reach them. The body is sized against the same row
-/// budget as the actions so they stay visible at the supported minimum.
+/// Shared form shell: a vertically and horizontally centred 60-column body,
+/// its title, the action grid and the accelerators that reach them.
+/// The body shares the actions' row budget so both stay visible at the
+/// supported minimum.
 final class FormShell extends StatelessWidget {
   const FormShell({
     super.key,
@@ -37,34 +38,35 @@ final class FormShell extends StatelessWidget {
   Widget build(BuildContext context) => KeyBindings(
     bindings: bindings,
     child: Align(
-      alignment: Alignment.topCenter,
+      alignment: Alignment.center,
       child: ConstrainedBox(
-        maxWidth: 60,
-        child: LayoutBuilder(
-          builder: (_, size) {
-            final cols = size.maxCols ?? 60;
-            final rows = size.maxRows ?? 17;
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(title, allowSelect: false, style: titleStyle),
-                if (subtitle != null) subtitle!,
-                const SizedBox(height: 1),
-                ...body(cols, rows, actions.rowsFor(cols)),
-                actions,
-                if (footer != null) footer!,
-              ],
-            );
-          },
+        maxWidth: 64,
+        child: KeybayFrame(
+          child: LayoutBuilder(
+            builder: (_, size) {
+              final cols = size.maxCols ?? 60;
+              final rows = size.maxRows ?? 17;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(title, allowSelect: false, style: titleStyle),
+                  if (subtitle != null) subtitle!,
+                  const SizedBox(height: 1),
+                  ...body(cols, rows, actions.rowsFor(cols)),
+                  actions,
+                  if (footer != null) footer!,
+                ],
+              );
+            },
+          ),
         ),
       ),
     ),
   );
 }
 
-/// Unlock an existing protected store. Cancelling closes the invocation
-/// because there is no authenticated screen to return to.
+/// Unlock an existing protected store, or return to its other usable methods.
 final class UnlockForm extends StatefulWidget {
   const UnlockForm({super.key, required this.model, this.tooSmall = false});
   final TuiModel model;
@@ -91,7 +93,11 @@ final class _UnlockFormState extends State<UnlockForm>
 
   void _back() {
     eraseDrafts();
-    unawaited(model.close());
+    if (model.canChooseAnotherMethod && !model.busy) {
+      model.navigate(TuiView.unlockMethods);
+    } else {
+      unawaited(model.close());
+    }
   }
 
   Future<void> _submit() async {
@@ -132,17 +138,16 @@ final class _UnlockFormState extends State<UnlockForm>
           TuiAction(
             label: 'Unlock',
             shortcut: 'Enter',
-            variant: ButtonVariant.success,
+            variant: ButtonVariant.primary,
             onPressed: model.busy ? null : _submit,
           ),
           TuiAction(
-            label: revealed ? 'Hide' : 'Reveal',
-            shortcut: 'Ctrl+R',
-            reservedLabel: 'Reveal',
-            variant: ButtonVariant.warning,
-            onPressed: model.busy ? null : toggleReveal,
+            label: model.canChooseAnotherMethod && !model.busy
+                ? 'Other methods'
+                : 'Quit',
+            shortcut: 'Esc',
+            onPressed: _back,
           ),
-          TuiAction(label: 'Cancel', shortcut: 'Esc', onPressed: _back),
         ],
       ),
       footer: Column(
@@ -165,9 +170,25 @@ final class _UnlockFormState extends State<UnlockForm>
         ],
       ),
       body: (cols, rows, actionRows) => [
-        Text(
-          'Passphrase${discloses(_phrase)}',
-          style: revealed ? context.accents.attention : CellStyle.none,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                'Passphrase${discloses(_phrase)}',
+                style: revealed
+                    ? context.accents.attention
+                    : context.theme.mutedStyle,
+              ),
+            ),
+            const SizedBox(width: 1),
+            TuiAction(
+              label: revealed ? 'Hide' : 'Reveal',
+              shortcut: 'Ctrl+R',
+              reservedLabel: 'Reveal',
+              onPressed: model.busy ? null : toggleReveal,
+            ),
+          ],
         ),
         secretField(
           TextInput(
@@ -311,7 +332,7 @@ final class _RecordFormState extends State<RecordForm>
           TuiAction(
             label: 'Save',
             shortcut: 'Ctrl+S',
-            variant: ButtonVariant.success,
+            variant: ButtonVariant.primary,
             onPressed: model.busy ? null : _submit,
           ),
           TuiAction(
@@ -472,7 +493,7 @@ final class _PassphraseFormState extends State<PassphraseForm>
     }
     final phrase = _phrase.takeBytes();
     eraseDrafts();
-    unawaited(model.changePassphrase(phrase));
+    unawaited(model.addPassphrase(phrase));
   }
 
   @override
@@ -482,10 +503,10 @@ final class _PassphraseFormState extends State<PassphraseForm>
       return ResizePrompt(model: model, draft: true);
     }
     return FormShell(
-      title: model.protected ? 'Change passphrase' : 'Add passphrase',
-      subtitle: const Text(
+      title: 'Add passphrase',
+      subtitle: Text(
         'No recovery for a lost passphrase.',
-        style: CellStyle(foreground: AnsiColor(3)),
+        style: context.accents.attention,
         maxLines: 3,
       ),
       bindings: [
@@ -498,7 +519,7 @@ final class _PassphraseFormState extends State<PassphraseForm>
           TuiAction(
             label: 'Save',
             shortcut: 'Ctrl+S',
-            variant: ButtonVariant.success,
+            variant: ButtonVariant.primary,
             onPressed: model.busy ? null : _submit,
           ),
           TuiAction(

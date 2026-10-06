@@ -8,7 +8,12 @@ if [[ $# -lt 1 || $# -gt 2 ]]; then
   exit 2
 fi
 
-binary="$1"
+binary="$(python3 - "$1" <<'PY'
+from pathlib import Path
+import sys
+print(Path(sys.argv[1]).resolve(strict=True))
+PY
+)"
 expected_team="${2:-}"
 details="$(codesign -dvvv "$binary" 2>&1)"
 
@@ -66,6 +71,41 @@ if [[ "${KEYBAY_ALLOW_ADHOC:-}" != "1" ]]; then
     echo "expected: $expected_requirement" >&2
     exit 1
   fi
+fi
+
+bundle="$(dirname "$binary")"
+if [[ -f "$bundle/hardware.json" ]]; then
+  python3 "$(dirname "${BASH_SOURCE[0]}")/cli_hardware_bundle.py" verify "$bundle"
+  if [[ "${KEYBAY_ALLOW_ADHOC:-}" != "1" ]]; then
+    python3 "$(dirname "${BASH_SOURCE[0]}")/cli_macos_constraint.py" verify "$bundle"
+    runtime_requirement="$(codesign -d -r- "$bundle/keybay-runtime" 2>&1 | sed -n '/^designated =>/p')"
+    if [[ "$runtime_requirement" != "$expected_requirement" ]]; then
+      echo 'dedicated runtime does not preserve the frozen CLI identity' >&2; exit 1
+    fi
+  fi
+  for companion in keybay-runtime keybay.aot; do
+    codesign --verify --strict "$bundle/$companion"
+    companion_details="$(codesign -dvvv "$bundle/$companion" 2>&1)"
+    if ! grep -Eq '^CodeDirectory .*flags=.*runtime' <<<"$companion_details"; then
+      echo "missing hardened runtime: $companion" >&2; exit 1
+    fi
+  done
+  for library in "$bundle"/*.dylib "$bundle/keybay-runtime" "$bundle/keybay.aot"; do
+    codesign --verify --strict "$library"
+    codesign -d --entitlements - "$library" >"$entitlements" 2>/dev/null
+    if [[ -s "$entitlements" ]]; then
+      echo "companion unexpectedly carries entitlements: $library" >&2; exit 1
+    fi
+    if [[ "${KEYBAY_ALLOW_ADHOC:-}" != "1" ]]; then
+      library_details="$(codesign -dvvv "$library" 2>&1)"
+      if [[ "$library_details" != *$'\nTeamIdentifier='"$expected_team"$'\n'* ||
+            "$library_details" != *$'\nAuthority=Developer ID Application:'* ||
+            "$library_details" != *$'\nTimestamp='* ]]; then
+        echo "hardware library must have a timestamped Developer ID signature from $expected_team: $library" >&2
+        exit 1
+      fi
+    fi
+  done
 fi
 
 echo "macOS release identity passed"

@@ -21,12 +21,12 @@ void main() {
     () async {
       final environment = _Environment(requiresInteraction: true);
       addTearDown(environment.dispose);
-      final first = await environment.engine.open(credential: _credential());
+      final first = await environment.engine.open();
+      await first.auth.add(_credential());
       await first.close();
       final session = await environment.engine.open(credential: _credential());
       addTearDown(session.close);
-      final updated = await session.auth.update(_credential());
-      await session.auth.remove(updated.id);
+      await session.auth.remove((await session.auth.list()).single);
       await session.auth.add(_credential());
       await environment.engine.reset();
 
@@ -46,7 +46,8 @@ void main() {
     () async {
       final environment = _Environment(requiresInteraction: true);
       addTearDown(environment.dispose);
-      final session = await environment.engine.open(credential: _credential());
+      final session = await environment.engine.open();
+      await session.auth.add(_credential());
       addTearDown(session.close);
       await session.set('service/token', 'preserved');
       environment.protector.calls.clear();
@@ -94,7 +95,8 @@ void main() {
       () async {
         final environment = _Environment();
         addTearDown(environment.dispose);
-        final owner = await environment.engine.open(credential: _credential());
+        final owner = await environment.engine.open();
+        await owner.auth.add(_credential());
         addTearDown(owner.close);
         await owner.set('service/token', 'preserved');
         final reader = await environment.newEngine().open(
@@ -106,7 +108,7 @@ void main() {
           damaged[damaged.length - 5] ^= 1;
           environment.files.replaceLiveBytes(damaged);
         } else {
-          await owner.auth.update(_credential());
+          await owner.auth.remove((await owner.auth.list()).single);
         }
         environment.protector.calls.clear();
         final accesses = environment.protector.providerAccesses;

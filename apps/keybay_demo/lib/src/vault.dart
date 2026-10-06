@@ -56,8 +56,16 @@ final class Vault extends ChangeNotifier {
       await _adopt(session, generation);
     } on KeybayException catch (error) {
       if (generation != _generation) return;
-      if (error.code == KeybayErrorCode.authRequired) {
+      if (error.code == KeybayErrorCode.authRequired &&
+          error.authMethods.whereType<PassphraseMethod>().isNotEmpty) {
         _enter(VaultStage.locked);
+      } else if (error.code == KeybayErrorCode.authRequired &&
+          error.authMethods.whereType<PasskeyMethod>().isNotEmpty) {
+        _enter(
+          VaultStage.failed,
+          'This demo does not yet support passkey unlock. Use a build of this '
+          'application that supports the configured method.',
+        );
       } else {
         _enter(VaultStage.failed, describe(error.code));
       }
@@ -107,17 +115,13 @@ final class Vault extends ChangeNotifier {
     await _refresh(session);
   });
 
-  /// Adds a passphrase, or replaces the current one.
-  Future<void> setPassphrase(String passphrase) =>
+  /// Adds a passphrase to an unprotected store.
+  Future<void> addPassphrase(String passphrase) =>
       _withSession((session) async {
         final phrase = _utf8(passphrase);
         try {
           final credential = PassphraseCredential(phrase: phrase);
-          if (passphraseProtected) {
-            await session.auth.update(credential);
-          } else {
-            await session.auth.add(credential);
-          }
+          await session.auth.add(credential);
         } finally {
           phrase.fillRange(0, phrase.length, 0);
         }
@@ -125,8 +129,17 @@ final class Vault extends ChangeNotifier {
       });
 
   Future<void> removePassphrase() => _withSession((session) async {
-    for (final method in await session.auth.list()) {
-      if (method is PassphraseMethod) await session.auth.remove(method.id);
+    final methods = await session.auth.list();
+    // This demo cannot yet reopen a passkey-only vault. Leave the SDK's more
+    // general removal policy available to consumers that support that route.
+    if (methods.whereType<PasskeyMethod>().isNotEmpty) {
+      throw StateError(
+        'This demo cannot unlock the remaining passkeys. Remove the passphrase '
+        'using a build that supports those methods.',
+      );
+    }
+    for (final method in methods) {
+      if (method is PassphraseMethod) await session.auth.remove(method);
     }
     await _refresh(session);
   });
@@ -222,6 +235,7 @@ final class Vault extends ChangeNotifier {
 
 /// A short, user-facing description of a Keybay failure.
 String describe(KeybayErrorCode code) => switch (code) {
+  KeybayErrorCode.storeNotFound => 'No saved store is available to unlock.',
   KeybayErrorCode.unlockFailed => 'Wrong passphrase.',
   KeybayErrorCode.invalidAuthInput => 'That passphrase is not allowed.',
   KeybayErrorCode.platformProtectorLocked =>

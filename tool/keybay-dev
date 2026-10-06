@@ -2,12 +2,15 @@
 # Run the current CLI source while preserving the caller's manifest directory.
 set -eu
 
-repo="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+repo="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 packages="$repo/.dart_tool/package_config.json"
 if [ ! -f "$packages" ]; then
   echo "keybay-dev: run 'dart pub get' from $repo first" >&2
   exit 69
 fi
 
-exec dart --packages="$packages" run \
-  "$repo/packages/keybay_cli/bin/keybay.dart" "$@"
+keybay_caller_directory="$PWD"
+cd "$repo"
+# Dart 3.11 prints hook progress to stdout; keep child output pipe-safe.
+exec dart --packages="$packages" run --verbosity=error \
+  "$repo/tool/keybay_dev_bootstrap.dart" "$keybay_caller_directory" "$@"

@@ -8,6 +8,7 @@ import 'package:ffi/ffi.dart';
 import 'package:keybay/keybay.dart';
 
 import 'ignored_signals.dart';
+import 'auth_terminal.dart';
 import 'terminal.dart';
 import 'lifetime.dart';
 
@@ -34,7 +35,7 @@ abstract interface class TerminalControl {
   set echoMode(bool value);
 }
 
-final class SecretInputReader {
+final class SecretInputReader implements AuthTerminal {
   SecretInputReader({
     required this.input,
     required this.terminal,
@@ -130,6 +131,45 @@ final class SecretInputReader {
         decode: (bytes) => decodePassphraseBytes(bytes, stripEnding: false),
         maximumBytes: maxPassphraseInputBytes,
       );
+
+  @override
+  Future<AuthMethod> chooseMethod(
+    List<AuthMethod> methods, {
+    String? summary,
+  }) async {
+    final menu = StringBuffer(summary ?? '')
+      ..writeln('Choose an unlock method:');
+    for (var index = 0; index < methods.length; index++) {
+      final method = methods[index];
+      final kind = method is PassphraseMethod ? 'Passphrase' : 'Hardware key';
+      menu.writeln(
+        '  ${index + 1}. ${terminalQuoted(method.label)} ($kind, ${method.id.substring(0, 8)})',
+      );
+    }
+    final choice = await _readControllingTerminal(
+      summary: menu.toString(),
+      prompt: 'Method number: ',
+      maximumBytes: 2,
+      decode: Uint8List.fromList,
+    );
+    try {
+      final number = int.tryParse(ascii.decode(choice, allowInvalid: true));
+      if (number == null || number < 1 || number > methods.length) {
+        throw const SecretInputException(
+          'choose one of the listed method numbers',
+        );
+      }
+      return methods[number - 1];
+    } finally {
+      _clear(choice);
+    }
+  }
+
+  @override
+  Future<HardwarePrompt> hardware(
+    PasskeyMethod method, {
+    String? summary,
+  }) async => _HardwarePrompt.open(this, method, summary);
 
   /// Shows [summary] on the controlling terminal when this process owns it in
   /// the foreground. Best effort: without an attended terminal, it shows
@@ -248,6 +288,144 @@ final class SecretInputReader {
       }
     }
   }
+}
+
+/// Own one /dev/tty attachment, keeping stdin and redirected output untouched.
+/// Waiting consumes only cancellation keys and discards all other terminal input.
+final class _HardwarePrompt implements HardwarePrompt {
+  _HardwarePrompt(this.owner, this.attachment, this.restore, this.guard);
+  final SecretInputReader owner;
+  final _ControllingTerminalAttachment attachment;
+  final void Function() restore;
+  final IgnoredSignals guard;
+  StreamSubscription<List<int>>? _waiting;
+  Timer? _foreground;
+  bool _closed = false;
+  @override
+  final cancellation = PasskeyCancellation();
+
+  static _HardwarePrompt open(
+    SecretInputReader owner,
+    PasskeyMethod method,
+    String? summary,
+  ) {
+    owner.lifetime.check();
+    final attachment = _ControllingTerminalAttachment.open();
+    final guard = IgnoredSignals.terminalOwnership();
+    void Function()? restore;
+    try {
+      guard.start();
+      restore = attachment.terminal.enterHiddenMode();
+      if (summary != null) attachment.write(summary);
+      attachment.writeNewline('Hardware key: ${terminalQuoted(method.label)}');
+      attachment.writeNewline(
+        'Connect the matching key and touch it when it flashes.',
+      );
+      attachment.writeNewline(
+        'Enter a PIN only when prompted. Ctrl+C cancels.',
+      );
+      final result = _HardwarePrompt(owner, attachment, restore, guard);
+      result._foreground = Timer.periodic(const Duration(milliseconds: 100), (
+        _,
+      ) {
+        if (!attachment.terminal.isForeground) {
+          owner.lifetime.cancel(4);
+        }
+      });
+      result._watch();
+      return result;
+    } on Object {
+      try {
+        restore?.call();
+      } finally {
+        guard.close();
+        attachment.close();
+      }
+      rethrow;
+    }
+  }
+
+  void _watch() {
+    _waiting = attachment
+        .input(owner.lifetime)
+        .listen(
+          (bytes) {
+            if (bytes.contains(3) || bytes.contains(27)) {
+              owner.lifetime.cancel();
+            }
+          },
+          onError: (Object _) => owner.lifetime.cancel(4),
+          onDone: () => owner.lifetime.cancel(4),
+        );
+  }
+
+  @override
+  void check() {
+    if (!attachment.terminal.isForeground) {
+      owner.lifetime.cancel(4);
+    }
+    owner.lifetime.check();
+  }
+
+  @override
+  Future<Uint8List> readPin() async {
+    await _waiting?.cancel();
+    _waiting = null;
+    check();
+    final pin = await owner._readHidden(
+      input: attachment.input(owner.lifetime),
+      terminal: attachment.terminal,
+      prompt: 'Hardware key PIN (existing PIN, input hidden): ',
+      write: attachment.write,
+      writeNewline: attachment.writeNewline,
+      maximumBytes: 63,
+      bracketedPaste: attachment.setBracketedPaste,
+      decode: decodeHardwarePinBytes,
+    );
+    try {
+      check();
+      _watch();
+      return pin;
+    } on Object {
+      _clear(pin);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    _foreground?.cancel();
+    try {
+      await _waiting?.cancel();
+    } finally {
+      try {
+        restore();
+      } finally {
+        guard.close();
+        attachment.close();
+      }
+    }
+  }
+}
+
+Uint8List decodeHardwarePinBytes(List<int> bytes) {
+  if (bytes.length < 4 ||
+      bytes.length > 63 ||
+      bytes.contains(0) ||
+      bytes.contains(10) ||
+      bytes.contains(13)) {
+    throw const SecretInputException(
+      'the hardware PIN must be 4–63 UTF-8 bytes without NUL or newlines',
+    );
+  }
+  try {
+    utf8.decode(bytes);
+  } on FormatException {
+    throw const SecretInputException('the hardware PIN is not valid UTF-8');
+  }
+  return Uint8List.fromList(bytes);
 }
 
 Uint8List decodeSecretBytes(List<int> bytes, {bool stripEnding = true}) {
@@ -385,7 +563,9 @@ final class _HiddenInputBuffer {
       throw SecretInputException(
         bytes.length == maxSecretInputBytes
             ? "secret input exceeds Keybay's 1 MiB record limit; store a credential rather than a blob"
-            : 'a Keybay passphrase must contain between 1 and 1024 UTF-8 bytes',
+            : bytes.length == maxPassphraseInputBytes
+            ? 'a Keybay passphrase must contain between 1 and 1024 UTF-8 bytes'
+            : 'input exceeds the ${bytes.length}-byte limit',
       );
     }
     return Uint8List.fromList(Uint8List.sublistView(bytes, 0, length));

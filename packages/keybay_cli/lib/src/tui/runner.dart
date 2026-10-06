@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:fleury/fleury.dart';
 
 import '../application.dart' show SessionOpener, exitFailure;
+import '../appearance_file.dart';
 import '../ignored_signals.dart';
 import '../secret_output.dart';
 import '../terminal.dart';
@@ -12,6 +13,8 @@ import 'clipboard.dart';
 import 'model.dart';
 import 'native_model.dart';
 import 'screen.dart';
+import 'store.dart';
+import 'unlock_preference.dart';
 
 bool tuiForeground() =>
     terminalIsControllingForeground(0) && terminalIsControllingForeground(1);
@@ -31,6 +34,8 @@ Future<int> runTui({
   required Future<void> Function() resetStore,
   Duration idleTimeout = tuiIdleTimeout,
   Duration idleWarning = tuiIdleWarning,
+  UnlockPreference? unlockPreference,
+  Future<bool> Function(TuiCancellation)? hardwareConnected,
 }) async {
   authorizeTui();
   if (Platform.environment.entries.any(
@@ -64,6 +69,9 @@ Future<int> runTui({
     idle = Timer(idleTimeout, stop);
   }
 
+  final appearancePreference = FileAppearancePreference.forCurrentUser();
+  final appearance =
+      await appearancePreference?.read() ?? const TuiAppearance();
   model = createNativeTuiModel(
     openSession: openSession,
     resetStore: resetStore,
@@ -71,6 +79,10 @@ Future<int> runTui({
     copyText: systemCopy(),
     onExit: requestExit,
     idleTimeout: idleTimeout,
+    unlockPreference: unlockPreference,
+    appearance: appearance,
+    saveAppearance: appearancePreference?.write,
+    hardwareConnected: hardwareConnected,
   );
   bool accept(TuiEvent event) {
     if (!tuiForeground()) {

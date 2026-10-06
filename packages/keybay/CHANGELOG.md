@@ -5,6 +5,28 @@
 Prepared V2 release; not yet published. This is a breaking API and storage-format
 change from 0.1.x. Existing stores are not read, migrated, or removed by V2.
 
+- Simplify auth to `add`, `list`, and `remove(AuthMethod)`. Remove update and
+  replacement APIs. Each enrollment has a fresh ID; removal rejects foreign or
+  stale method objects. Passkey credentials are data only, with optional PIN
+  bytes; enrollment labels, open selectors, and cancellation are operation inputs.
+  CLI and demo protection screens expose explicit add/remove actions.
+
+- Make `open(credential:)` authentication-only for passphrases and passkeys.
+  A missing encrypted file now returns `storeNotFound` without enrolling or
+  creating a root. Initialize empty platform-only state with `open()`, then
+  explicitly enroll through `session.auth.add` before writing protected values.
+
+- Integrate Keypass system and hardware credentials through `Keybay.open` and
+  `session.auth`. Keep mandatory platform protection and the existing
+  passphrase protection; support up to eight alternative methods.
+- Add authenticated public-key method envelopes so adding/removing a method
+  rotates every record without requesting surviving credentials. Persist
+  passkey verification state with a compare-and-swap transaction before open
+  returns. Upgrade legacy V2 singleton passphrase packages on authenticated open.
+- Keep interactive enrollment outside the rotation file lock and reject
+  callback reentrancy rather than deadlocking. The exact Keypass Git pin is
+  development-only; publication requires a hosted Keypass release.
+
 - Resolve Pub-activated workspace executables from their owning package's
   declaration, without borrowing the workspace root's identity.
 

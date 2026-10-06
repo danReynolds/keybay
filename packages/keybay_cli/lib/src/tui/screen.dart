@@ -2,9 +2,10 @@ import 'dart:async';
 
 import 'package:fleury/fleury_core.dart';
 import 'package:fleury_widgets/fleury_widgets_web.dart'
-    show Dialog, ToastHandle, ToastSeverity, Toaster;
+    show ToastHandle, ToastSeverity, Toaster;
 
 import 'chrome.dart';
+import 'auth_views.dart';
 import 'forms.dart';
 import 'model.dart';
 import 'settings.dart';
@@ -29,51 +30,62 @@ final class KeybayTui extends StatelessWidget {
     TuiView.edit,
     TuiView.passphrase,
     TuiView.reset,
+    TuiView.hardware,
+    TuiView.hardwareUnlock,
   };
 
   @override
-  Widget build(BuildContext context) => Theme(
-    data: keybayTheme,
-    child: Toaster(
-      maxToasts: 1,
-      duration: tuiNoticeDuration,
-      child: _MessagePresenter(model: model, child: _body()),
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: model,
+    builder: (_, _) => Theme(
+      data: keybayThemeFor(model.appearance),
+      child: Toaster(
+        maxToasts: 1,
+        duration: tuiNoticeDuration,
+        child: _MessagePresenter(model: model, child: _body()),
+      ),
     ),
   );
 
   Widget _body() {
-    return ListenableBuilder(
-      listenable: model,
-      builder: (_, _) => LayoutBuilder(
-        builder: (context, size) {
-          final minimumRows = (size.maxCols ?? 80) < 80 ? 24 : 20;
-          final tooSmall =
-              (size.maxCols ?? 80) < 40 || (size.maxRows ?? 24) < minimumRows;
-          return FocusTraversalGroup(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SizedBox(
-                    height: tooSmall ? 0 : 2,
-                    child: Text('keybay', style: context.accents.accent),
-                  ),
-                  Expanded(child: _current(context, tooSmall)),
-                  if (!tooSmall)
-                    BusyIndicator(
-                      model: model,
-                      compact: (size.maxRows ?? 24) <= 24,
-                      label: model.view == TuiView.unlock
-                          ? 'Unlocking'
-                          : 'Working',
-                    ),
-                ],
+    return LayoutBuilder(
+      builder: (context, size) {
+        final minimumRows = (size.maxCols ?? 80) < 80 ? 24 : 20;
+        final tooSmall =
+            (size.maxCols ?? 80) < 40 || (size.maxRows ?? 24) < minimumRows;
+        return FocusTraversalGroup(
+          child: Center(
+            child: ConstrainedBox(
+              // Keep the whole app together in a large terminal. Smaller
+              // windows retain the full space needed by forms and actions.
+              maxWidth: 104,
+              maxHeight: 32,
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  vertical: (size.maxRows ?? 24) <= 24 ? 0 : 1,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: _current(context, tooSmall)),
+                    if (!tooSmall &&
+                        model.showsBusy &&
+                        model.view != TuiView.hardware &&
+                        model.view != TuiView.hardwareUnlock)
+                      BusyIndicator(
+                        model: model,
+                        compact: true,
+                        label: model.view == TuiView.unlock
+                            ? 'Unlocking'
+                            : 'Working',
+                      ),
+                  ],
+                ),
               ),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -108,6 +120,30 @@ final class KeybayTui extends StatelessWidget {
         key: const ValueKey('unlock'),
         model: model,
         tooSmall: tooSmall,
+      ),
+      TuiView.methods ||
+      TuiView.unlockMethods => AuthMethodsScreen(model: model),
+      TuiView.hardware || TuiView.hardwareUnlock => HardwareForm(
+        key: ValueKey(model.view),
+        model: model,
+        tooSmall: tooSmall,
+      ),
+      TuiView.removeMethod => _confirmation(
+        context,
+        'Remove this unlock method?',
+        [
+          Text(safeTuiLabel(model.selectedMethod?.label ?? ''), maxLines: 2),
+          Text(
+            model.methods.length == 1
+                ? 'This leaves platform protection alone.'
+                : 'One of the remaining unlock methods will still be required.',
+          ),
+          if (model.selectedMethod?.rpId != null)
+            const Text('The passkey remains on its key or provider.'),
+        ],
+        action: 'Remove',
+        confirm: model.removeSelectedMethod,
+        cancel: TuiView.methods,
       ),
       TuiView.recovery => _panel(
         context,
@@ -159,11 +195,13 @@ final class KeybayTui extends StatelessWidget {
         'Your Keybay store is ready',
         [
           const Text(
-            'Platform protection is active. Without a passphrase, any program running as you can read these values through Keybay. Add one to require it when opening the store.',
+            'Platform protection is active. Add an unlock method to require a passphrase or hardware key when opening this store.',
           ),
         ],
         [
           _go(context, 'Add passphrase', TuiView.passphrase),
+          if (model.supportsHardware)
+            _go(context, 'Add hardware key', TuiView.hardware),
           _go(
             context,
             'Continue with platform protection',
@@ -173,7 +211,10 @@ final class KeybayTui extends StatelessWidget {
           _quit(),
         ],
       ),
-      TuiView.settings || TuiView.security || TuiView.data => SettingsScreen(
+      TuiView.settings ||
+      TuiView.security ||
+      TuiView.data ||
+      TuiView.appearance => SettingsScreen(
         key: const ValueKey('settings'),
         model: model,
       ),
@@ -205,7 +246,7 @@ final class KeybayTui extends StatelessWidget {
         'Remove passphrase protection?',
         [
           const Text(
-            'This reduces protection. Any program running as you will be able to read these values through Keybay.',
+            'Removing the final unlock method leaves platform protection alone.',
           ),
         ],
         action: 'Remove passphrase',
@@ -250,24 +291,26 @@ final class KeybayTui extends StatelessWidget {
       ),
     ],
     child: Align(
-      alignment: Alignment.topCenter,
+      alignment: Alignment.center,
       child: ConstrainedBox(
-        maxWidth: 60,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              title,
-              style: model.view == TuiView.failed
-                  ? context.accents.attention
-                  : const CellStyle(bold: true),
-            ),
-            const SizedBox(height: 1),
-            ...body,
-            const SizedBox(height: 1),
-            ActionGrid(actions: actions, maxColumns: 2),
-          ],
+        maxWidth: 64,
+        child: KeybayFrame(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                style: model.view == TuiView.failed
+                    ? context.accents.attention
+                    : const CellStyle(bold: true),
+              ),
+              const SizedBox(height: 1),
+              ...body,
+              const SizedBox(height: 1),
+              ActionGrid(actions: actions, maxColumns: 2),
+            ],
+          ),
         ),
       ),
     ),
@@ -286,30 +329,44 @@ final class KeybayTui extends StatelessWidget {
     ],
     child: Center(
       child: ConstrainedBox(
-        maxWidth: 60,
-        child: Dialog(
-          title: title,
-          titleStyle: context.theme.errorStyle,
-          padding: const EdgeInsets.all(1),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              ...body,
-              const SizedBox(height: 1),
-              ActionGrid(
-                maxColumns: 2,
-                actions: [
-                  TuiAction(
-                    label: 'Cancel',
-                    shortcut: 'Esc',
-                    autofocus: true,
-                    onPressed: () => model.navigate(cancel),
-                  ),
-                  _call(context, action, confirm, variant: ButtonVariant.error),
-                ],
-              ),
-            ],
+        maxWidth: 64,
+        child: Semantics(
+          role: SemanticRole.dialog,
+          label: title,
+          actions: const {SemanticAction.dismiss},
+          onAction: (_) => model.navigate(cancel),
+          child: KeybayFrame(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  title,
+                  style: context.theme.errorStyle,
+                  allowSelect: false,
+                ),
+                const SizedBox(height: 1),
+                ...body,
+                const SizedBox(height: 1),
+                ActionGrid(
+                  maxColumns: 2,
+                  actions: [
+                    TuiAction(
+                      label: 'Cancel',
+                      shortcut: 'Esc',
+                      autofocus: true,
+                      onPressed: () => model.navigate(cancel),
+                    ),
+                    _call(
+                      context,
+                      action,
+                      confirm,
+                      variant: ButtonVariant.error,
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -324,7 +381,7 @@ final class KeybayTui extends StatelessWidget {
   }) => TuiAction(
     label: label,
     variant: switch (view) {
-      TuiView.passphrase => ButtonVariant.success,
+      TuiView.passphrase => ButtonVariant.primary,
       TuiView.clear ||
       TuiView.reset ||
       TuiView.removePassphrase => ButtonVariant.error,

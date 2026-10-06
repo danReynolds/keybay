@@ -35,14 +35,19 @@ dart compile exe packages/keybay_cli/tool/passphrase_prompt_harness.dart \
   -o "$tmp/passphrase_prompt_harness"
 dart compile exe packages/keybay_cli/tool/command_harness.dart \
   -o "$tmp/command_harness"
+dart compile exe packages/keybay_cli/tool/hardware_pty_harness.dart \
+  -o "$tmp/hardware_pty_harness"
 dart compile exe packages/keybay_cli/tool/clipboard_harness.dart \
   -o "$tmp/clipboard_harness"
 python3 tool/test_cli_commands.py "$tmp/command_harness"
 python3 tool/test_cli_tui.py "$tmp/command_harness"
+python3 tool/test_cli_hardware_tui.py "$tmp/hardware_pty_harness"
+python3 tool/test_cli_hardware_commands.py "$tmp/hardware_pty_harness"
 python3 tool/test_cli_exec.py "$tmp/keybay"
 python3 tool/test_cli_pty.py "$tmp/prompt_harness"
 python3 tool/test_cli_passphrase.py "$tmp/passphrase_prompt_harness"
 python3 tool/test_cli_hidden_input.py "$tmp/prompt_harness" "$tmp/passphrase_prompt_harness"
+python3 tool/test_keypass_source.py
 python3 tool/test_cli_archive.py
 python3 tool/test_homebrew_formula.py
 if [[ "$(uname -s)" == "Darwin" ]]; then
@@ -75,6 +80,9 @@ if [[ "$(uname -s)" == "Linux" ]]; then
 fi
 version="$(awk '$1 == "version:" { print $2 }' packages/keybay_cli/pubspec.yaml)"
 archive="$tmp/keybay-$version-test.tar.gz"
-./tool/package_cli_release.sh "$tmp/keybay" "$archive"
+bash tool/build_cli_release.sh "$tmp/release"
+bash tool/test_cli_hardware_bundle.sh "$tmp/release"
+./tool/package_cli_release.sh "$tmp/release/keybay" "$archive" "$tmp/release"
 ./tool/verify_cli_archive.sh "$archive"
-./tool/verify_cli_binary.sh "$tmp/keybay" "$version"
+./tool/verify_cli_binary.sh "$tmp/release/keybay" "$version"
+python3 tool/test_cli_exec.py "$tmp/release/keybay"

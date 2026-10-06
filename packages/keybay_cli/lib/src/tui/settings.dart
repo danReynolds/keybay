@@ -1,4 +1,5 @@
 import 'package:fleury/fleury_core.dart';
+import 'package:fleury_widgets/fleury_widgets_web.dart' show Radio;
 
 import 'chrome.dart';
 import 'model.dart';
@@ -13,7 +14,7 @@ String _idleExitLabel(Duration? timeout) {
   return '$seconds ${seconds == 1 ? 'second' : 'seconds'}';
 }
 
-/// Security and Data categories over one session. The model keeps the current
+/// Security, Data and Appearance. The model keeps the current
 /// category as a view so confirmations can name their cancel target.
 final class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, required this.model});
@@ -34,10 +35,20 @@ final class _SettingsScreenState extends State<SettingsScreen> {
   final _actions = ListController(initialIndex: 0);
   final _menuFocus = FocusNode();
   final _contentFocus = FocusNode();
+  final _appearanceFocus = List.generate(5, (_) => FocusNode());
+  List<FocusNode> get _appearanceNodes => [_contentFocus, ..._appearanceFocus];
+  bool get _appearanceHasFocus =>
+      _appearance && _appearanceNodes.any((n) => n.hasFocus);
   int? _hoveredMenu;
   int? _hoveredAction;
   TuiModel get model => widget.model;
   bool get _data => model.view == TuiView.data;
+  bool get _appearance => model.view == TuiView.appearance;
+  int get _categoryIndex => _appearance
+      ? 2
+      : _data
+      ? 1
+      : 0;
 
   @override
   void dispose() {
@@ -45,6 +56,9 @@ final class _SettingsScreenState extends State<SettingsScreen> {
     _actions.dispose();
     _menuFocus.dispose();
     _contentFocus.dispose();
+    for (final node in _appearanceFocus) {
+      node.dispose();
+    }
     super.dispose();
   }
 
@@ -53,28 +67,42 @@ final class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _category(int index) {
-    if (index == (_data ? 1 : 0)) return;
+    if (index == _categoryIndex) return;
     _actions.currentIndex = 0;
     _hoveredAction = null;
-    _open(index == 1 ? TuiView.data : TuiView.security);
+    _open([TuiView.security, TuiView.data, TuiView.appearance][index]);
   }
 
   List<_SettingsAction> get _categoryActions => [
     if (!_data) ...[
-      (
-        shortcut: 'p',
-        label: model.protected ? 'Change passphrase' : 'Add passphrase',
-        view: TuiView.passphrase,
-        description: model.protected
-            ? 'Replace the passphrase used to open this store.'
-            : 'Require a passphrase when opening this store.',
-      ),
-      if (model.protected)
+      if (!model.hasPassphrase)
+        (
+          shortcut: 'p',
+          label: 'Add passphrase',
+          view: TuiView.passphrase,
+          description: 'Require a passphrase when opening this store.',
+        ),
+      if (model.hasPassphrase && !model.hasPasskeys)
         (
           shortcut: 'x',
           label: 'Remove passphrase',
           view: TuiView.removePassphrase,
           description: 'Remove the passphrase. Keep platform protection.',
+        ),
+      if (model.supportsHardware)
+        (
+          shortcut: 'h',
+          label: 'Add hardware key',
+          view: TuiView.hardware,
+          description:
+              'Add a physical FIDO2 key as an alternative unlock method.',
+        ),
+      if (model.hasPasskeys)
+        (
+          shortcut: 'm',
+          label: 'Unlock methods',
+          view: TuiView.methods,
+          description: 'Inspect or remove a configured unlock method.',
         ),
     ] else ...[
       (
@@ -87,20 +115,25 @@ final class _SettingsScreenState extends State<SettingsScreen> {
         shortcut: 'r',
         label: 'Reset Keybay',
         view: TuiView.reset,
-        description: 'Delete all saved keys and remove the passphrase.',
+        description: 'Delete all saved keys and remove their unlock methods.',
       ),
     ],
   ];
 
   @override
   Widget build(BuildContext context) {
-    _menu.currentIndex = _data ? 1 : 0;
+    _menu.currentIndex = _categoryIndex;
     final actions = _categoryActions;
+    _actions.currentIndex = (_actions.currentIndex ?? 0).clamp(
+      0,
+      actions.length - 1,
+    );
     return KeyBindings(
       bindings: [
         KeyBinding(KeyCode.escape, onTrigger: (_) => _open(TuiView.browse)),
         KeyBinding(KeyCode.s, onTrigger: (_) => _category(0)),
         KeyBinding(KeyCode.d, onTrigger: (_) => _category(1)),
+        KeyBinding(KeyCode.a, onTrigger: (_) => _category(2)),
         KeyBinding(
           KeyCode.arrowRight,
           onTrigger: (event) {
@@ -114,14 +147,31 @@ final class _SettingsScreenState extends State<SettingsScreen> {
         KeyBinding(
           KeyCode.arrowLeft,
           onTrigger: (event) {
-            if (_contentFocus.hasFocus) {
+            if (_contentFocus.hasFocus || _appearanceHasFocus) {
               _menuFocus.requestFocus();
             } else {
               event.bubble();
             }
           },
         ),
-        for (final action in actions)
+        for (final direction in [KeyCode.arrowDown, KeyCode.arrowUp])
+          KeyBinding(
+            direction,
+            onTrigger: (event) {
+              if (!_appearanceHasFocus) {
+                event.bubble();
+                return;
+              }
+              final nodes = _appearanceNodes;
+              final index = nodes.indexWhere((n) => n.hasFocus);
+              nodes[(index + (direction == KeyCode.arrowDown ? 1 : -1)).clamp(
+                    0,
+                    nodes.length - 1,
+                  )]
+                  .requestFocus();
+            },
+          ),
+        for (final action in _appearance ? <_SettingsAction>[] : actions)
           KeyBinding(
             KeyCode.char(action.shortcut),
             onTrigger: (_) => _open(action.view),
@@ -130,64 +180,70 @@ final class _SettingsScreenState extends State<SettingsScreen> {
       child: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
-          maxWidth: 100,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text('Settings', style: CellStyle(bold: true)),
-              const SizedBox(height: 1),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (_, size) {
-                    final narrow = (size.maxCols ?? 76) < 60;
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(
-                          width: narrow ? 10 : 16,
-                          height: 2,
-                          child: _categoryList(),
-                        ),
-                        const SizedBox(width: 1),
-                        SizedBox(
-                          width: 1,
-                          child: Text(
-                            List.filled(size.maxRows ?? 13, '│').join('\n'),
-                            style: context.theme.mutedStyle,
-                            allowSelect: false,
+          maxWidth: 104,
+          child: KeybayFrame(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('Settings', style: CellStyle(bold: true)),
+                const SizedBox(height: 1),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (_, size) {
+                      final narrow = (size.maxCols ?? 76) < 60;
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: narrow ? 12 : 16,
+                            height: 3,
+                            child: _categoryList(),
                           ),
-                        ),
-                        const SizedBox(width: 2),
-                        Expanded(child: _content(actions, narrow: narrow)),
-                      ],
-                    );
-                  },
+                          const SizedBox(width: 1),
+                          SizedBox(
+                            width: 1,
+                            child: Text(
+                              List.filled(size.maxRows ?? 13, '│').join('\n'),
+                              style: context.theme.mutedStyle,
+                              allowSelect: false,
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          Expanded(
+                            child: _appearance
+                                ? _appearanceContent()
+                                : _content(actions, narrow: narrow),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                 ),
-              ),
-              const SizedBox(height: 1),
-              // Describe what the focused pane handles. Action shortcuts
-              // stay on the action rows themselves.
-              LayoutBuilder(
-                builder: (_, size) => Row(
-                  children: [
-                    Text(
-                      _menuFocus.hasFocus
-                          ? '→ actions'
-                          : _contentFocus.hasFocus
-                          ? '← category'
-                          : '',
-                      style: context.theme.mutedStyle,
-                    ),
-                    const Expanded(child: SizedBox.shrink()),
-                    TuiAction(
-                      label: 'Back',
-                      shortcut: 'Esc',
-                      onPressed: () => _open(TuiView.browse),
-                    ),
-                  ],
+                const SizedBox(height: 1),
+                // Describe what the focused pane handles. Action shortcuts
+                // stay on the action rows themselves.
+                LayoutBuilder(
+                  builder: (_, size) => Row(
+                    children: [
+                      Text(
+                        _menuFocus.hasFocus
+                            ? '→ actions'
+                            : _contentFocus.hasFocus || _appearanceHasFocus
+                            ? '← category'
+                            : '',
+                        style: context.theme.mutedStyle,
+                      ),
+                      const Expanded(child: SizedBox.shrink()),
+                      TuiAction(
+                        label: 'Back',
+                        shortcut: 'Esc',
+                        onPressed: () => _open(TuiView.browse),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -200,14 +256,14 @@ final class _SettingsScreenState extends State<SettingsScreen> {
       controller: _menu,
       focusNode: _menuFocus,
       autofocus: model.view == TuiView.settings,
-      itemCount: 2,
+      itemCount: 3,
       onFocusedItemChanged: _category,
       onSelect: (_) => _contentFocus.requestFocus(),
       itemBuilder: (_, i, highlighted) => _row(
-        label: i == 0 ? 'Security' : 'Data',
+        label: ['Security', 'Data', 'Appearance'][i],
         current: highlighted,
         focused: highlighted && _menuFocus.hasFocus,
-        active: i == (_data ? 1 : 0),
+        active: i == _categoryIndex,
         hovered: _hoveredMenu == i,
         onHover: (value) => setState(() => _hoveredMenu = value ? i : null),
         onPressed: () {
@@ -218,56 +274,104 @@ final class _SettingsScreenState extends State<SettingsScreen> {
     ),
   );
 
-  Widget _content(List<_SettingsAction> actions, {required bool narrow}) =>
-      LayoutBuilder(
-        builder: (_, size) {
-          final labelWidth = ((size.maxCols ?? 56) - 6).clamp(1, 100);
-          final menuRows = actions.fold(
-            0,
-            (rows, action) =>
-                rows + ((action.label.length + 1) / labelWidth).ceil(),
-          );
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                _data ? 'Data' : 'Security',
-                style: const CellStyle(bold: true),
-              ),
-              const SizedBox(height: 1),
-              if (!_data) ...[
-                Text(
-                  'Passphrase: ${model.protected ? 'On' : 'Off'}',
-                  // Amber is Keybay's "note this" role, not its error role:
-                  // platform-only is supported, but it is the weaker state and
-                  // should not be the quieter of the two.
-                  style: model.protected
-                      ? context.accents.accent
-                      : context.accents.attention,
-                ),
-                Text(
-                  'Idle exit: ${_idleExitLabel(model.idleTimeout)}',
-                  style: context.theme.mutedStyle,
-                ),
-                const SizedBox(height: 1),
-              ],
-              SizedBox(
-                // A stable key keeps the shared focus node attached as the
-                // surrounding content changes with the category.
-                key: const ValueKey('settings-actions'),
-                height: menuRows,
-                child: _actionList(actions),
-              ),
-              const SizedBox(height: 1),
-              Text(
-                actions[_actions.currentIndex ?? 0].description,
-                maxLines: narrow ? 3 : 2,
-                style: context.theme.mutedStyle,
-              ),
-            ],
-          );
-        },
+  Widget _appearanceContent() => FocusDetector(
+    onFocusChange: (_) => setState(() {}),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text('Appearance', style: CellStyle(bold: true)),
+        const SizedBox(height: 1),
+        const Text('Accent'),
+        for (final accent in TuiAccent.values)
+          Radio<TuiAccent>(
+            label: accent.label,
+            focusNode: _appearanceNodes[accent.index],
+            value: accent,
+            groupValue: model.appearance.accent,
+            style: const CellStyle.interactive(
+              focused: CellStyle(inverse: true),
+            ),
+            onChanged: model.busy
+                ? null
+                : (accent) => model.setAppearance(
+                    model.appearance.copyWith(accent: accent),
+                  ),
+          ),
+        const SizedBox(height: 1),
+        const Text('Contrast'),
+        for (final contrast in TuiContrast.values)
+          Radio<TuiContrast>(
+            label: contrast.label,
+            focusNode:
+                _appearanceNodes[TuiAccent.values.length + contrast.index],
+            value: contrast,
+            groupValue: model.appearance.contrast,
+            style: const CellStyle.interactive(
+              focused: CellStyle(inverse: true),
+            ),
+            onChanged: model.busy
+                ? null
+                : (contrast) => model.setAppearance(
+                    model.appearance.copyWith(contrast: contrast),
+                  ),
+          ),
+      ],
+    ),
+  );
+
+  Widget _content(
+    List<_SettingsAction> actions, {
+    required bool narrow,
+  }) => LayoutBuilder(
+    builder: (_, size) {
+      final labelWidth = ((size.maxCols ?? 56) - 6).clamp(1, 100);
+      final menuRows = actions.fold(
+        0,
+        (rows, action) =>
+            rows + ((action.label.length + 1) / labelWidth).ceil(),
       );
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(_data ? 'Data' : 'Security', style: const CellStyle(bold: true)),
+          const SizedBox(height: 1),
+          if (!_data) ...[
+            Text(
+              'Passphrase: ${model.hasPassphrase ? 'On' : 'Off'}',
+              // Amber is Keybay's "note this" role, not its error role:
+              // platform-only is supported, but it is the weaker state and
+              // should not be the quieter of the two.
+              style: model.hasPassphrase
+                  ? context.accents.accent
+                  : context.accents.attention,
+            ),
+            if (model.hasPasskeys)
+              Text(
+                'Passkeys: ${model.methods.where((m) => m.rpId != null).length}',
+              ),
+            Text(
+              'Idle exit: ${_idleExitLabel(model.idleTimeout)}',
+              style: context.theme.mutedStyle,
+            ),
+            const SizedBox(height: 1),
+          ],
+          SizedBox(
+            // A stable key keeps the shared focus node attached as the
+            // surrounding content changes with the category.
+            key: const ValueKey('settings-actions'),
+            height: menuRows,
+            child: _actionList(actions),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            actions[_actions.currentIndex ?? 0].description,
+            maxLines: narrow ? 3 : 2,
+            style: context.theme.mutedStyle,
+          ),
+        ],
+      );
+    },
+  );
 
   Widget _actionList(List<_SettingsAction> actions) => FocusDetector(
     onFocusChange: (_) => setState(() {}),

@@ -134,8 +134,8 @@ Future<void> main(List<String> args) async {
     host.arm();
     if (args[1] == 'write') {
       await session.set('value', 'new-value-canary');
-    } else if (args[1] == 'rotate') {
-      await session.auth.update(crashPhrase('replacement'));
+    } else if (args[1] == 'remove') {
+      await session.auth.remove((await session.auth.list()).single);
     } else {
       throw StateError('unknown operation');
     }

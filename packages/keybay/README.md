@@ -40,12 +40,14 @@ reinstalls/restores. Follow the [deliberate recovery guidance](https://github.co
 do not automatically reset on error.
 
 Opening, changing authentication, and resetting may invoke trusted OS/provider
-UI. Record operations and `auth.list()` never prompt. There is no public
-interaction option.
+UI. Record operations and `auth.list()` never prompt. Mandatory platform
+protection cannot be bypassed; direct hardware passkeys use application-supplied
+PIN, connection-selection and progress callbacks.
 
 ## Application identity
 
-The production API accepts no application ID, path, provider, or store name.
+The production API accepts no application ID, path, platform-protector override,
+or store name.
 iOS, Android, and entitled macOS builds use OS-authenticated application facts.
 An ordinary Dart executable on Linux or unentitled macOS declares a stable
 namespace in its owning `pubspec.yaml`:
@@ -80,6 +82,73 @@ try {
 After enrollment, `Keybay.open()` returns `authRequired`; reopen with a
 `PassphraseCredential`. Closing the session clears Keybay's in-memory store-key
 buffer. The encrypted file never becomes plaintext.
+
+A store supports zero or one passphrase and multiple passkey methods (eight
+total methods maximum). Adding a second passphrase throws
+`authMethodAlreadyConfigured`; remove the existing method before adding another. These are
+alternative unlock methods on top of the mandatory platform root; configuring
+both does not require the user to present both.
+
+## Additional passkey protection
+
+Use the same credential API for OS-provider passkeys and physical FIDO2 keys.
+Configure the RP once and enroll explicitly on a new or platform-only store:
+
+```dart
+const systemPasskey = PasskeyCredential.system(
+  rpId: 'vault.example.com',
+);
+final session = await Keybay.open();
+try {
+  await session.auth.add(systemPasskey, label: 'Personal vault');
+  await session.set('api-token', 's3cr3t');
+} finally {
+  await session.close();
+}
+```
+
+Later, `Keybay.open(credential: systemPasskey)` authenticates using the saved
+method. Credential-based open never enrolls protection, for either passphrases
+or passkeys. If the encrypted file is missing it fails with `storeNotFound`
+without creating a root or invoking the passkey provider. Await enrollment
+success before writing records that should require the added protection.
+
+To add a passkey to an existing store, first open it using its current
+protection, then call `session.auth.add`:
+
+```dart
+final method = await session.auth.add(
+  PasskeyCredential.hardware(
+    rpId: 'dev.example.vault',
+    pin: pinBytes,
+  ),
+  label: 'Backup key',
+);
+
+final methods = await session.auth.list();
+await session.auth.remove(method);
+```
+
+The optional hardware PIN uses caller-owned UTF-8 bytes. Operations copy it
+synchronously and clear their copy; clear your own bytes after submitting the
+call. Credential objects contain data, not UI callbacks. A sole connection is
+selected automatically; ambiguous hardware discovery fails explicitly.
+
+Auth management is `add`, `list`, and `remove` only. Removal accepts the method
+object returned by `add` or `list` and checks that it belongs to this vault.
+Changing a passphrase means removing it and adding a new one. These are two
+commits: removing the last method leaves platform-only protection, including
+if the subsequent add fails. For passkeys, add the new key before removing the
+old one when capacity allows. Each add gets a fresh method ID.
+
+To reopen, use `Keybay.open(credential: credential, methodId: method.id)`.
+Omit `methodId` when exactly one enrollment matches the credential. Passkeys
+are scoped by explicit RP ID; provider setup remains the app's responsibility.
+The system route needs an appropriate native app host and platform domain
+associations. Standalone CLIs use hardware. Keybay adds no hosted service or
+automatic browser fallback. Removing an enrollment does not delete its passkey
+from the provider. The mandatory platform root remains required; a synced
+passkey alone does not make a vault file portable.
 
 See the [SDK guide](https://github.com/danReynolds/keybay/blob/main/doc/sdk.md),
 [security policy](https://github.com/danReynolds/keybay/blob/main/SECURITY.md), and

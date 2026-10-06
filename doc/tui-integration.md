@@ -1,5 +1,12 @@
 # Foreground TUI integration
 
+The native TUI supports passphrase and hardware-passkey enrollment, selection,
+unlock and removal. System passkeys are shown as unavailable in the ordinary
+CLI. Removal refuses to leave only unsupported system methods. The
+[hardware-passkey integration plan](reviews/2026-10-04-tui-passkeys-plan.md)
+records the automated evidence and outstanding physical-device and packaging
+qualification. The browser demo remains synthetic and hides hardware actions.
+
 `keybay open` remains inside `keybay_cli`. The SDK's storage, crypto and
 provider boundaries are unchanged. Its ordinary Dart resolver also supports
 Pub workspace activation by selecting the owning package from bounded local
@@ -9,7 +16,7 @@ and settles at most one SDK action at a time.
 The implementation has these internal modules:
 
 - `tui/store.dart`: the small storage contract shared by the native TUI and
-  website demo. Borrowed value and passphrase bytes are consumed or copied
+  website demo. Borrowed value, passphrase and PIN bytes are consumed or copied
   before an adapter returns its future, so callers can immediately erase them.
 - `tui/native_model.dart`: the production SDK adapter, including redacted error
   classification. It preserves the SDK's credential and session ownership.
@@ -27,6 +34,10 @@ The implementation has these internal modules:
   bounded revealed-value column.
 - `tui/settings.dart`: the Security and Data categories and their action lists.
 - `tui/forms.dart`: one small widget per Unlock, New/Edit, passphrase and reset form.
+- `tui/auth_views.dart`: bounded method chooser and hardware enrollment/unlock
+  form. PINs are always masked; a provider request enables a deliberate PIN
+  submission, with no retry or PIN caching. Cancel signals the native operation
+  and waits for it to drain before permitting another attempt.
 - `tui/secret_draft.dart`: draft ownership, erasure, byte validation and shared
   masked/revealed field lifecycle.
 - `tui/runner.dart`: controlling-terminal checks, filtered native events,
@@ -116,7 +127,7 @@ Settings has a persistent left sidebar for Security and Data with content beside
 it, at both supported minimum sizes. ↑/↓ changes the displayed category without
 invoking an action. Enter/→ focuses content, ← returns to the sidebar, and Tab
 moves between sidebar, content and Back. Escape/Back exits Settings. Security
-contains passphrase state, its actions and the host's idle-exit policy; Data
+contains passphrase state, passkey count, add/remove actions and the host's idle-exit policy; Data
 contains Clear/Reset. Cancellation returns to the originating category.
 The native timeout defaults to five minutes, with a thirty-second warning;
 there is no user-facing timeout setting. The annotation preview disables the
@@ -176,7 +187,8 @@ label. Padding belongs between action cells, not inside the shortcut/label pair.
 accounts for wrapped titles and action rows at the supported minimum size.
 Renaming is outside scope and requires no new SDK API.
 A single return-view value restores the invoking screen on form cancellation;
-Unlock cancellation closes the invocation. No route stack is introduced.
+Unlock cancellation returns to the method chooser when alternatives exist;
+otherwise it closes the invocation. No route stack is introduced.
 Ctrl+S saves a record/passphrase form and Ctrl+R toggles disclosure, including
 while a field is focused. Labels carry the chords; plain letters remain input.
 These use existing Fleury key bindings, outside its editor keymap, and native
@@ -308,6 +320,12 @@ unchanged. No automatic clearing or clipboard-history erasure is claimed.
 
 The repeatable core regression includes Fleury component tests, production-SDK
 model tests, native PTY lifecycle tests and private clipboard round trips.
+The hardware-specific PTY harness substitutes only the provider/platform/storage
+boundaries and covers PIN input, cancel-and-drain, interruption, idle exit and
+foreground loss during both enrollment and unlock. Its operation receipts check
+cleanup and commit outcomes; physical hardware timing remains a separate gate.
+Hardware Unlock focuses its primary button when no PIN field is present, both
+on entry and after a retryable failure.
 Linux uses isolated Xvfb; macOS uses a uniquely named pasteboard rather than the
 user's clipboard. See [qualification status](cli-qualification-status.md) for
 the exact configurations checked and the remaining release evidence.
@@ -339,3 +357,12 @@ The synthetic render pass checks repeated-copy, persistent-error, focus and
 viewport behavior at 40×24 and 80×20. The actual copy-error text wraps without
 covering action buttons. This does not claim arbitrary unbounded messages can
 never obscure an overlay's underlying content.
+
+
+Hardware authentication is also available to `get`, `set`, `list`, `rm` and
+secret-referencing `run`. The command adapter owns a controlling-terminal
+attachment while the key is active, reads its existing PIN only on request,
+and drains cancellation before restoring terminal modes. It never reads the
+command's stdin for authentication. See [native packaging and physical test
+handoff](cli-hardware-packaging.md) for the disposable launchers and the
+separate release qualification boundary.

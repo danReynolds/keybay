@@ -453,18 +453,17 @@ class _ProtectionSheet extends StatelessWidget {
 
   final Vault vault;
 
-  Future<void> _setPassphrase(BuildContext context) async {
+  Future<void> _addPassphrase(BuildContext context) async {
     final navigator = Navigator.of(context);
     final passphrase = await showDialog<String>(
       context: context,
-      builder: (_) => _PassphraseDialog(changing: vault.passphraseProtected),
+      builder: (_) => const _PassphraseDialog(),
     );
     if (passphrase == null || !context.mounted) return;
-    final changing = vault.passphraseProtected;
     await _guard(
       context,
-      () => vault.setPassphrase(passphrase),
-      done: changing ? 'Passphrase changed.' : 'Passphrase added.',
+      () => vault.addPassphrase(passphrase),
+      done: 'Passphrase added.',
     );
     navigator.pop();
   }
@@ -507,15 +506,12 @@ class _ProtectionSheet extends StatelessWidget {
             ),
           ),
           const Divider(),
-          ListTile(
-            leading: const Icon(Icons.edit),
-            title: Text(
-              vault.passphraseProtected
-                  ? 'Change passphrase'
-                  : 'Add passphrase',
+          if (!vault.passphraseProtected)
+            ListTile(
+              leading: const Icon(Icons.add),
+              title: const Text('Add passphrase'),
+              onTap: () => _addPassphrase(context),
             ),
-            onTap: () => _setPassphrase(context),
-          ),
           if (vault.passphraseProtected)
             ListTile(
               leading: const Icon(Icons.remove_circle_outline),
@@ -542,9 +538,7 @@ class _ProtectionSheet extends StatelessWidget {
 }
 
 class _PassphraseDialog extends StatefulWidget {
-  const _PassphraseDialog({required this.changing});
-
-  final bool changing;
+  const _PassphraseDialog();
 
   @override
   State<_PassphraseDialog> createState() => _PassphraseDialogState();
@@ -574,7 +568,7 @@ class _PassphraseDialogState extends State<_PassphraseDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.changing ? 'Change passphrase' : 'Add passphrase'),
+    title: const Text('Add passphrase'),
     content: Column(
       mainAxisSize: MainAxisSize.min,
       children: [

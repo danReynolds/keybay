@@ -36,6 +36,7 @@ void main() {
         'fleury',
         'fleury_widgets',
         'keybay',
+        'keypass',
       ]),
     );
 
@@ -53,6 +54,16 @@ void main() {
       closure,
       unorderedEquals(<String>{
         'keybay',
+        'keypass',
+        'code_assets',
+        'hooks',
+        'record_use',
+        'logging',
+        'pub_semver',
+        'source_span',
+        'string_scanner',
+        'term_glyph',
+        'yaml',
         'archive',
         'args',
         'async',
@@ -66,12 +77,14 @@ void main() {
         'vm_service',
         'watcher',
         'collection',
+        'convert',
         'crypto',
         'cryptography',
         'dbus',
         'ffi',
         'meta',
         'petitparser',
+        'pointycastle',
         'typed_data',
         'xml',
       }),
@@ -98,6 +111,12 @@ void main() {
         );
       }
     }
+    // Keybay's companion firewall checks the exact Keypass hosted archive/source
+    // and complete hosted closure. Keep the CLI's new verification dependency
+    // versions explicit here as well.
+    expect(byName['keypass']?['version'], '0.1.0-dev.2');
+    expect(byName['pointycastle']?['version'], '4.0.0');
+    expect(byName['convert']?['version'], '3.1.2');
   });
 
   test('runtime dependencies are exact-pinned without overrides', () {
@@ -147,6 +166,10 @@ void main() {
     ).allMatches(pubspec).map((match) => match.group(1)!).toList();
     expect(pins, hasLength(2));
     expect(
+      pubspec,
+      contains(RegExp(r'^  keypass: 0\.1\.0-dev\.2$', multiLine: true)),
+    );
+    expect(
       pins.toSet(),
       hasLength(1),
       reason: 'fleury and fleury_widgets must use the same reviewed commit',
@@ -177,47 +200,60 @@ void main() {
     }
   });
 
-  test('CLI source contains no network client, file writer, or spawn fallback', () {
-    final roots = <Directory>[
-      Directory('${packageDirectory.path}/lib'),
-      Directory('${packageDirectory.path}/bin'),
-    ];
-    final forbidden = RegExp(
-      r'(?:\b(?:Socket|RawSocket|HttpClient|WebSocket|InternetAddress|NetworkInterface|IOSink|Link)\b|Process\.(?:run|runSync|start)\b|FileMode\.(?:write|append|writeOnly|writeOnlyAppend)\b|\.(?:writeAsBytes|writeAsString|openWrite)(?:Sync)?\s*\()',
-    );
-    final fileConstructor = RegExp(
-      r'\bFile(?:\.(?:fromRawPath|fromUri))?\s*\(',
-    );
+  test(
+    'CLI I/O stays within reviewed input, preference and clipboard boundaries',
+    () {
+      final roots = <Directory>[
+        Directory('${packageDirectory.path}/lib'),
+        Directory('${packageDirectory.path}/bin'),
+      ];
+      final forbidden = RegExp(
+        r'(?:\b(?:Socket|RawSocket|HttpClient|WebSocket|InternetAddress|NetworkInterface|IOSink|Link)\b|Process\.(?:run|runSync|start)\b|FileMode\.(?:write|append|writeOnly|writeOnlyAppend)\b|\.(?:writeAsBytes|writeAsString|openWrite)(?:Sync)?\s*\()',
+      );
+      final fileConstructor = RegExp(
+        r'\bFile(?:\.(?:fromRawPath|fromUri))?\s*\(',
+      );
 
-    for (final root in roots) {
-      for (final entity in root.listSync(recursive: true)) {
-        if (entity is! File || !entity.path.endsWith('.dart')) continue;
-        final source = entity.readAsStringSync();
-        if (fileConstructor.hasMatch(source)) {
+      for (final root in roots) {
+        for (final entity in root.listSync(recursive: true)) {
+          if (entity is! File || !entity.path.endsWith('.dart')) continue;
+          final source = entity.readAsStringSync();
+          if (fileConstructor.hasMatch(source)) {
+            expect(
+              entity.uri.pathSegments.last,
+              isIn([
+                'entrypoint.dart',
+                'process_executor.dart',
+                'clipboard.dart',
+                'unlock_preference_file.dart',
+                'appearance_file.dart',
+              ]),
+              reason:
+                  'Only reviewed manifest, metadata, clipboard and nonsecret preference code may construct File objects.',
+            );
+          }
+          final reviewedSource =
+              entity.path.endsWith('/unlock_preference_file.dart') ||
+                  entity.path.endsWith('/appearance_file.dart')
+              ? source.replaceAll(
+                  'stage.writeAsString(',
+                  'ReviewedPreferenceWrite(',
+                )
+              : entity.path.endsWith('/tui/clipboard.dart')
+              ? source.replaceAll('Process.start', 'ReviewedClipboardStart')
+              : source;
           expect(
-            entity.uri.pathSegments.last,
-            isIn([
-              'entrypoint.dart',
-              'process_executor.dart',
-              'clipboard.dart',
-            ]),
+            reviewedSource,
+            isNot(matches(forbidden)),
             reason:
-                'Only selected manifest input and executable metadata may construct File objects.',
+                '${entity.path} introduces a network, plaintext file-write, or '
+                'spawn API; SR-2, SR-3, SR-8, and SR-13 require review before '
+                'adding that surface',
           );
         }
-        expect(
-          entity.path.endsWith('/tui/clipboard.dart')
-              ? source.replaceAll('Process.start', 'ReviewedClipboardStart')
-              : source,
-          isNot(matches(forbidden)),
-          reason:
-              '${entity.path} introduces a network, plaintext file-write, or '
-              'spawn API; SR-2, SR-3, SR-8, and SR-13 require review before '
-              'adding that surface',
-        );
       }
-    }
-  });
+    },
+  );
 }
 
 Directory _packageDirectory() {

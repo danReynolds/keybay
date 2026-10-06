@@ -591,7 +591,9 @@ void main() {
           ).openPlatformOnly();
           try {
             expect(fixture.files.hasTransactionArtifacts, isFalse);
-            expect(fixture.files.openCallCount, 1);
+            // The original generation is pinned before provider access; the
+            // cleanup transaction rechecks and authenticates the latest pin.
+            expect(fixture.files.openCallCount, 2);
             expect(await session.contains('service/a'), isTrue);
           } finally {
             await session.close();

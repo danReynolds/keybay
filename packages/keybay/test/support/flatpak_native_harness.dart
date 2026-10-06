@@ -221,8 +221,9 @@ Future<void> _exercise() async {
       ]);
       _require(await original.get('first') == 'one', 'Record read failed');
       _require((await original.listKeys()).length == 2, 'Manifest read failed');
-      await original.auth.add(credential);
-      await original.auth.update(updatedCredential);
+      final method = await original.auth.add(credential);
+      await original.auth.remove(method);
+      await original.auth.add(updatedCredential);
     } finally {
       await original.close();
     }
@@ -261,7 +262,7 @@ Future<void> _exercise() async {
         'Retained-root restore failed',
       );
       final methods = await restored.auth.list();
-      await restored.auth.remove(methods.single.id);
+      await restored.auth.remove(methods.single);
       await restored.set('continuity', 'qualified');
       await restored.set(
         'application',

@@ -54,7 +54,7 @@ void main() {
     await writing;
     expect(utf8.decode((await session.getBytes('test/key'))!), 'sample');
     final phrase = bytes('demo-password');
-    final changing = session.changePassphrase(phrase, replacing: false);
+    final changing = session.addPassphrase(phrase);
     phrase.fillRange(0, phrase.length, 0);
     await changing;
     await session.close();
@@ -79,7 +79,7 @@ void main() {
       ),
     );
     final opened = await store.open(phrase: bytes('demo-password'));
-    expect(await opened.passphraseId(), isNotNull);
+    expect(await opened.listMethods(), hasLength(1));
     await opened.close();
     store.dispose();
   });

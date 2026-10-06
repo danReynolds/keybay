@@ -9,9 +9,13 @@ import 'package:test/test.dart';
 void main() {
   group('V2 frozen limits', () {
     test('are finite and internally consistent', () {
-      expect(V2StoreLimits.storeBytes, 16 * 1024 * 1024);
+      expect(V2StoreLimits.legacyStoreBytes, 16 * 1024 * 1024);
+      expect(V2StoreLimits.nonPackageStoreBytes, 16 * 1024 * 1024);
+      expect(V2StoreLimits.storeBytes, 16 * 1024 * 1024 + 128 * 1024);
+      expect(V2StoreLimits.getManyResultBytes, 16 * 1024 * 1024);
       expect(V2StoreLimits.providerStateBytes, 64);
-      expect(V2StoreLimits.sealedPackageBytes, 4096);
+      expect(V2StoreLimits.legacySealedPackageBytes, 4096);
+      expect(V2StoreLimits.sealedPackageBytes, 128 * 1024);
       expect(V2StoreLimits.recordCount, 4096);
       expect(V2StoreLimits.recordKeyBytes, 120);
       expect(V2StoreLimits.recordValueBytes, 1024 * 1024);
@@ -66,7 +70,7 @@ void main() {
           throwsA(_formatFailure(V2FormatFailureCode.invalidEncoding)),
         );
 
-        final suite = Uint8List.fromList(valid)..[5] = 2;
+        final suite = Uint8List.fromList(valid)..[5] = 3;
         expect(
           () => decodeBootstrapCoreLength(suite),
           throwsA(_formatFailure(V2FormatFailureCode.unsupportedSuite)),
@@ -107,6 +111,30 @@ void main() {
       );
     });
 
+    test('suite 2 expands the package bound without relaxing suite 1', () {
+      for (final suite in [v2PrimitiveSuite, v2MethodsSuite]) {
+        final core = V2BootstrapCore(const [], suite: suite);
+        final limit = suite == v2PrimitiveSuite
+            ? V2StoreLimits.legacySealedPackageBytes
+            : V2StoreLimits.sealedPackageBytes;
+        final encoded = encodeBootstrap(
+          V2Bootstrap(core: core, sealedPackageLength: limit),
+        );
+        final decoded = decodeBootstrap(encoded);
+        expect(decoded.core.suite, suite);
+        expect(decoded.sealedPackageLength, limit);
+        expect(
+          () => V2Bootstrap(core: core, sealedPackageLength: limit + 1),
+          throwsA(_formatFailure(V2FormatFailureCode.limitExceeded)),
+        );
+        ByteData.sublistView(encoded).setUint32(encoded.length - 4, limit + 1);
+        expect(
+          () => decodeBootstrap(encoded),
+          throwsA(_formatFailure(V2FormatFailureCode.limitExceeded)),
+        );
+      }
+    });
+
     test('rejects non-byte provider elements instead of truncating them', () {
       for (final invalid in <int>[-1, 256]) {
         expect(
@@ -126,7 +154,7 @@ void main() {
           ),
         );
 
-        final suite = Uint8List.fromList(valid)..[5] = 2;
+        final suite = Uint8List.fromList(valid)..[5] = 3;
         expect(
           () => decodeBootstrap(suite),
           throwsA(_formatFailure(V2FormatFailureCode.unsupportedSuite)),
@@ -454,6 +482,58 @@ void main() {
   });
 
   group('layout arithmetic', () {
+    test('suite 1 preserves its original whole-file limit', () {
+      final bootstrap = V2Bootstrap(
+        core: V2BootstrapCore(const []),
+        sealedPackageLength: 130,
+      );
+      final layout = deriveStoreLayout(
+        fileLength: V2StoreLimits.legacyStoreBytes,
+        bootstrap: bootstrap,
+        sealedManifestLength: 44,
+      );
+      expect(layout.trailerOffset, V2StoreLimits.legacyStoreBytes - 4);
+      expect(
+        () => validateStoreLength(
+          fileLength: V2StoreLimits.legacyStoreBytes + 1,
+          bootstrap: bootstrap,
+        ),
+        throwsA(_formatFailure(V2FormatFailureCode.limitExceeded)),
+      );
+    });
+
+    test('suite 2 package growth cannot consume the record budget', () {
+      for (final packageLength in [1, 193, V2StoreLimits.sealedPackageBytes]) {
+        final bootstrap = V2Bootstrap(
+          core: V2BootstrapCore(const [], suite: v2MethodsSuite),
+          sealedPackageLength: packageLength,
+        );
+        final total = V2StoreLimits.nonPackageStoreBytes + packageLength;
+        final layout = deriveStoreLayout(
+          fileLength: total,
+          bootstrap: bootstrap,
+          sealedManifestLength: 44,
+        );
+        expect(
+          layout.frameRegionLength,
+          V2StoreLimits.nonPackageStoreBytes - 14 - 44 - 4,
+        );
+        expect(
+          () =>
+              validateStoreLength(fileLength: total + 1, bootstrap: bootstrap),
+          throwsA(_formatFailure(V2FormatFailureCode.limitExceeded)),
+        );
+        expect(
+          () => deriveStoreLayout(
+            fileLength: total + 1,
+            bootstrap: bootstrap,
+            sealedManifestLength: 44,
+          ),
+          throwsA(_formatFailure(V2FormatFailureCode.limitExceeded)),
+        );
+      }
+    });
+
     test('derives component and frame ranges without persisted offsets', () {
       final layout = deriveStoreLayout(
         fileLength: 18 + 48 + 40 + 53 + 100 + 4,

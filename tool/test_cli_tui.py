@@ -54,11 +54,11 @@ def main():
         p.receive(b'acme/key')
         assert b'\x1b]22;>default\x1b\\' in p.output
         # Search field, New key action, then ordinary header text (80x24).
-        os.write(p.master, b'\x1b[<35;6;4M')
+        os.write(p.master, b'\x1b[<35;6;3M')
         p.receive(b'\x1b]22;text\x1b\\')
         os.write(p.master, b'\x1b[<35;4;20M')
         p.receive(b'\x1b]22;pointer\x1b\\')
-        os.write(p.master, b'\x1b[<35;4;2M')
+        os.write(p.master, b'\x1b[<35;4;1M')
         p.receive(b'\x1b]22;default\x1b\\')
         os.write(p.master, b'q')
         p.finish(0)
@@ -98,6 +98,36 @@ def main():
     if real:
         print('TUI real-provider regression: protected open, masked phrase, explicit reveal, session close and terminal restoration passed.')
         return
+
+    def no_color(p):
+        p.receive(b'acme/key')
+        os.write(p.master, b's')
+        p.receive(b'Security')
+        os.write(p.master, b'a')
+        p.receive(b'Contrast')
+        appearance_output = bytes(p.output)
+        p.output.clear()
+        os.write(p.master, b'\x1b')
+        p.receive(b'acme/key')
+        os.write(p.master, b'q')
+        p.finish(0)
+        attributes = {
+            int(code)
+            for sequence in re.findall(rb'\x1b\[([0-9;]*)m', appearance_output + p.output)
+            for code in sequence.split(b';') if code
+        }
+        color_codes = set(range(30, 39)) | set(range(40, 49)) | set(range(90, 98)) | set(range(100, 108))
+        assert not attributes & color_codes, 'NO_COLOR emitted a color attribute'
+        assert 7 in attributes, 'NO_COLOR lost the inverse selection cue'
+    previous_no_color = os.environ.get('NO_COLOR')
+    os.environ['NO_COLOR'] = '1'
+    try:
+        check(['--platform-only'], no_color)
+    finally:
+        if previous_no_color is None:
+            os.environ.pop('NO_COLOR', None)
+        else:
+            os.environ['NO_COLOR'] = previous_no_color
 
     def unlock_retry(p):
         p.receive(b'Unlock Keybay')
@@ -165,7 +195,7 @@ def main():
         p.receive(b"Passphrases don't match.")
         # Correction works in place: both fields survived, focus is on confirm.
         os.write(p.master, b'\x7ft\x13')
-        p.receive(b'Passphrase protection updated.')
+        p.receive(b'Passphrase added.')
         assert b'disposable-draft' not in p.output
         assert b'disposable-drafX' not in p.output
         p.output.clear()
@@ -312,7 +342,7 @@ def main():
         p.receive(b'New key')
         p.output.clear()  # Do not match the earlier vault's mask.
         os.write(p.master, b'draft-kept\tpreserved-secret')
-        p.receive(b'\x1b[13;29H')  # Caret after the entire 16-character value.
+        p.receive(b'\x1b[15;29H')  # Caret after the entire 16-character value.
         fcntl.ioctl(p.master, termios.TIOCSWINSZ, struct.pack('HHHH', 12, 30, 0, 0))
         p.receive(b'Draft kept hidden.')
         p.output.clear()
@@ -330,7 +360,7 @@ def main():
     def unlock_resize(p):
         p.receive(b'Unlock Keybay')
         os.write(p.master, b'disposable-')
-        p.receive(b'\x1b[8;24H')  # Caret after the entire 11-character prefix.
+        p.receive(b'\x1b[11;24H')  # Caret after the entire 11-character prefix.
         os.write(p.master, b'\x1b[O')
         fcntl.ioctl(p.master, termios.TIOCSWINSZ, struct.pack('HHHH', 12, 30, 0, 0))
         p.receive(b'Draft kept hidden.')
@@ -350,7 +380,10 @@ def main():
         p.receive(b'Delete this key?')
         p.output.clear()
         os.write(p.master, b'\r')  # Cancel owns initial focus.
-        p.receive(b'acme/key')
+        # The confirmation also contains acme/key. Wait for the list's footer
+        # so a late chunk of that dialog cannot masquerade as cancellation.
+        p.receive(b'Enter edit')
+        p.output.clear()
         os.write(p.master, b'd')
         p.receive(b'Delete this key?')
         os.write(p.master, b'\t\r')
@@ -364,14 +397,14 @@ def main():
         def search_focus(p, pointer=pointer):
             p.receive(b'acme/key')
             p.output.clear()
-            # Search is row 4, the first result row 6 in the compact 80x24 layout.
-            os.write(p.master, b'\x1b[<0;5;4M\x1b[<0;5;4m' if pointer else b'\x1b[A')
+            # Search is row 3, the first result row 5 in the framed 80x24 layout.
+            os.write(p.master, b'\x1b[<0;5;3M\x1b[<0;5;3m' if pointer else b'\x1b[A')
             # Search is case-insensitive. Await its unique final character;
             # terminal delta frames may paint each character separately.
             os.write(p.master, b'KEY')
             p.receive(b'Y')
             assert b'disposable-value' not in p.output
-            os.write(p.master, b'\x1b[<0;5;6M\x1b[<0;5;6m' if pointer else b'\x1b[B')
+            os.write(p.master, b'\x1b[<0;5;5M\x1b[<0;5;5m' if pointer else b'\x1b[B')
             os.write(p.master, b' ')
             p.receive(b'disposable-value')
             os.write(p.master, b'q')

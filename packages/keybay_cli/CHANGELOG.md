@@ -6,6 +6,15 @@ Unreleased. The CLI ships only as native binaries through Homebrew and GitHub
 releases; it is not published to pub.dev. Native distribution qualification and
 publication remain separate from source integration.
 
+- Add hardware passkey enrollment/removal in the TUI and hardware unlock to
+  `get`, `set`, `list`, `rm`, and secret-referencing `run`. Commands select an
+  existing method, keep authentication on the controlling terminal, and drain
+  cancellation without consuming piped input or retrying a rejected PIN.
+- Bundle the native hardware adapter and its dependency notices. Local macOS
+  candidates use a dedicated signed runtime/module with exact library-load
+  constraints; native distribution and physical-device qualification remain
+  separate release gates.
+
 - Adapt existing commands to the single-application V2 SDK and session API.
   Existing V1 stores are not migrated automatically.
 

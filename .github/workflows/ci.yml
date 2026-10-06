@@ -76,6 +76,7 @@ jobs:
       # silently re-resolves from pub.dev when it can't honor the lock —
       # unreviewed code running in CI (or worse, a release build) with no red
       # signal.
+      - run: bash tool/install_cli_hardware_build_deps.sh
       - run: dart pub get --enforce-lockfile
       - run: dart format --output=none --set-exit-if-changed .
       - run: dart analyze --fatal-infos
@@ -111,7 +112,7 @@ jobs:
       # CLI archive.
       - name: Validate SDK publication archive
         if: runner.os == 'Linux'
-        run: ./tool/validate_publish.sh packages/keybay cryptography dbus ffi
+        run: ./tool/validate_publish.sh packages/keybay cryptography dbus ffi keypass
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -130,6 +131,7 @@ jobs:
           sdk: 3.11.0
       # The reviewed lock is satisfiable on the supported floor, so the floor
       # lane gets the same content-hash enforcement as every other lane.
+      - run: bash tool/install_cli_hardware_build_deps.sh
       - run: dart pub get --enforce-lockfile
       - run: dart analyze --fatal-infos
       - run: ./tool/test_e2e.sh core
@@ -167,6 +169,7 @@ jobs:
       - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
         with:
           architecture: ${{ matrix.architecture }}
+      - run: bash tool/install_cli_hardware_build_deps.sh
       - run: dart pub get --enforce-lockfile
       # Exercise the actual x64 SDK/FFI boundary, including descriptor metadata.
       - if: matrix.architecture == 'x64'
@@ -197,6 +200,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
       - run: sudo apt-get update && sudo apt-get install -y libsecret-tools gnome-keyring dbus libglib2.0-bin xvfb xclip xauth
+      - run: bash tool/install_cli_hardware_build_deps.sh
       - run: dart pub get --enforce-lockfile
       - run: ./tool/test_e2e.sh linux
       - run: ./tool/test_cli.sh core linux
@@ -243,6 +247,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
       - run: sudo apt-get update && sudo apt-get install -y flatpak xdg-desktop-portal gnome-keyring dbus libglib2.0-bin python3 gcr xvfb xdotool
+      - run: bash tool/install_cli_hardware_build_deps.sh
       - run: dart pub get --enforce-lockfile
       - name: qualify two installed Flatpak application IDs
         env:
@@ -284,6 +289,8 @@ jobs:
         working-directory: apps/keybay_demo
       - run: flutter analyze --fatal-infos
         working-directory: apps/keybay_demo
+      # Widget tests compile for the Linux host, including Keypass code assets.
+      - run: bash tool/install_cli_hardware_build_deps.sh
       - run: flutter test
         working-directory: apps/keybay_demo
 
@@ -314,6 +321,7 @@ jobs:
           test "$(git -C "$flutter_root" rev-parse HEAD)" = ad70ec4617166f1c38e5d2bfd388af71fda14f06
           echo "$flutter_root/bin" >> "$GITHUB_PATH"
       # The shared regression runner records source digests with package:crypto.
+      - run: bash tool/install_cli_hardware_build_deps.sh
       - run: dart pub get --enforce-lockfile
       - run: flutter pub get --enforce-lockfile
         working-directory: example_flutter
@@ -360,6 +368,7 @@ jobs:
           test "$(git -C "$flutter_root" rev-parse HEAD)" = ad70ec4617166f1c38e5d2bfd388af71fda14f06
           echo "$flutter_root/bin" >> "$GITHUB_PATH"
       # The shared regression runner records source digests with package:crypto.
+      - run: bash tool/install_cli_hardware_build_deps.sh
       - run: dart pub get --enforce-lockfile
       - run: flutter pub get --enforce-lockfile
         working-directory: example_flutter
@@ -448,6 +457,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
+      - run: bash tool/install_cli_hardware_build_deps.sh
       - run: dart pub get --enforce-lockfile
       - run: dart test test/site_demo_test.dart
       - uses: ruby/setup-ruby@a0102e0972be65f351c307e2d64b9314a57c8073 # v1.324.0
@@ -466,6 +476,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
+      - run: bash tool/install_cli_hardware_build_deps.sh
       - run: dart pub get --enforce-lockfile
       - name: authenticated V2 reader canary (fresh seed)
         working-directory: packages/keybay

@@ -365,16 +365,15 @@ void main() {
   });
 
   group('passphrase state model', () {
-    test('protected initialization snapshots borrowed bytes', () async {
+    test('explicit enrollment snapshots borrowed bytes', () async {
       final store = V2TestKeybay();
       addTearDown(store.dispose);
       final original = Uint8List.fromList([1, 2, 3]);
       final phrase = Uint8List.fromList(original);
-      final opening = store.open(
-        credential: PassphraseCredential(phrase: phrase),
-      );
+      final first = await store.open();
+      final adding = first.auth.add(PassphraseCredential(phrase: phrase));
       phrase.fillRange(0, phrase.length, 0);
-      final first = await opening;
+      await adding;
       expect(first.wasInitialized, isTrue);
       expect(store.deriver.lastBorrowedInputIsCleared, isTrue);
       await first.close();
@@ -407,7 +406,8 @@ void main() {
         final phrase = Uint8List.fromList([1]);
         final credential = PassphraseCredential(phrase: phrase);
         phrase[0] = 2;
-        final session = await store.open(credential: credential);
+        final session = await store.open();
+        await session.auth.add(credential);
         await session.close();
 
         final reopened = await store.open(
@@ -442,7 +442,7 @@ void main() {
     );
 
     test(
-      'auth CRUD is singleton, redacted, and rotates peer sessions',
+      'auth add/remove is singleton, redacted, and rotates peer sessions',
       () async {
         final store = V2TestKeybay();
         addTearDown(store.dispose);
@@ -470,21 +470,22 @@ void main() {
             phrase: Uint8List.fromList([1, 2, 3]),
           ),
         );
+        await owner.auth.remove(added);
         final replacement = Uint8List.fromList([4, 5, 6]);
         final rotationGate = Completer<void>();
         addTearDown(() {
           if (!rotationGate.isCompleted) rotationGate.complete();
         });
         store.gateNextOperation(rotationGate.future);
-        final updating = owner.auth.update(
+        final addingReplacement = owner.auth.add(
           PassphraseCredential(phrase: replacement),
         );
         final queuedWrite = owner.set('service/after-rotation', 'ready');
         replacement.fillRange(0, replacement.length, 0);
         rotationGate.complete();
-        final updated = await updating;
+        final replacementMethod = await addingReplacement;
         await queuedWrite;
-        expect(updated.id, added.id);
+        expect(replacementMethod.id, isNot(added.id));
         expect(await owner.get('service/after-rotation'), 'ready');
         expect(store.deriver.lastBorrowedInputIsCleared, isTrue);
         await expectLater(
@@ -506,16 +507,16 @@ void main() {
         );
 
         await expectLater(
-          owner.auth.remove('unknown-method'),
+          owner.auth.remove(added),
           throwsA(_failure(KeybayErrorCode.authMethodNotConfigured)),
         );
-        expect((await owner.auth.list()).single.id, added.id);
-        await owner.auth.remove(added.id);
+        expect((await owner.auth.list()).single.id, replacementMethod.id);
+        await owner.auth.remove(replacementMethod);
         expect(await owner.auth.list(), isEmpty);
 
         final platformOnly = await store.open();
         await expectLater(
-          owner.auth.remove(added.id),
+          owner.auth.remove(added),
           throwsA(_failure(KeybayErrorCode.authMethodNotConfigured)),
         );
         await peer.close();
@@ -525,33 +526,24 @@ void main() {
       },
     );
 
-    test(
-      'update without a method fails and clearAll preserves protection',
-      () async {
-        final store = V2TestKeybay();
-        addTearDown(store.dispose);
-        final session = await store.open();
-        await expectLater(
-          session.auth.update(
-            PassphraseCredential(phrase: Uint8List.fromList([1])),
-          ),
-          throwsA(_failure(KeybayErrorCode.authMethodNotConfigured)),
-        );
-        final method = await session.auth.add(
-          PassphraseCredential(phrase: Uint8List.fromList([1])),
-        );
-        await session.set('service/token', 'alpha');
-        await session.clearAll();
-        expect(await session.get('service/token'), isNull);
-        expect((await session.auth.list()).single.id, method.id);
-        await session.close();
+    test('clearAll preserves protection', () async {
+      final store = V2TestKeybay();
+      addTearDown(store.dispose);
+      final session = await store.open();
+      final method = await session.auth.add(
+        PassphraseCredential(phrase: Uint8List.fromList([1])),
+      );
+      await session.set('service/token', 'alpha');
+      await session.clearAll();
+      expect(await session.get('service/token'), isNull);
+      expect((await session.auth.list()).single.id, method.id);
+      await session.close();
 
-        await expectLater(
-          store.open(),
-          throwsA(_failure(KeybayErrorCode.authRequired)),
-        );
-      },
-    );
+      await expectLater(
+        store.open(),
+        throwsA(_failure(KeybayErrorCode.authRequired)),
+      );
+    });
   });
 
   group('session close', () {
@@ -609,10 +601,9 @@ void main() {
       const canary = 'DO-NOT-RENDER-THIS-PASSPHRASE';
       final store = V2TestKeybay();
       addTearDown(store.dispose);
-      final session = await store.open(
-        credential: PassphraseCredential(
-          phrase: Uint8List.fromList(canary.codeUnits),
-        ),
+      final session = await store.open();
+      await session.auth.add(
+        PassphraseCredential(phrase: Uint8List.fromList(canary.codeUnits)),
       );
       await session.close();
 

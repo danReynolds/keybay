@@ -1,7 +1,7 @@
 name: keybay
 description: >-
   Cross-platform local secret storage for Dart without Flutter: one encrypted,
-  platform-protected application store with optional passphrase protection.
+  platform-protected application store with optional passphrase or passkey protection.
 version: 0.2.0
 repository: https://github.com/danReynolds/keybay/tree/main/packages/keybay
 homepage: https://danreynolds.github.io/keybay/
@@ -36,6 +36,8 @@ dependencies:
   # dart-lang official; needed for the POSIX file shim (0600-from-birth + fsync,
   # which dart:io cannot express). Already in cryptography's transitive closure.
   ffi: 2.2.0
+  # Reviewed Keypass SDK prerelease. Native host setup is documented separately.
+  keypass: 0.1.0-dev.2
 
 dev_dependencies:
   lints: ^5.0.0

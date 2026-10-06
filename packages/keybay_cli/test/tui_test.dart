@@ -21,6 +21,10 @@ import '../../keybay/test/support/v2_test_keybay.dart';
 
 Uint8List bytes(String text) => Uint8List.fromList(utf8.encode(text));
 
+String withoutFrame(String line) => line
+    .replaceFirst(RegExp(r'^\s*│ ?'), '')
+    .replaceFirst(RegExp(r' ?│\s*$'), '');
+
 void expectFormActions(FleuryTester tester) {
   final screen = tester.renderToString(emptyMark: ' ');
   for (final action in ['[Ctrl+S] Save', '[Ctrl+R] Reveal', '[Esc] Cancel']) {
@@ -94,25 +98,18 @@ void main() {
       accents.attention,
       const CellStyle(foreground: AnsiColor(3), bold: true),
     );
-    expect(
-      accents.placeholder,
-      const CellStyle(foreground: RgbColor(0x90, 0x90, 0x90)),
-    );
+    expect(accents.placeholder, const CellStyle(dim: true));
     expect(
       keybayTheme.focusedStyle,
-      const CellStyle(foreground: AnsiColor(6), bold: true),
+      const CellStyle(foreground: AnsiColor(6), bold: true, underline: false),
     );
     expect(
       keybayTheme.errorStyle,
-      const CellStyle(foreground: AnsiColor(9), bold: true),
+      const CellStyle(foreground: AnsiColor(9), bold: true, underline: true),
     );
     expect(
       keybayTheme.selectionStyle,
-      const CellStyle(
-        foreground: RgbColor(0xa7, 0xd7, 0xb7),
-        background: RgbColor(0x27, 0x3e, 0x31),
-        bold: true,
-      ),
+      const CellStyle(inverse: true, bold: true),
     );
     // Left at the framework default rather than restated.
     expect(keybayTheme.mutedStyle, const CellStyle(dim: true));
@@ -219,7 +216,7 @@ void main() {
     await tester.settle();
     expect(model.status, isEmpty);
     expect(tester.semantics().where(role: SemanticRole.notification), isEmpty);
-    expect(model.protected, isTrue);
+    expect(model.hasPassphrase, isTrue);
     expect(model.keys, ['acme/a', 'acme/z']);
     expect(store.deriver.lastBorrowedInputIsCleared, isTrue);
   });
@@ -236,7 +233,6 @@ void main() {
         final tester = FleuryTester();
         addTearDown(tester.dispose);
         tester.pumpWidget(KeybayTui(model: model));
-        expect(tester.renderToString(), contains('keybay'));
         expect(tester.renderToString(), isNot(contains('Opening Keybay')));
         final opening = model.open();
         tester.pump();
@@ -244,6 +240,7 @@ void main() {
         await opening;
         await tester.settle();
         expect(model.view, protected ? TuiView.unlock : TuiView.browse);
+        expect(tester.renderToString(), contains('keybay'));
         expect(tester.renderToString(), isNot(contains('Opening Keybay')));
         expect(model.showsBusy, isFalse);
       },
@@ -512,9 +509,13 @@ void main() {
       model.dispose();
       var opens = 0;
       model = createNativeTuiModel(
-        openSession: ({credential}) {
+        openSession: ({credential, methodId, cancellation}) {
           opens++;
-          return store.open(credential: credential);
+          return store.open(
+            credential: credential,
+            methodId: methodId,
+            cancellation: cancellation,
+          );
         },
         resetStore: store.reset,
         authorize: () {
@@ -592,9 +593,9 @@ void main() {
     await model.open();
     model.navigate(TuiView.passphrase);
     final phrase = bytes('secret-passphrase');
-    await model.changePassphrase(phrase);
+    await model.addPassphrase(phrase);
     expect(phrase, everyElement(0));
-    expect(model.protected, isTrue);
+    expect(model.hasPassphrase, isTrue);
     final value = bytes('line one\nline two');
     model.navigate(TuiView.create);
     await model.save('acme/new', value, replace: false);
@@ -609,11 +610,11 @@ void main() {
     model.navigate(TuiView.clear);
     await model.clearRecords();
     expect(model.keys, isEmpty);
-    expect(model.protected, isTrue);
+    expect(model.hasPassphrase, isTrue);
     expect(model.hasSession, isTrue);
     model.navigate(TuiView.removePassphrase);
     await model.removePassphrase();
-    expect(model.protected, isFalse);
+    expect(model.hasPassphrase, isFalse);
   });
 
   test('simple and namespaced names remain distinct through CRUD', () async {
@@ -788,8 +789,8 @@ void main() {
           .render()
           .atColRow(searchCol + 1, searchRow)
           .style;
-      expect(placeholder.foreground, const RgbColor(0x90, 0x90, 0x90));
-      expect(placeholder.dim, isFalse);
+      expect(placeholder.foreground, isNull);
+      expect(placeholder.dim, isTrue);
       expect(
         tester.render().atColRow(searchCol - 2, searchRow).style.foreground,
         const AnsiColor(6),
@@ -844,8 +845,8 @@ void main() {
     final rendered = tester.renderToString(emptyMark: ' ').split('\n');
     final first = rendered.singleWhere((line) => line.contains('first-secret'));
     final wrapped = rendered.singleWhere((line) => line.contains('next line'));
-    expect(first.trimRight().length, rightEdge);
-    expect(wrapped.trimRight().length, rightEdge);
+    expect(first.replaceFirst(RegExp(r'\s*│\s*$'), '').length, rightEdge);
+    expect(wrapped.replaceFirst(RegExp(r'\s*│\s*$'), '').length, rightEdge);
     // It still begins after the name, never in the name's own column.
     expect(first.indexOf('first-secret'), greaterThan(first.indexOf('acme/a')));
   });
@@ -1312,7 +1313,7 @@ void main() {
         tester.pumpWidget(KeybayTui(model: model));
         await tester.settle();
         final panel = tester.find(byType(Container)).single.findRenderObject()!;
-        expect(panel.size.cols, lessThanOrEqualTo(60));
+        expect(panel.size.cols, lessThanOrEqualTo(64));
         expect(panel.size.rows, lessThanOrEqualTo(14));
         expect(
           tester
@@ -1408,7 +1409,7 @@ void main() {
           await model.open();
           if (protected) {
             model.navigate(TuiView.passphrase);
-            await model.changePassphrase(bytes('disposable'));
+            await model.addPassphrase(bytes('disposable'));
           }
           model.navigate(TuiView.settings);
           tester.pumpWidget(KeybayTui(model: model));
@@ -1423,7 +1424,7 @@ void main() {
           for (final category in ['Security', 'Data']) {
             final actionLabels = category == 'Security'
                 ? [
-                    protected ? 'Change passphrase' : 'Add passphrase',
+                    if (!protected) 'Add passphrase',
                     if (protected) 'Remove passphrase',
                   ]
                 : ['Clear all records', 'Reset Keybay'];
@@ -1485,7 +1486,7 @@ void main() {
               await tester.settle();
             }
           }
-          expect(model.protected, protected);
+          expect(model.hasPassphrase, protected);
           tester.sendKey(const KeyEvent(KeyCode.escape));
           await tester.settle();
           expect(model.view, TuiView.browse);
@@ -1517,7 +1518,7 @@ void main() {
             if (label == 'Back') continue;
             final cell = cells.atColRow(node.bounds!.left, node.bounds!.top);
             expect(
-              cell.style.background != null,
+              cell.style.inverse,
               label == focusedLabel,
               reason: 'only the focused row gets a filled highlight',
             );
@@ -1691,11 +1692,11 @@ void main() {
         await model.open();
         if (protected) {
           model.navigate(TuiView.passphrase);
-          await model.changePassphrase(bytes('disposable'));
+          await model.addPassphrase(bytes('disposable'));
         }
         tester.pumpWidget(KeybayTui(model: model));
         for (final entry in {
-          KeyCode.p: (TuiView.security, TuiView.passphrase),
+          if (!protected) KeyCode.p: (TuiView.security, TuiView.passphrase),
           KeyCode.c: (TuiView.data, TuiView.clear),
           KeyCode.r: (TuiView.data, TuiView.reset),
           if (protected)
@@ -1717,7 +1718,7 @@ void main() {
             );
           }
           expect(model.keys, ['acme/a', 'acme/z']);
-          expect(model.protected, protected);
+          expect(model.hasPassphrase, protected);
           tester.sendKey(const KeyEvent(KeyCode.escape));
           await tester.settle();
           expect(model.view, entry.value.$1);
@@ -1838,7 +1839,7 @@ void main() {
           final keyLines = tester.renderToString(emptyMark: ' ').split('\n');
           expect(
             keyLines
-                .map((line) => line.trim())
+                .map((line) => withoutFrame(line).trim())
                 .where((line) => RegExp(r'^a+$').hasMatch(line))
                 .join(),
             longKey,
@@ -2037,7 +2038,7 @@ void main() {
       expect(tester.find(byType(ValueView)), hasLength(2));
       tester.sendKey(const KeyEvent(KeyCode.s, modifiers: {KeyModifier.ctrl}));
       await tester.settle();
-      expect(model.protected, isTrue);
+      expect(model.hasPassphrase, isTrue);
       await model.close();
       tester.pumpWidget(const SizedBox());
       model.dispose();
@@ -2203,7 +2204,7 @@ void main() {
       tester.type('sr-passphrase');
       tester.sendKey(const KeyEvent(KeyCode.s, modifiers: {KeyModifier.ctrl}));
       await tester.settle();
-      expect(model.protected, isFalse);
+      expect(model.hasPassphrase, isFalse);
       expect(tester.renderToString(), contains('Confirm your passphrase.'));
       tester.type('sr-passphrase');
       tester.sendKey(const KeyEvent(KeyCode.r, modifiers: {KeyModifier.ctrl}));
@@ -2239,7 +2240,7 @@ void main() {
       );
       tester.sendKey(const KeyEvent(KeyCode.s, modifiers: {KeyModifier.ctrl}));
       await tester.settle();
-      expect(model.protected, isTrue);
+      expect(model.hasPassphrase, isTrue);
       model.navigate(TuiView.reset);
       await tester.settle();
       tester.type(resetConfirmation);
@@ -2418,7 +2419,9 @@ void main() {
           expect(errorRow, greaterThan(0));
           expect(
             errorRow,
-            lessThan(rows.indexWhere((line) => line.trim() == 'Value')),
+            lessThan(
+              rows.indexWhere((line) => withoutFrame(line).trim() == 'Value'),
+            ),
           );
           expectFormActions(tester);
           tester.sendKey(const KeyEvent(KeyCode.home));
@@ -2495,7 +2498,7 @@ void main() {
     );
   }
 
-  test('form Cancel returns to its origin; unlock Cancel exits', () async {
+  test('form Cancel returns to its origin; unlock Quit exits', () async {
     final tester = FleuryTester();
     addTearDown(tester.dispose);
     await model.open();
@@ -2533,7 +2536,7 @@ void main() {
     await tester.invokeSemanticAction(
       SemanticAction.activate,
       role: SemanticRole.button,
-      label: 'Cancel',
+      label: 'Quit',
     );
     await tester.settle();
     expect(model.ending, isTrue);
@@ -2801,10 +2804,13 @@ void main() {
         expect(screen, contains('Key'));
         expect(screen, contains('Value'));
         expectFormActions(tester);
-        expect(
-          screen.split('\n').indexWhere((row) => row.contains('[Ctrl+S] Save')),
-          lessThan(18),
+        final lines = screen.split('\n');
+        final titleRow = lines.indexWhere((row) => row.contains('New key'));
+        final saveRow = lines.indexWhere(
+          (row) => row.contains('[Ctrl+S] Save'),
         );
+        // The form stays compact even when centered in a taller terminal.
+        expect(saveRow - titleRow, lessThan(15));
         tester.type('test2');
         tester.sendKey(const KeyEvent(KeyCode.enter));
         await tester.settle();
@@ -3094,7 +3100,7 @@ void main() {
         await tester.settle();
         expect(inputs[0].text, 'first-draft');
         expect(inputs[1].text, 'other-draft');
-        expect(model.protected, isFalse);
+        expect(model.hasPassphrase, isFalse);
         expect(model.status, isEmpty);
         expect(tester.renderToString(), contains("Passphrases don't match."));
         expect(tester.renderToString(), isNot(contains('first-draft')));
@@ -3150,7 +3156,7 @@ void main() {
           const KeyEvent(KeyCode.s, modifiers: {KeyModifier.ctrl}),
         );
         await tester.settle();
-        expect(model.protected, isTrue);
+        expect(model.hasPassphrase, isTrue);
         expect(model.view, TuiView.security);
         expect(tester.renderToString(), contains('Passphrase: On'));
         for (final input in inputs) {
@@ -3213,7 +3219,7 @@ void main() {
         expect(input.text, isEmpty);
         expect(input.canUndo, isFalse);
       }
-      expect(model.protected, isFalse);
+      expect(model.hasPassphrase, isFalse);
       expect(
         tester.renderToString(),
         isNot(contains("Passphrases don't match.")),
@@ -3233,7 +3239,7 @@ void main() {
       tester.paste('x' * 20000);
       await tester.settle();
       expect(model.view, TuiView.browse);
-      expect(model.protected, isFalse);
+      expect(model.hasPassphrase, isFalse);
       expect(tester.find(byType(TextArea)), isEmpty);
       expect(model.status, contains('draft was discarded'));
     },
@@ -3333,9 +3339,13 @@ void main() {
     model.dispose();
     var opens = 0;
     model = createNativeTuiModel(
-      openSession: ({credential}) {
+      openSession: ({credential, methodId, cancellation}) {
         opens++;
-        return store.open(credential: credential);
+        return store.open(
+          credential: credential,
+          methodId: methodId,
+          cancellation: cancellation,
+        );
       },
       resetStore: store.reset,
       authorize: () {},
@@ -3629,7 +3639,12 @@ void main() {
       expect(screen, isNot(contains('first-secret')));
       final keyRows = screen.split('\n').where((row) => row.contains('acme/'));
       expect(keyRows, hasLength(2));
-      expect(keyRows.every((row) => row.endsWith('••••••••')), isTrue);
+      expect(
+        keyRows.every(
+          (row) => withoutFrame(row).trimRight().endsWith('••••••••'),
+        ),
+        isTrue,
+      );
       expect(
         keyRows.map((row) => row.indexOf('••••••••')).toSet(),
         hasLength(1),

@@ -17,6 +17,10 @@ final class CliFailure implements Exception {
 /// Maps the redacted V2 error code without incorporating provider detail.
 CliFailure failureForKeybay(KeybayException error) {
   final lines = switch (error.code) {
+    KeybayErrorCode.storeNotFound => <String>[
+      'error: no encrypted Keybay store is available to unlock.',
+      'Authentication did not create a replacement store or change its protection.',
+    ],
     KeybayErrorCode.applicationIdentityUnavailable => <String>[
       'error: Keybay could not establish this CLI build\'s application identity.',
       'Install an official build or compile it with the Keybay build command.',
@@ -34,9 +38,23 @@ CliFailure failureForKeybay(KeybayException error) {
       'error: the platform-protected store key is no longer usable.',
       'Restore the matching platform state or deliberately reset Keybay; existing values cannot be recovered without it.',
     ],
+    KeybayErrorCode.authRequired
+        when error.authMethods.whereType<PassphraseMethod>().isEmpty &&
+            error.authMethods.whereType<PasskeyMethod>().isNotEmpty =>
+      <String>[
+        'error: no supported unlock method is available in this CLI.',
+        'System passkeys require a supported app host. Use an enrolled hardware key or passphrase.',
+      ],
     KeybayErrorCode.authRequired || KeybayErrorCode.unlockFailed => <String>[
       'error: Keybay authentication failed.',
-      'Check the passphrase and retry.',
+      'Use a configured credential to reopen the store.',
+    ],
+    KeybayErrorCode.authMethodSelectionRequired => <String>[
+      'error: more than one passkey method matches this request.',
+      'Select a configured authentication method and retry.',
+    ],
+    KeybayErrorCode.passkeyOperationFailed => <String>[
+      'error: ${hardwareFailureMessage(error.passkeyCode)}',
     ],
     KeybayErrorCode.protectionMismatch => <String>[
       'error: the supplied credential does not match the store protection.',
@@ -89,3 +107,34 @@ CliFailure failureForKeybay(KeybayException error) {
   };
   return CliFailure(exitCode: inputFailure ? 2 : 1, lines: lines);
 }
+
+String hardwareFailureMessage(PasskeyErrorCode? code) => switch (code) {
+  PasskeyErrorCode.pinRequired =>
+    'Enter the existing PIN for your hardware key.',
+  PasskeyErrorCode.pinInvalid =>
+    'That PIN was rejected. Check it before trying again.',
+  PasskeyErrorCode.pinBlocked =>
+    'The hardware PIN is blocked. Stop and use another unlock method.',
+  PasskeyErrorCode.pinTemporarilyBlocked =>
+    'The key temporarily blocked PIN attempts. Reconnect it before a deliberate retry.',
+  PasskeyErrorCode.pinChangeRequired =>
+    'The key requires a PIN change in its management app.',
+  PasskeyErrorCode.deviceUnavailable =>
+    'No hardware key is available. Connect your key and try again.',
+  PasskeyErrorCode.deviceSelectionRequired =>
+    'Connect only the hardware key you want to use.',
+  PasskeyErrorCode.credentialUnavailable =>
+    'This key does not have the selected passkey. Use the matching key.',
+  PasskeyErrorCode.credentialStorageFull =>
+    'The hardware key has no room for another passkey.',
+  PasskeyErrorCode.prfUnavailable || PasskeyErrorCode.verificationUnavailable =>
+    'This key cannot provide the encryption and verification capabilities Keybay requires.',
+  PasskeyErrorCode.cancelled => 'The hardware operation was cancelled.',
+  PasskeyErrorCode.timeout =>
+    'The key did not finish in time. Retry when you are ready to touch it.',
+  PasskeyErrorCode.backendUnavailable || PasskeyErrorCode.hostUnavailable =>
+    'The hardware adapter is unavailable. Use a Keybay build with hardware support.',
+  PasskeyErrorCode.busy =>
+    'A hardware operation is still finishing. Wait before retrying.',
+  _ => 'Hardware verification did not complete. Check the key before retrying.',
+};

@@ -6,6 +6,9 @@
 - **Target:** Keybay V2
 - **Scope:** SDK storage architecture and platform security policy
 - **Companion:** [RFC 0002: Keybay V2 CLI and foreground UI](0002-cli-tui.md)
+- **Amendment:** [RFC 0003: Passkey methods](0003-passkey-methods.md) supersedes
+  the singleton-only authentication package, suite-1-only reader, and
+  protected-open behavior below. Other platform and record invariants remain.
 
 > This RFC defines the accepted Keybay V2 target. It does not describe the API,
 > file format, or security guarantees of any currently shipped Keybay release.
@@ -245,7 +248,9 @@ require production code to accept another application's identity.
 
 ### Public SDK surface
 
-The normative V2 API shape is:
+The normative V2 API shape follows. [RFC 0003](0003-passkey-methods.md)
+defines the passkey credential types and the accepted 2026-10-04 add/list/remove
+contract. The selectors and cancellation signals below belong to operations:
 
 ```dart
 import 'dart:typed_data';
@@ -253,6 +258,8 @@ import 'dart:typed_data';
 abstract final class Keybay {
   external static Future<KeybaySession> open({
     KeybayCredential? credential,
+    String? methodId,
+    PasskeyCancellation? cancellation,
   });
 
   // Removes encrypted store/staging and qualified deletable provider state.
@@ -308,14 +315,17 @@ final class KeybayException implements Exception {
 }
 
 sealed class AuthMethod {
-  const AuthMethod._(this.id);
+  const AuthMethod._(this.id, this._storeId, {required this.label});
 
   // Opaque, stable, and non-secret. Callers receive it from add() or list().
   final String id;
+  final String label;
+  final String _storeId; // Internal vault identity, never a caller selector.
 }
 
 final class PassphraseMethod extends AuthMethod {
-  const PassphraseMethod._(String id) : super._(id);
+  const PassphraseMethod._(String id, String storeId, {String label = 'Passphrase'})
+      : super._(id, storeId, label: label);
 }
 
 abstract final class KeybayLimits {
@@ -344,9 +354,12 @@ abstract interface class KeybaySession {
 
 abstract interface class KeybayAuthManager {
   Future<List<AuthMethod>> list();
-  Future<AuthMethod> add(KeybayCredential credential);
-  Future<AuthMethod> update(KeybayCredential replacement);
-  Future<void> remove(String id);
+  Future<AuthMethod> add(
+    KeybayCredential credential, {
+    String? label,
+    PasskeyCancellation? cancellation,
+  });
+  Future<void> remove(AuthMethod method);
 }
 ```
 
@@ -444,7 +457,7 @@ verification fails. Public ciphertext, nonces, salts, digests, AAD, and
 bootstrap/provider routing metadata have no zeroization contract.
 
 `PassphraseCredential` borrows the caller's `Uint8List`; construction makes no
-secret copy. `open`, `auth.add`, or `auth.update` synchronously validates and snapshots
+secret copy. `open` or `auth.add` synchronously validates and snapshots
 the current bytes before returning its future. The operation owns and clears
 that internal snapshot on success or failure. After the operation call returns,
 the caller may independently clear its original input. There is no `String`
@@ -493,7 +506,7 @@ The state machine is normative:
 
 | Existing state | `Keybay.open()` | `Keybay.open(credential: PassphraseCredential(...))` |
 |---|---|---|
-| Totally absent | Atomically initialize platform-only and open | Atomically initialize passphrase-protected and open |
+| Totally absent | Atomically initialize platform-only and open | Throw `StoreNotFound` without enrollment, derivation, or root creation |
 | Platform-only | Open | Throw `ProtectionMismatch` without mutation |
 | Passphrase-protected | Throw `AuthRequired` | Authenticate and open |
 | Live file plus fixed staging artifact | Apply the matching live-store row; only after bootstrap and key-package authentication succeeds, durably discard staging under the same lock and open. Otherwise fail closed without cleanup. | Apply the matching live-store row; only after bootstrap and key-package authentication succeeds, durably discard staging under the same lock and open. Otherwise fail closed without cleanup. |
@@ -512,12 +525,16 @@ silently adds a passphrase to a platform-only store; protection changes occur
 only through an already authorized session.
 
 An interactive application confirms a new passphrase before calling
-`Keybay.open(credential: ...)`. Keybay owns no passphrase confirmation, terminal,
-Flutter route, biometric, or hardware UI. It receives authentication material
-from its host and performs derivation, verification, and storage transactions.
+`session.auth.add(PassphraseCredential(...))`. Credential-based open only
+authenticates existing protection; a missing live file without staging returns
+`StoreNotFound` before provider access, including when a platform root remains.
+Enrollment is never inferred from a failed unlock. Keybay owns no passphrase
+confirmation, terminal, Flutter route, biometric, or hardware UI. It receives
+authentication material from its host and performs derivation, verification,
+and storage transactions.
 
 `PassphraseCredential` borrows the caller's mutable bytes without copying them.
-Passing it to `open`, `auth.add`, or `auth.update` synchronously snapshots the
+Passing it to `open` or `auth.add` synchronously snapshots the
 current bytes before the method returns its future. The authentication operation
 clears that internal snapshot on success or failure and never retains the
 passphrase after derivation. The caller retains ownership of the original input
@@ -637,28 +654,29 @@ final adding = session.auth.add(
 newPhrase.fillRange(0, newPhrase.length, 0);
 final passphrase = await adding;
 
-final replacement = await readReplacementPassphraseBytes();
-final updating = session.auth.update(
-  PassphraseCredential(phrase: replacement),
-);
-replacement.fillRange(0, replacement.length, 0);
-final updated = await updating;
+await session.auth.remove(passphrase);
 
-assert(updated.id == passphrase.id);
-await session.auth.remove(passphrase.id);
+// Removing and adding are separate transactions, not an atomic replacement.
+final nextPhrase = await readNewPassphraseBytes();
+final addingNext = session.auth.add(PassphraseCredential(phrase: nextPhrase));
+nextPhrase.fillRange(0, nextPhrase.length, 0);
+final nextMethod = await addingNext;
+assert(nextMethod.id != passphrase.id);
 ```
 
 Passphrase auth has cardinality `0..1`. `add(PassphraseCredential(...))` throws
 `AuthMethodAlreadyConfigured` if one exists. It returns a redacted
-`PassphraseMethod` with a fresh opaque ID. `update(PassphraseCredential(...))`
-throws `AuthMethodNotConfigured` if none exists, atomically replaces the
-credential, and returns the updated method with the same ID. It must never be
-implemented as remove followed by add.
+`PassphraseMethod` with a fresh opaque ID. There is no update or replace API.
+To change a passphrase, remove the old enrollment and add a new one. If the
+removed method was the last one, the intermediate state is platform-only; a
+failed add does not restore the removed method.
 
-`list()` returns redacted `AuthMethod` values, never credentials, passphrases,
-verifiers, derived keys, or provider secrets. `remove(id)` accepts only an ID
-previously returned by `add()` or `list()`; an unknown or stale ID throws
-`AuthMethodNotConfigured` without mutation. IDs are stable, opaque,
+`list()` returns immutable `AuthMethod` descriptors, never credentials,
+passphrases, verifiers, derived keys, or provider secrets. `remove(method)`
+accepts an object previously returned by `add()` or `list()` and validates its
+vault identity and enrollment ID. Foreign-vault or removed descriptors fail
+with `AuthMethodNotConfigured` without mutation. Object identity is not used.
+IDs are stable, opaque,
 collision-resistant, and non-secret. They select configured methods but do not
 authorize an operation. The authenticated session supplies authority. A host
 UI confirms removal of the final additional method when that reduction to
@@ -1335,7 +1353,7 @@ overwrites, or deletes an arbitrary duplicate.
 These are internal variations. The key package remains in the store file and
 the record format and `Kstore` semantics do not change.
 
-`Keybay.open()` (including initialization), `session.auth.add/update/remove`,
+`Keybay.open()` (including initialization), `session.auth.add/remove`,
 and `Keybay.reset()` may invoke trusted OS or provider UI. Calling one of these
 operations permits that interaction; the public API adds no interaction option.
 Hosts must invoke these lifecycle operations from a context that can accommodate
@@ -1878,7 +1896,7 @@ platform protect the small thing it handles best: one wrapping root.
 
 ### Store the changing key package directly in the platform provider
 
-Rejected for V2. It makes every passphrase add, update, or removal a transaction
+Rejected for V2. It makes every passphrase add or removal a transaction
 across both the credential provider and encrypted file. A stable platform root
 provides the same outer platform protection while allowing the changing package,
 policy, key epoch, and records to commit in one atomic file replacement.
@@ -2124,8 +2142,8 @@ remained unavailable.
 
 ### M6 — Passphrase credentials and rotation
 
-Implement passphrase open, add, update, remove, Argon2id, full `Kstore` rotation,
-method-ID continuity, and stale-session behavior.
+Implement passphrase open, add, remove, Argon2id, full `Kstore` rotation,
+fresh enrollment IDs, and stale-session behavior.
 
 Exit gate: every auth change is one atomic complete-file replacement; every
 record is resealed under the new epoch; an old envelope cannot open a future
@@ -2134,15 +2152,14 @@ and redaction contract.
 
 The M6 implementation receipt is the injectable, isolate-serialized
 `V2PassphraseDeriver`, Argon2id profile 1, strict protected-open state machine,
-and operation-local framed rotation used by `V2StoreSession`. Auth add, update,
-and removal each create a fresh `Kstore`, advance the epoch, verify every source
+and operation-local framed rotation used by `V2StoreSession`. Auth add and removal each create a fresh `Kstore`, advance the epoch, verify every source
 frame, decrypt and reseal one value at a time, authenticate the complete staged
 snapshot, atomically replace it, and only then advance the owning session.
 Verified post-replacement failures adopt the committed key; indeterminate
 outcomes immediately invalidate affected sessions.
 
-Disposable lifecycle and fault suites cover the open matrix, method-ID
-continuity, wrong and superseded passphrases, early credential release, full
+Disposable lifecycle and fault suites cover the open matrix, fresh enrollment
+IDs, wrong and superseded passphrases, early credential release, full
 frame resealing, same-runtime and separate-engine stale sessions, opens racing
 rotation, pre-replacement rollback, verified post-replacement adoption,
 indeterminate replacement, and credential-free reset. The production runtime
@@ -2442,7 +2459,7 @@ an accepted security claim until:
   stale-session classification; open, auth changes, and reset permit only trusted
   OS/provider UI and preserve typed cancellation and failure. Provider open
   decrypts no manifest or frame, and an existing store never changes provider;
-- `session.auth.add/update/remove/list` tests prove passphrase cardinality,
+- `session.auth.add/remove/list` tests prove passphrase cardinality,
   redacted `AuthMethod` values, stable opaque IDs, removal of the final
   additional method, and absence of an old unlock route; fault injection proves
   the platform root remains unchanged,

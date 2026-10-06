@@ -159,7 +159,9 @@ control. Disabled actions also disable their shortcuts.
 
 Short terminals reserve more space for records and show a scrollbar when the
 list can overflow. A 35-key store displays seven ordinary rows at 80×20 and nine
-at 40×24; taller terminals retain more spacious layout.
+at 40×24. Larger terminals center the app within a 104-column, 32-row area;
+compact forms and prompts are centered within that area. Smaller windows use
+their available space, keeping actions visible.
 
 Green marks primary actions and success; amber marks disclosure; red marks
 destructive actions and errors. The focused field has a cyan border. Button
@@ -187,12 +189,16 @@ Delete, Clear and Remove passphrase use compact centered confirmations.
 Cancel has initial focus; Tab or arrow keys move to the confirming action.
 An empty vault focuses New key. Clicking an action also gives it keyboard focus.
 
-Settings keeps **Security** and **Data** in a left sidebar, with the selected
+The centered frame carries a plain `keybay` title in its top border. It sizes
+around forms and gives lists and settings the available room. The terminal's
+font, default text color and background remain in control.
+
+Settings keeps **Security**, **Data** and **Appearance** in a left sidebar, with the selected
 category’s content beside it. The filled highlight marks keyboard focus;
 each list’s current row keeps its `›` marker when focus moves elsewhere.
 Security shows passphrase
-protection and the five-minute native idle-exit policy, and lets you add, change or
-remove the passphrase. A mismatched confirmation keeps both entries masked,
+protection, passkey count and the five-minute native idle-exit policy. It offers
+Add passphrase when absent, Add hardware key, and removal of enrolled methods. A mismatched confirmation keeps both entries masked,
 marks the confirmation field red, and lets you correct it in place.
 The idle timeout is not currently user-configurable. The browser UX preview
 disables it and shows `Idle exit: Off`.
@@ -204,6 +210,19 @@ managed store, and exits without creating a replacement. There is no passphrase
 recovery. Unlock offers a neutral “Forgot passphrase?” link; reset is available
 from that explanation, followed by the typed confirmation. Record changes from other processes follow the SDK's normal concurrent
 write rules; reopen to refresh external changes.
+
+Appearance offers **Accent** (Green, Cyan, Blue or Magenta) and **Contrast**
+(Normal or High). Changes apply immediately; Enter or a click selects a choice.
+High contrast removes dim text and strengthens focus cues. Accent changes the
+frame, title and primary actions; warning and error colors retain their meaning.
+`NO_COLOR=1 keybay` disables colors while preserving focus, selection and
+validation cues.
+
+Appearance is saved locally outside the encrypted store, so it also applies
+before unlocking. macOS uses `~/Library/Application Support/keybay/appearance.json`;
+Linux uses `$XDG_CONFIG_HOME/keybay/appearance.json`, defaulting to
+`~/.config/keybay/appearance.json`. Missing or malformed preferences use the
+defaults. A save failure keeps the choice for the current session and reports it.
 
 The UI needs the foreground controlling terminal on both stdin and stdout.
 Use at least 80×20 cells, or 40×24 for the narrow layout. Resizing or reported
@@ -237,6 +256,60 @@ The UI disables Fleury debug/hot reload and refuses `FLEURY_*` runtime settings
 or an active Dart VM service before opening the SDK. Fleury currently uses an
 exact Git revision; release builds wait for a reviewed hosted Fleury release.
 Source and native archive builds remain supported.
+
+### Hardware keys in the TUI
+
+A build with the Keypass native adapter can add a hardware passkey from
+Settings → Security → **Add hardware key**. Connect one compatible FIDO2 key,
+optionally name it, and choose Add. Touch the key when it flashes. If the key
+requires a PIN, enter its existing PIN in the masked field and submit; rejected
+PINs are never retried automatically. Cancel waits for the operation to finish.
+
+On reopening, the TUI goes directly to the last successfully used method. If
+there is no remembered choice, a single usable method starts directly; several
+offer a chooser. A hardware selection starts immediately: connect the key, then
+touch it when it flashes. **Other methods** cancels pending work before returning
+to the chooser. With only one usable method, Escape quits. Connection checks
+wait up to two minutes; failures require an explicit retry.
+
+The TUI remembers only a nonsecret method ID in local app state. Missing,
+removed or unavailable choices are ignored, and preference errors cannot block
+unlock. Multiple enrollments are allowed; the TUI uses the selected method's
+exact saved ID and RP. Security
+→ **Unlock methods** removes a selected enrollment after confirmation. Remaining
+methods are alternatives; removing the last one returns to platform-only
+protection. Removal does not delete the passkey from the physical key.
+
+This hardware route needs no website. The CLI owns a stable hardware RP;
+ordinary CLI processes do not use system passkeys. `run`, `get`, `set`, `list`
+and `rm` can unlock with an enrolled hardware key or passphrase. One supported
+method is used directly; several produce a numbered choice. PIN input and
+hardware instructions use the controlling terminal, leaving piped stdin and
+redirected stdout alone. Commands do not enroll new methods.
+
+Source runs now use Keypass's Dart build hook to compile and load the desktop
+hardware adapter automatically. Build hosts need the prerequisites installed by
+`bash tool/install_cli_hardware_build_deps.sh`; end users of a native release do
+not. A hook-aware `rk use local -p keybay_cli` keeps the normal `keybay` command
+on this checkout and prepares assets in the owning project before launching it.
+Older rk local launchers can skip hooks when called outside the project; reselect
+Local after updating rk to its hook-aware launcher.
+
+For a disposable attended macOS test from a source checkout, run:
+
+```sh
+./tool/build_cli_hardware_test.sh
+open 'build/hardware-tui-test/Start hardware test.command'
+```
+
+This requires Dart, CMake, libfido2 and OpenSSL development dependencies. The
+script builds the pinned native adapter beside the test executable and uses a
+disposable vault and test RP. Build and operation receipts stay in that output
+directory. After enrolling, quit and reopen to verify fresh-process unlock,
+then run `Test command unlock.command` from the same directory. Both launchers
+use the same disposable vault. The build bundles its native dependencies;
+physical-device and published distribution qualification remain separate. See the
+[integration plan](../../doc/reviews/2026-10-04-tui-passkeys-plan.md).
 
 ### Local browser UX preview
 
@@ -359,11 +432,13 @@ print or transmit them.
 
 ## Authentication and lifetime
 
-Platform protection is always present. If the store also requires a passphrase,
-`set`, `get`, `rm`, `list`, and a secret-referencing `run` each make one hidden
-passphrase attempt through the controlling terminal. Wrong input exits; there
-is no automatic retry, background unlock agent, or cache between commands.
-A value pipe remains separate from the passphrase, and `run` leaves stdin for
+Platform protection is always present. `set`, `get`, `rm`, `list`, and a
+secret-referencing `run` authenticate an additional method when configured.
+The selected passphrase is read once with input hidden. A hardware operation
+asks for the key's existing PIN only after the provider requires it; a rejected
+PIN exits without retry. Ctrl+C cancels and waits for provider cleanup before
+restoring the terminal. No credential is cached between commands.
+A value pipe remains separate from authentication, and `run` leaves stdin for
 the child. Help, version, and literal-only `run` never open Keybay.
 
 Use a passphrase for high-value credentials on ordinary desktop hosts. Their
@@ -373,20 +448,20 @@ that program can obtain the platform root and encrypted file.
 
 Before `run` reads any referenced value, the terminal shows the canonical
 executable, arguments, and every manifest environment name. For a protected
-store this precedes the passphrase prompt, which is the approval. Without a
-passphrase the summary is shown whenever a terminal is attached, but nothing is
+store this precedes the method choice or authentication prompt. Without an
+additional method the summary is shown whenever a terminal is attached, but nothing is
 asked: it makes a launch visible, not approved. References show their key names;
 literal values and secret values are omitted. Paths and arguments are quoted
 with terminal controls escaped. Assignments that can make the program run other
 code, such as `PATH`, `LD_*`, `DYLD_*`, `NODE_OPTIONS`, `BASH_ENV`, `PYTHON*`
 and `GIT_*`, are marked; the marking is a review aid, not a complete list.
 
-Without a passphrase, any program running as you can use `keybay list` and
+Without an additional unlock method, any program running as you can use `keybay list` and
 `keybay run` to read every value, without a terminal or prompt. On macOS that
 also bypasses the Keychain prompt an unrelated program would otherwise meet.
-Add a passphrase in `keybay open` → Settings → Security when that matters.
+Add a passphrase or hardware key in `keybay open` → Settings → Security when that matters.
 
-Passphrase setup/change/removal is available in `keybay open` → Settings → Security;
+Unlock-method enrollment/removal is available in `keybay open` → Settings → Security;
 these standalone commands do not add a second management interface. Opening the
 SDK can also invoke trusted OS/provider UI, including without a terminal.
 Record operations never invoke it.
@@ -473,8 +548,14 @@ From the repository root:
 
 No arguments selects `core`. Reports under `build/regression` record
 `kind: cli-regression`, source digest, platform, ABI, and per-selection result.
-A missing prerequisite is blocked (69), never a pass. The core archive/signature
-checks establish structure only; final signed distribution and upgrade evidence
+A missing prerequisite is blocked (69), never a pass. Core regression includes
+hardware enrollment/unlock terminal scenarios using a fake passkey provider:
+PIN masking, deliberate retry, cancellation, interruption, idle exit and
+foreground loss. These do not access a physical key and do not replace attended
+hardware qualification. Core also builds and relocates the hardware adapter,
+loads only its ABI metadata, and checks archive integrity. See
+[native packaging](../../doc/cli-hardware-packaging.md) for signed builds;
+ final signed distribution and upgrade evidence
 remain a separate release gate. Generic Dart installation is not qualified by
 these checks.
 

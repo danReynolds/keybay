@@ -1,68 +1,69 @@
 part of 'keybay_v2.dart';
 
-enum _AuthChange { add, update, remove }
+enum _AuthChange { add, remove }
 
 enum _RotationGeneration { old, replacement, unknown }
 
-/// Rotates the store key and unlock policy in one complete-file transaction.
+/// Prepares authentication outside the file lock, then atomically rotates.
 ///
-/// The returned value is the configured passphrase method ID, or `null` after
-/// removal. Credentials authorize only construction of the replacement route;
-/// the already-open session authorizes the policy change itself.
-Future<String?> _commitAuthChange(
+/// An authenticated session authorizes changes; credential material is used
+/// only for the newly enrolled method. Every surviving method is
+/// rewrapped to its authenticated public key without requesting its secret.
+Future<AuthMethod?> _commitAuthChange(
   V2StoreSession session,
   _AuthChange change, {
   _CredentialSnapshot? credential,
   String? methodId,
 }) async {
-  final currentMethodId = session._passphraseMethodId;
-  switch (change) {
-    case _AuthChange.add:
-      if (credential == null || methodId != null) {
-        throw StateError('Invalid passphrase-add operation.');
-      }
-    case _AuthChange.update:
-      if (credential == null || methodId != null) {
-        throw StateError('Invalid passphrase-update operation.');
-      }
-    case _AuthChange.remove:
-      if (credential != null) {
-        throw StateError('Invalid passphrase-remove operation.');
-      }
-  }
-
   Future<void>? peerDrain;
-  String? result;
+  AuthMethod? result;
   Object? primaryFailure;
   StackTrace? primaryStack;
+  _PreparedAuthRotation? prepared;
   try {
+    _checkPasskeyCancelled(credential);
+    session._ensureCurrent();
+    final plan = await _prepareAuthRotation(
+      session,
+      change,
+      credential: credential,
+      methodId: methodId,
+    );
+    prepared = plan;
     result = await session._host.files.withExclusiveTransaction((
       transaction,
     ) async {
       session._ensureCurrent();
+      _checkPasskeyCancelled(credential);
       await _requireCompleteStore(transaction);
       final sourcePin = await _openPin(transaction.openPinnedLive);
 
       _OpenedGeneration? source;
-      PlatformRootLease? lease;
-      V2KeyPackage? currentPackage;
-      V2KeyPackage? replacementPackage;
       V2Manifest? replacementManifest;
       final pendingEntries = <V2ManifestEntry>[];
-      Uint8List? currentPlaintext;
-      Uint8List? currentStoreKey;
-      Uint8List? nextStoreKey;
-      Uint8List? nextMethodBytes;
-      Uint8List? nextSalt;
-      Uint8List? nextPassphraseKey;
-      Uint8List? replacementPlaintext;
       StagedStoreFile? stage;
       var sourcePinClosed = false;
       var replacementAdopted = false;
-      final nextEpoch = session._epoch + 1;
-      String? nextMethodId;
+      final nextEpoch = plan.epoch;
+      final nextStoreKey = plan.storeKey;
 
       try {
+        final actualPrefix = await _readPrefix(sourcePin);
+        if (!_constantTimeEquals(
+              actualPrefix.sealedPackage,
+              plan.originalPrefix.sealedPackage,
+            ) ||
+            !_constantTimeEquals(
+              encodeBootstrap(actualPrefix.bootstrap),
+              encodeBootstrap(plan.originalPrefix.bootstrap),
+            )) {
+          throw _error(
+            KeybayErrorCode.storeStateConflict,
+            'Authentication state changed while preparing the update.',
+          );
+        }
+        // A record writer preserves the prefix. Authenticate and rotate its
+        // latest generation rather than replacing it with preparation's pin.
         source = await _openAuthenticatedGeneration(
           host: session._host,
           pin: sourcePin,
@@ -70,168 +71,8 @@ Future<String?> _commitAuthChange(
           storeId: session._storeId,
         );
 
-        final state = ProviderState(source.prefix.bootstrap.core.providerState);
-        lease = await session._host.protector.openExisting(
-          state,
-          interaction: PlatformInteraction.allowed,
-        );
-        if (lease == null || !lease.providerState.hasSameBytes(state)) {
-          throw _error(
-            KeybayErrorCode.platformKeyInvalidated,
-            'The platform protection key is unavailable.',
-          );
-        }
-        final domain = session._host.binding.domain.copyBytes();
-        final currentAad = encodePlatformPackageAad(
-          storageDomain: domain,
-          bootstrapCore: source.prefix.bootstrap.core,
-        );
-        currentPlaintext = await lease.openPackage(
-          sealedPackage: source.prefix.sealedPackage,
-          aad: currentAad,
-        );
-        currentPackage = decodeKeyPackage(currentPlaintext);
-
-        final currentStoreId = currentPackage.storeId;
-        if (currentPackage.epoch != session._epoch ||
-            !_constantTimeEquals(currentStoreId, session._storeId)) {
-          throw _error(
-            KeybayErrorCode.staleSession,
-            'The Keybay session is stale.',
-          );
-        }
-        if (currentMethodId == null) {
-          if (currentPackage is! V2PlatformOnlyPackage) {
-            throw _error(
-              KeybayErrorCode.staleSession,
-              'The Keybay session is stale.',
-            );
-          }
-          currentStoreKey = currentPackage.takeStoreKey();
-          if (!_constantTimeEquals(currentStoreKey, session._storeKey)) {
-            throw _error(
-              KeybayErrorCode.storeAuthenticationFailed,
-              'The platform package does not match the active session.',
-            );
-          }
-        } else {
-          if (currentPackage is! V2PassphrasePackage) {
-            throw _error(
-              KeybayErrorCode.staleSession,
-              'The Keybay session is stale.',
-            );
-          }
-          final currentMethodBytes = currentPackage.methodId;
-          if (encodeMethodId(currentMethodBytes) != currentMethodId) {
-            throw _error(
-              KeybayErrorCode.staleSession,
-              'The Keybay session is stale.',
-            );
-          }
-        }
-
-        switch (change) {
-          case _AuthChange.add:
-            if (currentMethodId != null) {
-              throw _error(
-                KeybayErrorCode.authMethodAlreadyConfigured,
-                'A passphrase method is already configured.',
-              );
-            }
-          case _AuthChange.update:
-            if (currentMethodId == null) {
-              throw _error(
-                KeybayErrorCode.authMethodNotConfigured,
-                'No passphrase method is configured.',
-              );
-            }
-          case _AuthChange.remove:
-            if (currentMethodId == null || currentMethodId != methodId) {
-              throw _error(
-                KeybayErrorCode.authMethodNotConfigured,
-                'The requested unlock method is not configured.',
-              );
-            }
-        }
-
-        nextStoreKey = session._entropy.randomBytes(
-          V2StoreLimits.storeKeyBytes,
-        );
-        if (change == _AuthChange.remove) {
-          replacementPackage = V2PlatformOnlyPackage(
-            storeId: session._storeId,
-            epoch: nextEpoch,
-            storeKey: nextStoreKey,
-          );
-        } else {
-          nextMethodBytes = change == _AuthChange.add
-              ? session._entropy.randomBytes(V2StoreLimits.methodIdBytes)
-              : decodeMethodId(currentMethodId!);
-          nextMethodId = encodeMethodId(nextMethodBytes);
-          nextSalt = session._entropy.randomBytes(V2StoreLimits.argonSaltBytes);
-          final nextEnvelopeNonce = session._entropy.randomBytes(
-            V2StoreLimits.nonceBytes,
-          );
-          nextPassphraseKey = await _derivePassphraseAndReleaseCredential(
-            deriver: session._engine._passphraseDeriver,
-            credential: credential!,
-            profileId: v2FirstPassphraseProfile,
-            salt: nextSalt,
-          );
-          final nextInnerEnvelope = await sealPassphraseEnvelope(
-            passphraseKey: nextPassphraseKey,
-            storeKey: nextStoreKey,
-            storeId: session._storeId,
-            epoch: nextEpoch,
-            methodId: nextMethodBytes,
-            profileId: v2FirstPassphraseProfile,
-            salt: nextSalt,
-            nonce: nextEnvelopeNonce,
-          );
-          replacementPackage = V2PassphrasePackage(
-            storeId: session._storeId,
-            epoch: nextEpoch,
-            methodId: nextMethodBytes,
-            profileId: v2FirstPassphraseProfile,
-            salt: nextSalt,
-            innerEnvelope: nextInnerEnvelope,
-          );
-        }
-
-        replacementPlaintext = encodeKeyPackage(replacementPackage);
-        final replacementDomain = session._host.binding.domain.copyBytes();
-        final replacementAad = encodePlatformPackageAad(
-          storageDomain: replacementDomain,
-          bootstrapCore: source.prefix.bootstrap.core,
-        );
-        final sealedPackage = await lease.sealPackage(
-          plaintext: replacementPlaintext,
-          aad: replacementAad,
-        );
-        _validateSealedPackage(sealedPackage);
-        await _verifyKeyPackage(
-          lease: lease,
-          sealedPackage: sealedPackage,
-          aad: replacementAad,
-          expectedStoreId: session._storeId,
-          expectedStoreKey: nextStoreKey,
-          expectedEpoch: nextEpoch,
-          expectedMethodId: nextMethodBytes,
-          expectedSalt: nextSalt,
-          passphraseKey: nextPassphraseKey,
-        );
-
-        await lease.close();
-        lease = null;
-        if (nextPassphraseKey != null) {
-          _clear(nextPassphraseKey);
-          nextPassphraseKey = null;
-        }
-
-        final replacementBootstrap = V2Bootstrap(
-          core: source.prefix.bootstrap.core,
-          sealedPackageLength: sealedPackage.length,
-        );
+        final replacementBootstrap = plan.bootstrap;
+        final sealedPackage = plan.sealedPackage;
         final bootstrapBytes = encodeBootstrap(replacementBootstrap);
         final expectedLength =
             bootstrapBytes.length +
@@ -328,12 +169,13 @@ Future<String?> _commitAuthChange(
           await _verifyCompleteSnapshot(
             host: session._host,
             pin: pin,
-            storeKey: nextStoreKey!,
+            storeKey: nextStoreKey,
             storeId: session._storeId,
             expectedRecordCount: replacementManifest!.entries.length,
           );
         });
         session._ensureCurrent();
+        _checkPasskeyCancelled(credential);
         try {
           await stage.replaceLive();
           final committedPin = await _openPin(transaction.openPinnedLive);
@@ -341,7 +183,7 @@ Future<String?> _commitAuthChange(
             await _verifyCompleteSnapshot(
               host: session._host,
               pin: pin,
-              storeKey: nextStoreKey!,
+              storeKey: nextStoreKey,
               storeId: session._storeId,
               expectedRecordCount: replacementManifest!.entries.length,
             );
@@ -363,28 +205,19 @@ Future<String?> _commitAuthChange(
           rethrow;
         } finally {
           if (replacementAdopted) {
-            final adoptedKey = nextStoreKey;
-            nextStoreKey = null;
             session._adoptRotation(
-              storeKey: adoptedKey,
+              storeKey: plan.takeStoreKey(),
               epoch: nextEpoch,
-              passphraseMethodId: nextMethodId,
+              authMethods: plan.authMethods,
             );
             peerDrain = session._engine._advanceRotationGeneration(session);
           }
         }
 
-        return nextMethodId;
+        return plan.changedMethod;
       } finally {
         if (!sourcePinClosed) {
           await _closePin(sourcePin);
-        }
-        if (lease != null) {
-          try {
-            await lease.close();
-          } on Object {
-            // A prior failure retains precedence; the outer transaction maps it.
-          }
         }
         source?.clear();
         replacementManifest?.clear();
@@ -393,18 +226,13 @@ Future<String?> _commitAuthChange(
             entry.clear();
           }
         }
-        currentPackage?.clear();
-        replacementPackage?.clear();
-        if (currentPlaintext != null) _clear(currentPlaintext);
-        if (currentStoreKey != null) _clear(currentStoreKey);
-        if (nextStoreKey != null) _clear(nextStoreKey);
-        if (nextPassphraseKey != null) _clear(nextPassphraseKey);
-        if (replacementPlaintext != null) _clear(replacementPlaintext);
       }
     });
   } on Object catch (error, stackTrace) {
     primaryFailure = _mapReaderFailure(error);
     primaryStack = stackTrace;
+  } finally {
+    prepared?.clear();
   }
 
   try {
@@ -416,6 +244,178 @@ Future<String?> _commitAuthChange(
     Error.throwWithStackTrace(primaryFailure, primaryStack!);
   }
   return result;
+}
+
+/// Owns only the prepared next key after provider resources have been closed.
+/// The original authenticated prefix is a CAS token, not a record snapshot.
+final class _PreparedAuthRotation {
+  _PreparedAuthRotation({
+    required this.originalPrefix,
+    required this.bootstrap,
+    required this.sealedPackage,
+    required this.epoch,
+    required Uint8List storeKey,
+    required this.authMethods,
+    required this.changedMethod,
+  }) : _storeKey = storeKey;
+
+  final _StorePrefix originalPrefix;
+  final V2Bootstrap bootstrap;
+  final Uint8List sealedPackage;
+  final int epoch;
+  final List<AuthMethod> authMethods;
+  final AuthMethod? changedMethod;
+  Uint8List? _storeKey;
+
+  Uint8List get storeKey => _storeKey!;
+
+  Uint8List takeStoreKey() {
+    final key = _storeKey!;
+    _storeKey = null;
+    return key;
+  }
+
+  void clear() {
+    final key = _storeKey;
+    _storeKey = null;
+    if (key != null) _clear(key);
+  }
+}
+
+Future<_PreparedAuthRotation> _prepareAuthRotation(
+  V2StoreSession session,
+  _AuthChange change, {
+  required _CredentialSnapshot? credential,
+  required String? methodId,
+}) async {
+  // This short transaction checks incomplete state before presenting UI. The
+  // lock is released with the original inode pinned, before any provider call.
+  final pin = await session._host.files.withExclusiveTransaction((
+    transaction,
+  ) async {
+    session._ensureCurrent();
+    _checkPasskeyCancelled(credential);
+    await _requireCompleteStore(transaction);
+    return _openPin(transaction.openPinnedLive);
+  });
+  _OpenedGeneration? source;
+  PlatformRootLease? lease;
+  V2KeyPackage? currentPackage;
+  V2KeyPackage? replacementPackage;
+  Uint8List? currentPlaintext;
+  Uint8List? currentStoreKey;
+  Uint8List? nextStoreKey;
+  Uint8List? replacementPlaintext;
+  _PreparedAuthRotation? result;
+  Object? primaryFailure;
+  StackTrace? primaryStack;
+  try {
+    source = await _openAuthenticatedGeneration(
+      host: session._host,
+      pin: pin,
+      storeKey: session._storeKey,
+      storeId: session._storeId,
+    );
+    session._ensureCurrent();
+    _checkPasskeyCancelled(credential);
+    final state = ProviderState(source.prefix.bootstrap.core.providerState);
+    lease = await session._host.protector.openExisting(
+      state,
+      interaction: PlatformInteraction.allowed,
+    );
+    if (lease == null || !lease.providerState.hasSameBytes(state)) {
+      throw _error(
+        KeybayErrorCode.platformKeyInvalidated,
+        'The platform protection key is unavailable.',
+      );
+    }
+    currentPlaintext = await lease.openPackage(
+      sealedPackage: source.prefix.sealedPackage,
+      aad: encodePlatformPackageAad(
+        storageDomain: session._host.binding.domain.copyBytes(),
+        bootstrapCore: source.prefix.bootstrap.core,
+      ),
+    );
+    currentPackage = decodeKeyPackage(currentPlaintext);
+    if (currentPackage.epoch != session._epoch ||
+        !_constantTimeEquals(currentPackage.storeId, session._storeId)) {
+      throw _error(
+        KeybayErrorCode.staleSession,
+        'The Keybay session is stale.',
+      );
+    }
+    if (currentPackage is V2PlatformOnlyPackage) {
+      currentStoreKey = currentPackage.takeStoreKey();
+      if (!_constantTimeEquals(currentStoreKey, session._storeKey)) {
+        throw _error(
+          KeybayErrorCode.storeAuthenticationFailed,
+          'The platform package does not match this session.',
+        );
+      }
+    }
+    final nextEpoch = session._epoch + 1;
+    nextStoreKey = session._entropy.randomBytes(V2StoreLimits.storeKeyBytes);
+    final next = await _buildAuthReplacement(
+      session: session,
+      current: currentPackage,
+      change: change,
+      credential: credential,
+      methodId: methodId,
+      epoch: nextEpoch,
+      storeKey: nextStoreKey,
+    );
+    replacementPackage = next.package;
+    session._ensureCurrent();
+    _checkPasskeyCancelled(credential);
+    replacementPlaintext = encodeKeyPackage(replacementPackage);
+    final core = V2BootstrapCore(
+      source.prefix.bootstrap.core.providerState,
+      suite: v2MethodsSuite,
+    );
+    final aad = encodePlatformPackageAad(
+      storageDomain: session._host.binding.domain.copyBytes(),
+      bootstrapCore: core,
+    );
+    final sealed = await lease.sealPackage(
+      plaintext: replacementPlaintext,
+      aad: aad,
+    );
+    _validateSealedPackage(sealed);
+    await _verifyKeyPackage(
+      lease: lease,
+      sealedPackage: sealed,
+      aad: aad,
+      expectedPlaintext: replacementPlaintext,
+    );
+    result = _PreparedAuthRotation(
+      originalPrefix: source.prefix,
+      bootstrap: V2Bootstrap(core: core, sealedPackageLength: sealed.length),
+      sealedPackage: sealed,
+      epoch: nextEpoch,
+      storeKey: nextStoreKey,
+      authMethods: _describePackage(replacementPackage),
+      changedMethod: next.method,
+    );
+    nextStoreKey = null;
+  } on Object catch (error, stackTrace) {
+    primaryFailure = error;
+    primaryStack = stackTrace;
+  } finally {
+    source?.clear();
+    currentPackage?.clear();
+    replacementPackage?.clear();
+    if (currentPlaintext != null) _clear(currentPlaintext);
+    if (currentStoreKey != null) _clear(currentStoreKey);
+    if (nextStoreKey != null) _clear(nextStoreKey);
+    if (replacementPlaintext != null) _clear(replacementPlaintext);
+  }
+  final cleanupFailure = await _closeOpenResources(lease, pin);
+  final failure = primaryFailure ?? cleanupFailure;
+  if (failure != null) {
+    result?.clear();
+    Error.throwWithStackTrace(failure, primaryStack ?? StackTrace.current);
+  }
+  return result!;
 }
 
 Future<_RotationGeneration> _classifyRotationGeneration({
