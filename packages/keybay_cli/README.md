@@ -214,7 +214,7 @@ write rules; reopen to refresh external changes.
 Appearance offers **Accent** (Green, Cyan, Blue or Magenta) and **Contrast**
 (Normal or High). Changes apply immediately; Enter or a click selects a choice.
 High contrast removes dim text and strengthens focus cues. Accent changes the
-title and primary actions; warning and error colors retain their meaning.
+frame, title and primary actions; warning and error colors retain their meaning.
 `NO_COLOR=1 keybay` disables colors while preserving focus, selection and
 validation cues.
 

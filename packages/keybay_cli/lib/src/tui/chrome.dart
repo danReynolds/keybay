@@ -18,7 +18,7 @@ final class KeybayFrame extends StatelessWidget {
     fit: StackFit.passthrough,
     children: [
       Container(
-        border: BoxBorder(cellStyle: context.theme.mutedStyle),
+        border: BoxBorder(cellStyle: context.accents.accent),
         padding: const EdgeInsets.all(1),
         child: child,
       ),
