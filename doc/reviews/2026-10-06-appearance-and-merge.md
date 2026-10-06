@@ -99,6 +99,17 @@ still-arriving dialog as evidence of returning to the list. It now waits for
 the unique list footer before reopening the dialog. No production interaction
 was changed for this test synchronization fix. Final hosted CI remains required.
 
+The complete local CLI run also passed hidden input, clipboard, native CTest,
+relocated ABI loading, missing-companion rejection and release archive/binary
+checks. The SDK publication gate passed with exactly four intentional exact-pin
+warnings. Hosted CI then exposed two build-host issues: Linux Flutter widget
+tests needed the existing native prerequisite installer, and Dart 3.11 emitted
+hook progress on the source launcher's stdout. The demo job now installs those
+prerequisites, and the development launcher requests error-only compiler output.
+Cold and cached launches on Dart 3.11.0 and 3.13.5 preserve the unrelated caller's
+manifest directory and emit only the child marker on stdout. Workflow and
+launcher lint checks pass. No credential or vault behavior changed in these fixes.
+
 ### Original blocker
 
 At the initial review, PR 88 depended on the private, unpublished `danReynolds/keypass` repository
