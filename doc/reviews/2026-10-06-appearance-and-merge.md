@@ -42,6 +42,37 @@ firewall expects the same public URL. Workspace resolution with
 hash changed. Hosted CI must still pass before merge; pub.dev publication is a
 separate release action.
 
+## Fresh hosted CI and compiler follow-up
+
+Run `37475712941` can fetch the public dependency. It exposed three remaining
+issues: one CLI test needed formatting, the publishable SDK rejects a Git
+dependency, and Keypass's hook dependencies conflicted with Flutter 3.44.4's
+`meta` pin. Native integration jobs also reached the CLI build and found that
+current Dart refuses direct source AOT compilation for a package with hooks.
+The Flatpak, site and Gradle-wrapper checks passed in that run.
+
+The controlled compiler now resolves the application's identity and manual
+native-bundle define into a temporary kernel, then compiles that kernel into
+the requested executable or AOT module. The temporary stage is always removed;
+the native companion validation and signing contract are unchanged. Validation:
+
+- Dart 3.13.5: all four identity-mode tests passed, including executable and
+  separate-AOT identity parity, activation and installation.
+- Dart 3.13.5 and minimum Dart 3.11.0: the real CLI compiled and reported its
+  version successfully.
+- Dart 3.13.5: the macOS release candidate built and launched; native CTest and
+  relocated/symlink ABI loading passed. Missing companions were rejected. No
+  device was accessed and this was not a notarized release.
+- Targeted compiler analysis and diff whitespace checks passed.
+
+Keypass PR 3 prepares compatible `hooks 2.0.2` / `code_assets 1.2.1`, a locked
+Flutter consumer-resolution CI check and a public package archive. Its local
+suite passed 166 tests with one platform skip, and the transitive/cache/source
+relocation and CLI bundle checks passed. Committed-archive publication dry-run
+reports only the three intentional exact-pin warnings. Publication itself is
+pending owner approval; no pub.dev upload has occurred. The SDK dependency must
+be switched to the resulting hosted release and all CI rerun before merge.
+
 ### Original blocker
 
 At the initial review, PR 88 depended on the private, unpublished `danReynolds/keypass` repository

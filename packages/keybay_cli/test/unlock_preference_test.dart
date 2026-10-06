@@ -72,18 +72,14 @@ void main() {
     expect(File(file.parent.path).readAsStringSync(), 'unrelated');
   });
 
-  test(
-    'does not read or write through a preference symlink',
-    () async {
-      file.parent.createSync();
-      final target = File('${directory.path}/unrelated')
-        ..writeAsStringSync('retained');
-      Link(file.path).createSync(target.path);
-      expect(await preference.read(), isNull);
-      await preference.write(first);
-      expect(target.readAsStringSync(), 'retained');
-      expect(Link(file.path).existsSync(), isTrue);
-    },
-    skip: Platform.isWindows,
-  );
+  test('does not read or write through a preference symlink', () async {
+    file.parent.createSync();
+    final target = File('${directory.path}/unrelated')
+      ..writeAsStringSync('retained');
+    Link(file.path).createSync(target.path);
+    expect(await preference.read(), isNull);
+    await preference.write(first);
+    expect(target.readAsStringSync(), 'retained');
+    expect(Link(file.path).existsSync(), isTrue);
+  }, skip: Platform.isWindows);
 }

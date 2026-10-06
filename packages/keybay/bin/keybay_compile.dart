@@ -37,25 +37,47 @@ Future<void> main(List<String> arguments) async {
     ).resolve();
     final output = File(arguments[2]).absolute.path;
     final packageConfig = await Isolate.packageConfig;
-    final process = await Process.start(
-      Platform.resolvedExecutable,
-      <String>[
-        'compile',
-        separateModule ? 'aot-snapshot' : 'exe',
-        '-Dkeybay.application_id=${identity.stableValue}',
-        // Custom AOT packagers ship a reviewed sibling-library bundle. Normal
-        // source consumers use Keypass's automatic Dart code assets instead.
-        '-Dkeypass.hardware.manual_bundle=true',
-        if (packageConfig != null)
-          '--packages=${File.fromUri(packageConfig).path}',
-        '-o',
-        output,
-        canonicalEntrypoint.path,
-      ],
-      workingDirectory: canonicalEntrypoint.parent.path,
-      mode: ProcessStartMode.inheritStdio,
-    );
-    exitCode = await process.exitCode;
+    final stage = await Directory.systemTemp.createTemp('keybay-compile-');
+    try {
+      final kernel = '${stage.path}/application.dill';
+      // This custom packager owns the sibling-library bundle. Resolve the
+      // application and its embedded identity into kernel first, then compile
+      // that kernel without asking Dart to run the automatic build hooks.
+      // Ordinary consumers continue to use `dart run` or `dart build cli`.
+      final prepare = await Process.start(
+        Platform.resolvedExecutable,
+        <String>[
+          'compile',
+          'kernel',
+          '-Dkeybay.application_id=${identity.stableValue}',
+          '-Dkeypass.hardware.manual_bundle=true',
+          if (packageConfig != null)
+            '--packages=${File.fromUri(packageConfig).path}',
+          '-o',
+          kernel,
+          canonicalEntrypoint.path,
+        ],
+        workingDirectory: canonicalEntrypoint.parent.path,
+        mode: ProcessStartMode.inheritStdio,
+      );
+      exitCode = await prepare.exitCode;
+      if (exitCode != 0) return;
+      final compile = await Process.start(
+        Platform.resolvedExecutable,
+        [
+          'compile',
+          separateModule ? 'aot-snapshot' : 'exe',
+          '-o',
+          output,
+          kernel,
+        ],
+        workingDirectory: stage.path,
+        mode: ProcessStartMode.inheritStdio,
+      );
+      exitCode = await compile.exitCode;
+    } finally {
+      await stage.delete(recursive: true);
+    }
   } on ApplicationIdentityFailure catch (error) {
     stderr.writeln(
       'Keybay could not embed an application identity (${error.code.name}).',
