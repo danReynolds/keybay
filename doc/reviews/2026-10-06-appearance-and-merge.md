@@ -31,20 +31,29 @@ The branch incorporates `origin/main`'s October 5 security assessment without
 changing its report or disposition. The untracked September 28 research notes
 were left untouched.
 
-## Merge blocker
+## Dependency access follow-up
 
-PR 88 still depends on the private, unpublished `danReynolds/keypass` repository
+With the owner's explicit approval, `danReynolds/keypass` became public on
+October 6. Anonymous HTTPS discovery succeeded without a credential helper.
+The SDK/CLI manifests and all three lockfiles now use HTTPS for the unchanged
+reviewed commit `e5fbdda99639d0b0693b3b0f60ca9825cd5fc336`; the dependency-source
+firewall expects the same public URL. Workspace resolution with
+`--enforce-lockfile` succeeds. No dependency version, commit, or hosted package
+hash changed. Hosted CI must still pass before merge; pub.dev publication is a
+separate release action.
+
+### Original blocker
+
+At the initial review, PR 88 depended on the private, unpublished `danReynolds/keypass` repository
 through `git@github.com:danReynolds/keypass.git`. GitHub run `37379487368` fails
 dependency resolution with `Permission denied (publickey)` before the affected
 CI lanes can analyze, build or test. Live inspection confirmed Keypass remains
-private and Keybay has no repository Actions secret configured for it.
+private and Keybay had no repository Actions secret configured for it.
 
-The existing local dependency cache makes local tests possible, but does not
-resolve fresh-checkout or public-consumer builds. A publicly accessible Keypass
-source with HTTPS pins, or an explicitly chosen private-dependency distribution
-and CI access arrangement, is required before merging. Changing repository
-visibility or granting CI access requires the owner's authorization; neither
-was done as part of the visual change. No check was disabled or bypassed.
+The existing local dependency cache made local tests possible, but did not
+resolve fresh-checkout or public-consumer builds. The follow-up above resolves
+that access blocker without adding a private CI credential. No check was
+disabled or bypassed.
 
 Publication, signed distribution, installed upgrades and physical-device
 qualification remain separate obligations in the existing release documents.
