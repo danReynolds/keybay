@@ -31,8 +31,12 @@ three-file boundary, uses an exact-head lease, and leaves merging to normal PR
 checks. It defaults to a read-only plan; `--publish` enables publication.
 
 The separate **Watcher health** workflow checks daily, independently of the local
-reviewer. It flags no successful scheduled scan within eight days, a failed or
-stuck latest scan, or an assessment not merged within 48 hours. It also checks
+reviewer. It flags no scheduled start or successful all-source scan within eight
+days, a failed or stuck latest scan, or an assessment not merged within 48 hours.
+A newer manual all-source scan can recover a failed scan only after its
+assessment reaches main and its exact successful main-branch Actions run is
+verified. A partial run cannot recover monitoring, and manual recovery never
+hides a disabled or missing schedule. It also checks
 recent scheduled runs whose report branch may have disappeared. One stable
 public health issue is created/reopened on failure, updated only when conditions
 change, and closed on recovery. The check exits unsuccessfully while unhealthy.

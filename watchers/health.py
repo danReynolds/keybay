@@ -22,19 +22,25 @@ def timestamp(value):
     return parsed
 
 
-def evaluate(now, workflow_state, runs, pending, merged):
+def evaluate(now, workflow_state, runs, pending, merged, recoveries=()):
     """Use Actions timestamps, never the age of a rewritten Git commit."""
     problems = []
     if workflow_state != "active":
         problems.append("Security watcher workflow is not active.")
     scheduled = sorted(runs, key=lambda run: timestamp(run["created_at"]), reverse=True)
-    successful = [run for run in scheduled if run["conclusion"] == "success"]
+    successful = sorted(
+        [run for run in [*scheduled, *recoveries] if run["conclusion"] == "success"],
+        key=lambda run: timestamp(run["created_at"]), reverse=True,
+    )
     if not successful or now - timestamp(successful[0]["created_at"]) > SCAN_LIMIT:
-        problems.append("No successful scheduled all-source scan in the last 8 days.")
+        problems.append("No successful all-source scan in the last 8 days.")
+    if not scheduled or now - timestamp(scheduled[0]["created_at"]) > SCAN_LIMIT:
+        problems.append("No scheduled scan started in the last 8 days.")
     if scheduled:
         latest = scheduled[0]
         age = now - timestamp(latest["created_at"])
-        if latest["status"] == "completed" and latest["conclusion"] != "success":
+        recovered = successful and timestamp(successful[0]["created_at"]) > timestamp(latest["created_at"])
+        if latest["status"] == "completed" and latest["conclusion"] != "success" and not recovered:
             problems.append(f"Latest scheduled scan did not succeed: run {latest['id']}.")
         elif latest["status"] != "completed" and age > RUN_LIMIT:
             problems.append(f"Scheduled scan has not completed within 6 hours: run {latest['id']}.")
@@ -54,6 +60,26 @@ def evaluate(now, workflow_state, runs, pending, merged):
     return problems
 
 
+def verified_recovery(raw, run, workflow_id):
+    """A reviewed all-source manual run can repair a failed scheduled scan.
+
+    Call only for reports with a completed assessment on main. The Actions
+    response, not a report's claimed date or status, establishes execution.
+    """
+    statuses = raw.get("statuses")
+    if (raw.get("event") != "workflow_dispatch" or not isinstance(statuses, dict) or
+            set(statuses) != {"dependencies", "platforms", "peers"} or
+            any(value not in ("quiet", "findings") for value in statuses.values())):
+        return False
+    return (run.get("workflow_id") == workflow_id and
+            run.get("event") == "workflow_dispatch" and run.get("head_branch") == "main" and
+            run.get("status") == "completed" and run.get("conclusion") == "success" and
+            str(run.get("id")) == raw.get("run_id") and
+            str(run.get("run_attempt")) == raw.get("attempt") and
+            run.get("head_sha") == raw.get("commit") and
+            raw.get("report_id") == f"github-{run['id']}-{run['run_attempt']}")
+
+
 def collect():
     workflow = api("actions/workflows/security-watchers.yml")
     runs = api("actions/workflows/security-watchers.yml/runs?event=schedule&per_page=100")["workflow_runs"]
@@ -69,6 +95,7 @@ def collect():
     command("git", "fetch", "origin", "main")
     paths = command("git", "ls-tree", "-r", "--name-only", "origin/main", "watchers/reports").splitlines()
     merged = set()
+    recoveries = []
     for path in paths:
         if path.endswith("/assessment.md"):
             value = metadata(command("git", "show", "origin/main:" + path), "assessment")
@@ -77,7 +104,16 @@ def collect():
                 raise ValueError("Merged assessment identity mismatch")
             if value.get("status") in ("assessed", "needs_attention"):
                 merged.add(value["report_id"])
-    return workflow["state"], runs, pending, merged
+                if (raw.get("event") == "workflow_dispatch" and
+                        dt.datetime.now(dt.timezone.utc) - timestamp(raw["started_at"]) <= SCAN_LIMIT):
+                    identity = re.fullmatch(r"github-([1-9][0-9]*)-([1-9][0-9]*)", value["report_id"])
+                    if not identity:
+                        raise ValueError("Invalid merged report identity")
+                    run_id, attempt = identity.groups()
+                    actual = api(f"actions/runs/{run_id}/attempts/{attempt}")
+                    if verified_recovery(raw, actual, workflow["id"]):
+                        recoveries.append(actual)
+    return workflow["state"], runs, pending, merged, recoveries
 
 
 def reconcile_issue(problems, issues, mutate=api):
@@ -108,8 +144,8 @@ def main():
     parser.add_argument("--update-issue", action="store_true", help="Reconcile the single public health issue")
     args = parser.parse_args()
     try:
-        state, runs, pending, merged = collect()
-        problems = evaluate(dt.datetime.now(dt.timezone.utc), state, runs, pending, merged)
+        state, runs, pending, merged, recoveries = collect()
+        problems = evaluate(dt.datetime.now(dt.timezone.utc), state, runs, pending, merged, recoveries)
     except (ValueError, KeyError, subprocess.SubprocessError):
         # Do not publish arbitrary API/error text or raw report content.
         problems = ["Health check could not read or validate its inputs; inspect the failed workflow."]
