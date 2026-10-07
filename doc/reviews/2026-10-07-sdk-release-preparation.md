@@ -49,3 +49,17 @@ Apple provider qualification and nonshipping Go-reference maintenance issues
 remain bounded follow-ups (#76 and #75); no new device result is implied.
 Native CLI release-kit companion packaging, notarized downloaded launch and
 installed upgrades remain separate CLI release gates.
+
+The Linux ARM64 Docker CLI suite also passed with the hosted dependencies,
+including core, PTY, hardware simulations, archive/ABI checks and genuine
+Secret Service command/locked-store flows. Receipt:
+`build/regression/run-gqm4Fl/report.json` (inner container report
+`run-FXUPCC`). This is not ordinary-user physical USB qualification.
+
+Release-kit successfully completed a private SDK stage on `4ec24cf`, with only
+the four deliberate exact-pin warnings. Preserve the existing pub.dev repository
+identity (`https://github.com/danReynolds/keybay`); the former subdirectory URL
+was correctly refused by RK-PUB-010. Later commits require their own final stage.
+The SDK guide's introductory callback wording was also reconciled with the
+implemented data-only credential contract; the enrollment/open examples already
+used the current API.

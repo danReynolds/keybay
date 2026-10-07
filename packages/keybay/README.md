@@ -41,8 +41,9 @@ do not automatically reset on error.
 
 Opening, changing authentication, and resetting may invoke trusted OS/provider
 UI. Record operations and `auth.list()` never prompt. Mandatory platform
-protection cannot be bypassed; direct hardware passkeys use application-supplied
-PIN, connection-selection and progress callbacks.
+protection cannot be bypassed. Hardware credentials accept optional PIN bytes;
+the application handles typed errors when a PIN or an unambiguous connection is
+required. Credential objects do not contain UI callbacks.
 
 ## Application identity
 

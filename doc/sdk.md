@@ -57,7 +57,9 @@ that can accommodate that interaction. Record operations and `auth.list()`
 never prompt or acquire the platform provider, including when an operation fails.
 There is no option to bypass mandatory platform protection. The application
 supplies passphrase bytes explicitly; direct hardware passkeys use the
-application's PIN, connection-selection and progress callbacks.
+application's supplied PIN bytes. Credential objects have no UI callbacks;
+missing PINs and ambiguous connections return typed errors for the application
+to handle.
 
 Strings are the default API. Binary callers use `getBytes` and `setBytes`.
 `getManyBytes` authenticates one store generation and returns only the exact
