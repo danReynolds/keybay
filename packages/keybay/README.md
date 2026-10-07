@@ -5,9 +5,9 @@ application. No Flutter plugin, account, daemon, or network service.
 
 Requires Dart 3.11 or later, including when used through Flutter.
 
-Version 0.2.0 is prepared but not yet published. See
+See the
 [release readiness](https://github.com/danReynolds/keybay/blob/main/doc/release-readiness.md)
-for its scope and the separate CLI distribution gates.
+record for the SDK's qualification scope and the separate CLI distribution gates.
 
 Version 0.2.0 replaces the 0.1.x API and encrypted format. It does not read,
 migrate or delete existing V1 stores. An upgrade does not carry those secrets

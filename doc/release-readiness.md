@@ -1,7 +1,6 @@
 # Keybay 0.2.0 release readiness
 
-Reviewed September 21, 2026 against `7965a5ea02e848a4de7216b094563cba5a0c40ee`;
-updated September 24 to ship the CLI only through Homebrew and GitHub releases.
+Updated October 7, 2026 for SDK publication after the passkey integration merged.
 The SDK and CLI/TUI implementation are integrated. The scoped SDK release is
 prepared; CLI publication still needs native distribution qualification and
 hosted Fleury dependencies. The SDK ships on pub.dev; the CLI ships only as
@@ -44,10 +43,11 @@ package before the dependent CLI.
 
 ## Native macOS packaging change
 
-The current release-kit Dart builder uses `dart compile exe`, and its binary
-pipeline represents one executable through signing, notarization, archiving
-and Homebrew installation. Keybay's local archive helper likewise packages one
-`keybay` file. The existing post-signing launch check must remain a gate.
+The original September builder used a single executable. Release-kit now
+supports a signed Dart runtime/module bundle, and Keybay's local archive helper
+includes its hardware libraries. Those hardware companions still need to pass
+through release-kit's staging, signing, notarization and Homebrew path. The
+existing post-signing launch check must remain a gate.
 
 A Developer ID signed, hardened single-file CLI passed signature verification
 but was killed before `--version` on macOS 26.2 ARM64 / Dart 3.13.4. A separate
@@ -55,7 +55,7 @@ signed AOT module and matching signed runtime passed help/version checks. A
 disposable signed CLI fixture also passed protected-store upgrade checks.
 Those fixtures establish the candidate format, not a finished release package.
 
-Implement the bundle through the existing build and release steps:
+The release integration must preserve these locally implemented properties:
 
 1. Compile the application as an AOT module while preserving the validated
    `keybay.application_id` declaration. The SDK's `keybay_compile --aot-snapshot`

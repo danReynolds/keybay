@@ -10,7 +10,9 @@ import '../osv.dart';
 
 typedef TextFetcher = Future<String> Function(Uri uri);
 
-final _androidPath = RegExp(r'^/docs/security/bulletin/(\d{4}-\d{2}-\d{2})$');
+final _androidPath = RegExp(
+  r'^/docs/security/bulletin/(?:(\d{4})/)?(\d{4}-\d{2}-\d{2})$',
+);
 final _appleUrl = RegExp(r'^https://support\.apple\.com/en-us/(\d{5,9})$');
 final _cve = RegExp(r'^CVE-\d{4}-\d{4,}$');
 final _safeSubject = RegExp(r'^[^\r\n@`]{1,200}$');
@@ -110,7 +112,7 @@ List<WatcherFinding> androidFindings(
   DateTime? before,
 }) {
   final document = html.parse(source);
-  final dates = SplayTreeSet<String>();
+  final bulletins = SplayTreeMap<String, String>();
   var sawBulletinLink = false;
   for (final link in document.querySelectorAll('a[href]')) {
     final href = link.attributes['href'];
@@ -126,26 +128,39 @@ List<WatcherFinding> androidFindings(
       continue;
     }
     sawBulletinLink = true;
-    final date = _parseIsoDate(match.group(1)!);
+    final dateText = match.group(2)!;
+    if (match.group(1) != null && match.group(1) != dateText.substring(0, 4)) {
+      throw const FormatException(
+        'Android bulletin directory year mismatches date',
+      );
+    }
+    final date = _parseIsoDate(dateText);
     if (!date.isBefore(_date(startedAt)) &&
         (before == null || date.isBefore(_date(before)))) {
-      dates.add(_dateOnly(date));
+      // Preserve the official path, dropping locale queries and fragments.
+      // If both forms occur, prefer the year-qualified path deterministically.
+      if (match.group(1) != null || !bulletins.containsKey(dateText)) {
+        bulletins[dateText] = Uri.https(
+          'source.android.com',
+          absolute.path,
+        ).toString();
+      }
     }
   }
   if (!sawBulletinLink) {
     throw const FormatException('Android bulletin index had no bulletin links');
   }
   return <WatcherFinding>[
-    for (final date in dates)
+    for (final bulletin in bulletins.entries)
       WatcherFinding(
         watcher: 'platforms',
-        marker: 'keybay-platform-android-$date',
-        title: 'Android platform advisory triage: $date',
-        subjects: <String>['Android Security Bulletin $date'],
+        marker: 'keybay-platform-android-${bulletin.key}',
+        title: 'Android platform advisory triage: ${bulletin.key}',
+        subjects: <String>['Android Security Bulletin ${bulletin.key}'],
         references: <({String label, String url})>[
           (
-            label: 'Android Security Bulletin $date',
-            url: 'https://source.android.com/docs/security/bulletin/$date',
+            label: 'Android Security Bulletin ${bulletin.key}',
+            url: bulletin.value,
           ),
         ],
       ),
@@ -240,7 +255,8 @@ Future<List<WatcherFinding>> _platformFindingsBetween(
   if (appleIndex != 'https://support.apple.com/en-us/100100') {
     throw const FormatException('unexpected Apple security index');
   }
-  if (androidIndex != 'https://source.android.com/docs/security/bulletin') {
+  if (androidIndex !=
+      'https://source.android.com/docs/security/bulletin/asb-overview') {
     throw const FormatException('unexpected Android bulletin index');
   }
   final products = _stringList(apple['products'], 'Apple products');

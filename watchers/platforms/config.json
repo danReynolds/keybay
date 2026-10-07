@@ -11,7 +11,7 @@
     ]
   },
   "android": {
-    "index": "https://source.android.com/docs/security/bulletin"
+    "index": "https://source.android.com/docs/security/bulletin/asb-overview"
   },
   "linux": {
     "ecosystems": ["Ubuntu", "Debian"],

@@ -2,8 +2,8 @@
 
 ## 0.2.0
 
-Prepared V2 release; not yet published. This is a breaking API and storage-format
-change from 0.1.x. Existing stores are not read, migrated, or removed by V2.
+This is a breaking API and storage-format change from 0.1.x. Existing stores are
+not read, migrated, or removed by V2.
 
 - Simplify auth to `add`, `list`, and `remove(AuthMethod)`. Remove update and
   replacement APIs. Each enrollment has a fresh ID; removal rejects foreign or
@@ -24,8 +24,8 @@ change from 0.1.x. Existing stores are not read, migrated, or removed by V2.
   passkey verification state with a compare-and-swap transaction before open
   returns. Upgrade legacy V2 singleton passphrase packages on authenticated open.
 - Keep interactive enrollment outside the rotation file lock and reject
-  callback reentrancy rather than deadlocking. The exact Keypass Git pin is
-  development-only; publication requires a hosted Keypass release.
+  callback reentrancy rather than deadlocking. Pin the reviewed, hosted Keypass
+  `0.1.0-dev.2` release; it remains a prerelease dependency.
 
 - Resolve Pub-activated workspace executables from their owning package's
   declaration, without borrowing the workspace root's identity.

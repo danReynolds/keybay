@@ -1,5 +1,12 @@
 # Keybay security
 
+Use a maintained operating-system release with its current security updates.
+Keybay relies on the OS sandbox, credential providers and native libraries; it
+cannot repair vulnerabilities in those components. An SDK minimum version is
+an API compatibility floor, not a recommendation to run an unpatched OS.
+Qualification records apply only to the OS builds and provider configurations
+they name; a new security update does not automatically renew those records.
+
 Keybay holds local secrets for applications and its CLI on macOS, iOS, Android,
 and ordinary Linux desktop. It is austere on purpose: one store shape, no
 weaker configuration mode, and no platform claim without matching evidence.
