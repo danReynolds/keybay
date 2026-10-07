@@ -204,24 +204,11 @@ jobs:
       - run: dart pub get --enforce-lockfile
       - run: ./tool/test_e2e.sh linux
       - run: ./tool/test_cli.sh core linux
-      # Real Secret Service round-trip: a throwaway D-Bus session with a fresh
-      # gnome-keyring unlocked by a known password (secrets component only).
-      # Recipe verified locally against real gnome-keyring in a Docker container.
-      # ~/.local/share is intentionally NOT pre-created — the resolver e2e test
-      # exercises the clean-account path where the library creates it (0700).
-      - run: |
-          # The quoted variables expand inside the deliberately separate shell.
-          # shellcheck disable=SC2016
-          KEYBAY_BENCHMARK_OUTPUT="$RUNNER_TEMP/cli-benchmark-linux.json" \
-          dbus-run-session -- bash -c '
-            set -euo pipefail
-            export XDG_RUNTIME_DIR="$(mktemp -d)"
-            eval "$(printf itest | gnome-keyring-daemon --daemonize --unlock --components=secrets)"
-            export GNOME_KEYRING_CONTROL
-            KEYBAY_QUICKSTART=1 ./tool/test_cli_quickstart.sh
-            KEYBAY_BENCHMARK=1 KEYBAY_BENCHMARK_ITERATIONS=100 \
-              ./tool/benchmark_cli.sh
-          '
+      # Private data/config roots and an owned provider process prevent this
+      # fixed-appId quickstart from inheriting a runner account keyring.
+      - run: bash tool/test_cli_quickstart_linux.sh
+        env:
+          KEYBAY_BENCHMARK_OUTPUT: ${{ runner.temp }}/cli-benchmark-linux.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cli-benchmark-linux-x64
