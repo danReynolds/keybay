@@ -25,17 +25,30 @@ void main() {
         '--packages=${File.fromUri((await Isolate.packageConfig)!).path}',
         'test/support/portal_cancel_worker.dart',
       ]);
-      final output = process.stdout.transform(utf8.decoder).join();
+      final output = StreamIterator(
+        process.stdout.transform(utf8.decoder).transform(const LineSplitter()),
+      );
       final errors = process.stderr.transform(utf8.decoder).join();
       try {
+        // Source compilation is startup work, not part of the cancellation
+        // deadline. The child announces entry into the operation under test.
+        expect(
+          await output.moveNext().timeout(const Duration(seconds: 30)),
+          isTrue,
+        );
+        expect(output.current, 'ready');
         expect(await process.exitCode.timeout(const Duration(seconds: 10)), 0);
-        expect(await output, 'cancelled\n');
+        expect(await output.moveNext(), isTrue);
+        expect(output.current, 'cancelled');
+        expect(await output.moveNext(), isFalse);
         expect(await errors, isEmpty);
       } finally {
-        process.kill();
+        process.kill(ProcessSignal.sigkill);
         await process.exitCode;
+        await output.cancel();
       }
     },
+    timeout: const Timeout(Duration(minutes: 1)),
   );
 
   test('forbidden interaction makes no connection or portal call', () async {

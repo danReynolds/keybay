@@ -70,3 +70,7 @@ workers to start under parallel load, keeps the simultaneous go barrier and
 one-winner assertions, uses monotonic timers, drains killed workers before
 cleanup, and includes child output on startup failure. The worker's barrier wait
 outlives the parent's startup deadline. This changes test orchestration only.
+That cross-root test then passed on Intel CI. A separate portal-worker test
+exposed the same source-startup pressure; it now announces readiness before the
+unchanged ten-second natural-exit check begins. Its startup is separately bounded
+at thirty seconds. No provider timeout or production behavior changed.
