@@ -24,8 +24,9 @@ void main() {
       final processes = <Process>[];
       addTearDown(() async {
         for (final process in processes) {
-          process.kill();
+          process.kill(ProcessSignal.sigkill);
         }
+        await Future.wait(processes.map((process) => process.exitCode));
         if (fixture.existsSync()) fixture.deleteSync(recursive: true);
       });
       final chmod = Process.runSync('chmod', <String>['700', fixture.path]);
@@ -67,14 +68,17 @@ void main() {
         Directory candidateRoot,
         File ready,
       ) async {
-        final process =
-            await Process.start(Platform.resolvedExecutable, <String>[
-              worker.path,
-              providerDirectory.path,
-              candidateRoot.path,
-              ready.path,
-              go.path,
-            ], workingDirectory: packageRoot.path);
+        final process = await Process.start(
+          Platform.resolvedExecutable,
+          <String>[
+            worker.path,
+            providerDirectory.path,
+            candidateRoot.path,
+            ready.path,
+            go.path,
+          ],
+          workingDirectory: packageRoot.path,
+        );
         processes.add(process);
         return _WorkerProcess(
           process: process,
@@ -85,7 +89,23 @@ void main() {
 
       final workerA = await startWorker(rootA, readyA);
       final workerB = await startWorker(rootB, readyB);
-      await _waitForReady(<File>[readyA, readyB]);
+      try {
+        await _waitForReady(<File>[readyA, readyB]);
+      } on TimeoutException {
+        // Source workers compile independently under the full parallel suite.
+        // Report their output instead of hiding startup failures behind a timer.
+        for (final process in processes) {
+          process.kill(ProcessSignal.sigkill);
+        }
+        final exits = await Future.wait(
+          processes.map((process) => process.exitCode),
+        );
+        fail(
+          'cross-root startup failed: ready=${[readyA.existsSync(), readyB.existsSync()]} '
+          'exit=$exits stdout=${await Future.wait([workerA.stdout, workerB.stdout])} '
+          'stderr=${await Future.wait([workerA.stderr, workerB.stderr])}',
+        );
+      }
       go.writeAsStringSync('go');
 
       final exitCodes = <int>[
@@ -179,7 +199,7 @@ void main() {
         await reset.close();
       }
     },
-    timeout: const Timeout(Duration(seconds: 60)),
+    timeout: const Timeout(Duration(minutes: 2)),
   );
 }
 
@@ -197,9 +217,9 @@ ResolvedApplicationBinding _bindingFor(Directory candidateRoot) =>
     );
 
 Future<void> _waitForReady(List<File> markers) async {
-  final deadline = DateTime.now().add(const Duration(seconds: 10));
+  final elapsed = Stopwatch()..start();
   while (!markers.every((marker) => marker.existsSync())) {
-    if (DateTime.now().isAfter(deadline)) {
+    if (elapsed.elapsed > const Duration(seconds: 30)) {
       throw TimeoutException('cross-root workers did not reach the barrier');
     }
     await Future<void>.delayed(const Duration(milliseconds: 10));

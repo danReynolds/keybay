@@ -63,3 +63,10 @@ was correctly refused by RK-PUB-010. Later commits require their own final stage
 The SDK guide's introductory callback wording was also reconciled with the
 implemented data-only credential contract; the enrollment/open examples already
 used the current API.
+
+The final candidate's Intel macOS CI exposed a ten-second worker-startup timeout
+before the cross-root race began. The test now allows thirty seconds for source
+workers to start under parallel load, keeps the simultaneous go barrier and
+one-winner assertions, uses monotonic timers, drains killed workers before
+cleanup, and includes child output on startup failure. The worker's barrier wait
+outlives the parent's startup deadline. This changes test orchestration only.
