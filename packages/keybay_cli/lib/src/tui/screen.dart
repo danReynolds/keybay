@@ -1,8 +1,6 @@
 import 'dart:async';
 
 import 'package:fleury/fleury_core.dart';
-import 'package:fleury_widgets/fleury_widgets_web.dart'
-    show ToastHandle, ToastSeverity, Toaster;
 
 import 'chrome.dart';
 import 'auth_views.dart';
@@ -35,8 +33,8 @@ final class KeybayTui extends StatelessWidget {
   };
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: model,
+  Widget build(BuildContext context) => NotifierBuilder(
+    notifier: model,
     builder: (_, _) => Theme(
       data: keybayThemeFor(model.appearance),
       child: Toaster(

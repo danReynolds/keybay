@@ -3,7 +3,7 @@ description: >-
   Cross-platform local secret storage for Dart without Flutter: one encrypted,
   platform-protected application store with optional passphrase or passkey protection.
 version: 0.2.0
-repository: https://github.com/danReynolds/keybay/tree/main/packages/keybay
+repository: https://github.com/danReynolds/keybay
 homepage: https://danreynolds.github.io/keybay/
 issue_tracker: https://github.com/danReynolds/keybay/issues
 topics:

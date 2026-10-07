@@ -74,9 +74,11 @@ Future<void> main(List<String> arguments) async {
 }
 
 Future<void> _waitForGo(File marker) async {
-  final deadline = DateTime.now().add(const Duration(seconds: 10));
+  // The first worker must outlive the parent's bounded startup wait for its
+  // peer. Storage contention still begins only after the shared go marker.
+  final elapsed = Stopwatch()..start();
   while (!marker.existsSync()) {
-    if (DateTime.now().isAfter(deadline)) {
+    if (elapsed.elapsed > const Duration(seconds: 60)) {
       throw TimeoutException('cross-root worker barrier timed out');
     }
     await Future<void>.delayed(const Duration(milliseconds: 10));

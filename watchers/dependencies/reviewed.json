@@ -17,6 +17,12 @@
       "name": "pointycastle",
       "reviewed_version": "4.0.0",
       "url": "https://pub.dev/packages/pointycastle"
+    },
+    {
+      "ecosystem": "Pub",
+      "name": "keypass",
+      "reviewed_version": "0.1.0-dev.2",
+      "url": "https://pub.dev/packages/keypass"
     }
   ]
 }

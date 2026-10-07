@@ -60,7 +60,7 @@ const tuiBusyDelay = Duration(milliseconds: 150);
 /// Presentation state and one invocation-owned storage session. Widgets never own
 /// sessions or initiate background reads. A dismissed read must match _intent
 /// before it may disclose its result; submitted mutations are always awaited.
-final class TuiModel extends ChangeNotifier {
+final class TuiModel extends Notifier {
   TuiModel({
     required this.openSession,
     required this.resetStore,
@@ -86,7 +86,7 @@ final class TuiModel extends ChangeNotifier {
   void setAppearance(TuiAppearance value) {
     if (_ending || busy || value == _appearance) return;
     _appearance = value;
-    notifyListeners();
+    notify();
     _appearanceWrites = _appearanceWrites.then((_) async {
       try {
         await saveAppearance?.call(value);
@@ -211,13 +211,13 @@ final class TuiModel extends ChangeNotifier {
     error = failure;
     messageScope = scope ?? _operationScope ?? view;
     messageRevision++;
-    notifyListeners();
+    notify();
   }
 
   void hide() {
     _intent++;
     _clearValue();
-    if (!_ending) notifyListeners();
+    if (!_ending) notify();
   }
 
   /// Conceal on terminal blur/resize without cancelling an accepted form save.
@@ -227,7 +227,7 @@ final class TuiModel extends ChangeNotifier {
     if (view == TuiView.browse) {
       hide();
     } else if (!_ending) {
-      notifyListeners();
+      notify();
     }
   }
 
@@ -237,7 +237,7 @@ final class TuiModel extends ChangeNotifier {
     query = text;
     final matches = visibleKeys;
     if (!matches.contains(selectedKey)) selectedKey = matches.firstOrNull;
-    notifyListeners();
+    notify();
   }
 
   void select(String key) {
@@ -245,13 +245,13 @@ final class TuiModel extends ChangeNotifier {
     hide();
     selectedKey = key;
     _clearStatus();
-    notifyListeners();
+    notify();
   }
 
   void clearUnlockError() {
     if (unlockError == null) return;
     unlockError = null;
-    if (!_ending) notifyListeners();
+    if (!_ending) notify();
   }
 
   /// Leaving the current screen rather than starting new work. Dismissal is
@@ -288,7 +288,7 @@ final class TuiModel extends ChangeNotifier {
     view = next;
     unlockError = null;
     _clearStatus();
-    notifyListeners();
+    notify();
   }
 
   Future<void> open([Uint8List? phrase]) {
@@ -604,7 +604,7 @@ final class TuiModel extends ChangeNotifier {
   void selectMethod(TuiAuthMethod method) {
     if (busy || _ending || !methods.contains(method)) return;
     selectedMethod = method;
-    notifyListeners();
+    notify();
   }
 
   String get hardwareLabel => _unlockMethod?.label ?? 'Hardware key';
@@ -707,7 +707,7 @@ final class TuiModel extends ChangeNotifier {
       if (!_current(token) || cancellation.isCancelled) return false;
       if (connected) {
         hardwarePhase = HardwarePhase.verifying;
-        notifyListeners();
+        notify();
         return true;
       }
       if (elapsed.elapsed >= hardwareConnectionTimeout) {
@@ -718,7 +718,7 @@ final class TuiModel extends ChangeNotifier {
       }
       if (hardwarePhase != HardwarePhase.connecting) {
         hardwarePhase = HardwarePhase.connecting;
-        notifyListeners();
+        notify();
       }
       await Future.any([
         Future<void>.delayed(hardwarePollInterval),
@@ -734,7 +734,7 @@ final class TuiModel extends ChangeNotifier {
     if (signal != null) {
       _intent++;
       signal.cancel();
-      notifyListeners();
+      notify();
       await _pending;
     }
     if (_ending || view == TuiView.failed || view == TuiView.security) return;
@@ -805,9 +805,9 @@ final class TuiModel extends ChangeNotifier {
     _busyTimer = Timer(tuiBusyDelay, () {
       if (_ending || _pending == null) return;
       _showsBusy = true;
-      notifyListeners();
+      notify();
     });
-    notifyListeners();
+    notify();
     unawaited(() async {
       try {
         authorize();
@@ -901,7 +901,7 @@ final class TuiModel extends ChangeNotifier {
         _pending = null;
         _operationScope = null;
         completion.complete();
-        if (!_ending) notifyListeners();
+        if (!_ending) notify();
       }
     }());
     return completion.future;
@@ -929,7 +929,7 @@ final class TuiModel extends ChangeNotifier {
     _intent++;
     _clearValue();
     view = TuiView.closing;
-    notifyListeners();
+    notify();
     try {
       await _pending;
       await _closeSession();

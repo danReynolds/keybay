@@ -2,6 +2,9 @@
 
 ## 0.2.0
 
+- Pin hosted Fleury 0.1.1 and use its integrated widget catalog, notifier and
+  application-exit APIs. Remove the separate widgets package and Git overrides.
+
 Unreleased. The CLI ships only as native binaries through Homebrew and GitHub
 releases; it is not published to pub.dev. Native distribution qualification and
 publication remain separate from source integration.

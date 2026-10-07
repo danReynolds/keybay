@@ -4,7 +4,7 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
-from watchers.health import MARKER, TITLE, evaluate, reconcile_issue
+from watchers.health import MARKER, TITLE, evaluate, reconcile_issue, verified_recovery
 from watchers.github import command, CommandError
 from watchers.publish_assessment import assessment_metadata, report_path, verified_commit, publish
 
@@ -37,7 +37,38 @@ class HealthTest(unittest.TestCase):
 
     def test_disabled_or_missed_schedule_is_visible(self):
         problems = evaluate(NOW, "disabled_inactivity", [run(age=dt.timedelta(days=9))], [], {"github-123-1"})
-        self.assertEqual(len(problems), 2)
+        self.assertEqual(len(problems), 3)
+
+    def test_reviewed_manual_recovery_repairs_failure_but_not_missing_schedule(self):
+        failed = run(456, dt.timedelta(days=2), "failure")
+        recovery = run(789, dt.timedelta(hours=1))
+        merged = {"github-123-1", "github-456-1", "github-789-1"}
+        old = run(age=dt.timedelta(days=9))
+        self.assertEqual(evaluate(NOW, "active", [failed, old], [], merged, [recovery]), [])
+        problems = evaluate(NOW, "active", [old], [], merged, [recovery])
+        self.assertEqual(problems, ["No scheduled scan started in the last 8 days."])
+        self.assertTrue(evaluate(NOW, "disabled_inactivity", [failed], [], merged, [recovery]))
+
+    def test_recovery_must_be_newer_than_failure_and_still_fresh(self):
+        failed = run(456, dt.timedelta(hours=1), "failure")
+        self.assertTrue(evaluate(NOW, "active", [failed], [], set(), [run(age=dt.timedelta(days=2))]))
+        failed = run(456, dt.timedelta(days=10), "failure")
+        self.assertTrue(evaluate(NOW, "active", [failed], [], {"github-456-1"}, [run(age=dt.timedelta(days=9))]))
+
+    def test_recovery_requires_exact_successful_all_source_main_run(self):
+        raw = {"event": "workflow_dispatch", "run_id": "123", "attempt": "1",
+               "report_id": "github-123-1", "commit": "a" * 40,
+               "statuses": {"dependencies": "findings", "platforms": "quiet", "peers": "findings"}}
+        actual = run() | {"workflow_id": 17, "event": "workflow_dispatch",
+                          "head_branch": "main", "head_sha": "a" * 40}
+        self.assertTrue(verified_recovery(raw, actual, 17))
+        for update in [{"workflow_id": 18}, {"event": "pull_request"}, {"head_branch": "feature"},
+                       {"conclusion": "failure"}, {"status": "in_progress"}, {"id": 456},
+                       {"run_attempt": 2}, {"head_sha": "b" * 40}]:
+            self.assertFalse(verified_recovery(raw, actual | update, 17))
+        for status in ("failed", "not_run"):
+            self.assertFalse(verified_recovery(raw | {"statuses": raw["statuses"] | {"platforms": status}}, actual, 17))
+        self.assertFalse(verified_recovery(raw | {"statuses": {"dependencies": "quiet"}}, actual, 17))
 
     def test_recent_failed_run_not_masked_by_previous_success(self):
         problems = evaluate(NOW, "active", [run(456, dt.timedelta(hours=1), "failure"), run()], [], {"github-123-1"})

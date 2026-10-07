@@ -10,6 +10,7 @@ import 'package:keybay/src/v2/platform_protector.dart';
 
 Future<void> main() async {
   final connection = _RetainingProvider();
+  stdout.writeln('ready');
   try {
     await DbusLinuxSecretPortal(
       timeout: const Duration(milliseconds: 50),

@@ -34,7 +34,6 @@ void main() {
         'characters',
         'ffi',
         'fleury',
-        'fleury_widgets',
         'keybay',
         'keypass',
       ]),
@@ -69,7 +68,6 @@ void main() {
         'async',
         'characters',
         'fleury',
-        'fleury_widgets',
         'image',
         'path',
         'posix',
@@ -101,8 +99,6 @@ void main() {
           'root',
           reason: 'keybay must resolve from the workspace',
         );
-      } else if (name == 'fleury' || name == 'fleury_widgets') {
-        expect(source, 'git');
       } else {
         expect(
           source,
@@ -114,6 +110,7 @@ void main() {
     // Keybay's companion firewall checks the exact Keypass hosted archive/source
     // and complete hosted closure. Keep the CLI's new verification dependency
     // versions explicit here as well.
+    expect(byName['fleury']?['version'], '0.1.1');
     expect(byName['keypass']?['version'], '0.1.0-dev.2');
     expect(byName['pointycastle']?['version'], '4.0.0');
     expect(byName['convert']?['version'], '3.1.2');
@@ -140,11 +137,8 @@ void main() {
       pubspec,
       contains(RegExp(r'^\s*ffi:\s*2\.2\.0\s*$', multiLine: true)),
     );
-    expect(pubspec, contains('url: https://github.com/danReynolds/fleury.git'));
-    expect(
-      pubspec,
-      contains(RegExp(r'^      ref: [0-9a-f]{40}\s*$', multiLine: true)),
-    );
+    expect(pubspec, contains(RegExp(r'^  fleury: 0\.1\.1$', multiLine: true)));
+    expect(pubspec, isNot(contains('git:')));
     expect(pubspec, isNot(contains('dependency_overrides')));
     expect(
       File('${packageDirectory.path}/pubspec_overrides.yaml').existsSync(),
@@ -156,48 +150,14 @@ void main() {
       ).existsSync(),
       isFalse,
     );
-    // The workspace may override fleury's source — fleury_widgets declares it
-    // from the hosted registry, which pub will not unify with a git pin — but
-    // only onto the very commit this package already names. An override that
-    // could substitute different Fleury code is what the ban is for.
-    final pins = RegExp(
-      r'^      ref: ([0-9a-f]{40})\s*$',
-      multiLine: true,
-    ).allMatches(pubspec).map((match) => match.group(1)!).toList();
-    expect(pins, hasLength(2));
     expect(
       pubspec,
       contains(RegExp(r'^  keypass: 0\.1\.0-dev\.2$', multiLine: true)),
     );
-    expect(
-      pins.toSet(),
-      hasLength(1),
-      reason: 'fleury and fleury_widgets must use the same reviewed commit',
-    );
-    final pinned = pins.first;
     final workspace = File(
       '${packageDirectory.path}/../../pubspec.yaml',
     ).readAsStringSync();
-    final overrides = workspace.contains('dependency_overrides')
-        ? workspace.substring(workspace.indexOf('dependency_overrides'))
-        : '';
-    for (final override in RegExp(
-      r'^  ([a-z_]+):\s*$',
-      multiLine: true,
-    ).allMatches(overrides)) {
-      expect(
-        override.group(1),
-        'fleury',
-        reason: "only fleury's source may be overridden",
-      );
-    }
-    if (overrides.isNotEmpty) {
-      expect(
-        overrides,
-        contains('ref: $pinned'),
-        reason: 'an override must name the pinned Fleury commit',
-      );
-    }
+    expect(workspace, isNot(contains('dependency_overrides')));
   });
 
   test(

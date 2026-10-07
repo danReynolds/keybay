@@ -10,8 +10,9 @@ hook. The Dart SDK supports iOS, Android 12+, macOS, and ordinary Linux desktop.
 The CLI supports macOS and ordinary Linux desktop.
 
 Version 0.2.0 is prepared but not yet published. The SDK and CLI/TUI source is
-integrated; native CLI packaging and hosted Keypass/Fleury dependencies remain release
-gates. The SDK will ship on pub.dev and the CLI as native binaries through
+integrated and the hosted Keypass and Fleury dependencies are published. Native
+CLI packaging and installed-distribution qualification remain release gates. The SDK will ship on
+pub.dev and the CLI as native binaries through
 Homebrew and GitHub releases.
 See [release readiness](doc/release-readiness.md) and the
 [local CLI installation guide](packages/keybay_cli/README.md#install).

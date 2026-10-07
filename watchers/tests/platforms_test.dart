@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:test/test.dart';
 
 import '../platforms/watcher.dart';
@@ -68,6 +71,73 @@ void main() {
     );
   });
 
+  test('Android category landing page fails rather than reporting quiet', () {
+    expect(
+      () => androidFindings(
+        '<a href="/docs/security/bulletin/asb-overview">Bulletins Overview</a>',
+        indexUri: Uri.parse(
+          'https://source.android.com/docs/security/bulletin',
+        ),
+        startedAt: start,
+      ),
+      throwsFormatException,
+    );
+  });
+
+  test(
+    'configured Android overview discovers only official dated bulletins',
+    () async {
+      final config =
+          jsonDecode(File('watchers/platforms/config.json').readAsStringSync())
+              as Map<String, Object?>;
+      final requested = <Uri>[];
+      final found = await platformFindings(
+        config,
+        fetch: (uri) async {
+          requested.add(uri);
+          if (uri.host == 'support.apple.com') {
+            return '<table><tr><td>iOS 26.0</td><td>iPhone</td>'
+                '<td>01 Aug 2026</td></tr></table>';
+          }
+          expect(
+            uri.toString(),
+            'https://source.android.com/docs/security/bulletin/asb-overview',
+          );
+          return '''
+          <a href="/docs/security/bulletin/2026-08-01">Old</a>
+          <a href="/docs/security/bulletin/2026/2026-10-01">October</a>
+          <a href="https://source.android.com/docs/security/bulletin/2026-10-01?hl=en">Duplicate</a>
+          <a href="https://example.com/docs/security/bulletin/2026-11-01">Foreign host</a>
+          <a href="http://source.android.com/docs/security/bulletin/2026-11-01">Insecure</a>
+          <a href="/docs/security/bulletin/pixel/2026-11-01">Different source</a>
+        ''';
+        },
+        query: (_, _) async => <Map<String, Object?>>[],
+      );
+      expect(requested, hasLength(2));
+      expect(found.map((item) => item.marker), <String>[
+        'keybay-platform-android-2026-10-01',
+      ]);
+      expect(
+        found.single.references.single.url,
+        'https://source.android.com/docs/security/bulletin/2026/2026-10-01',
+      );
+    },
+  );
+
+  test('Android rejects mismatched directory years', () {
+    expect(
+      () => androidFindings(
+        '<a href="/docs/security/bulletin/2025/2026-10-01">Invalid</a>',
+        indexUri: Uri.parse(
+          'https://source.android.com/docs/security/bulletin/asb-overview',
+        ),
+        startedAt: start,
+      ),
+      throwsFormatException,
+    );
+  });
+
   test('Linux deduplicates distro records by CVE', () async {
     final ubuntu = <String, Object?>{
       'id': 'UBUNTU-CVE-2026-12345',
@@ -127,7 +197,8 @@ void main() {
           'products': <String>['iOS'],
         },
         'android': <String, Object?>{
-          'index': 'https://source.android.com/docs/security/bulletin',
+          'index':
+              'https://source.android.com/docs/security/bulletin/asb-overview',
         },
         'linux': <String, Object?>{
           'ecosystems': <String>['Ubuntu'],
