@@ -14,16 +14,7 @@ resolution: workspace
 dependencies:
   characters: 1.4.1
   ffi: 2.2.0
-  fleury:
-    git:
-      url: https://github.com/danReynolds/fleury.git
-      ref: 1f967547915ce0ae7be717cf677e803e958ece5b
-      path: packages/fleury
-  fleury_widgets:
-    git:
-      url: https://github.com/danReynolds/fleury.git
-      ref: 1f967547915ce0ae7be717cf677e803e958ece5b
-      path: packages/fleury_widgets
+  fleury: 0.1.1
   keybay: 0.2.0
   # Read-only hardware discovery for the TUI's connection-wait state. Keep the
   # same reviewed version as Keybay; authentication remains owned by Keybay.

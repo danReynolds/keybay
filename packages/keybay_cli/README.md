@@ -253,8 +253,8 @@ field copy/cut never exports a secret. Native transport qualification is scoped
 in the [qualification report](../../doc/cli-qualification-status.md).
 
 The UI disables Fleury debug/hot reload and refuses `FLEURY_*` runtime settings
-or an active Dart VM service before opening the SDK. Fleury currently uses an
-exact Git revision; release builds wait for a reviewed hosted Fleury release.
+or an active Dart VM service before opening the SDK. Fleury uses the exact
+hosted `0.1.1` release, including its integrated widget catalog.
 Source and native archive builds remain supported.
 
 ### Hardware keys in the TUI

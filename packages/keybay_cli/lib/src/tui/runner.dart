@@ -77,7 +77,7 @@ Future<int> runTui({
     resetStore: resetStore,
     authorize: authorizeTui,
     copyText: systemCopy(),
-    onExit: requestExit,
+    onExit: exitApp,
     idleTimeout: idleTimeout,
     unlockPreference: unlockPreference,
     appearance: appearance,

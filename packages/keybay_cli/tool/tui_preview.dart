@@ -58,7 +58,7 @@ Future<void> main(List<String> arguments) async {
     copyText: (_) async {
       if (arguments.contains('--copy-fails')) throw const TuiCopyException();
     },
-    onExit: requestExit,
+    onExit: exitApp,
     idleTimeout: null,
   );
   try {

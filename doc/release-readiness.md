@@ -2,8 +2,8 @@
 
 Updated October 7, 2026 for SDK publication after the passkey integration merged.
 The SDK and CLI/TUI implementation are integrated. The scoped SDK release is
-prepared; CLI publication still needs native distribution qualification and
-hosted Fleury dependencies. The SDK ships on pub.dev; the CLI ships only as
+prepared; CLI publication still needs native distribution qualification.
+Keypass and Fleury now resolve from exact hosted releases. The SDK ships on pub.dev; the CLI ships only as
 native binaries through Homebrew and GitHub releases. Neither 0.2.0 package has
 been published in this closeout. This page tracks remaining work; dated
 qualification records retain the evidence and limitations of their original
@@ -33,13 +33,12 @@ September finding, not the current release-kit implementation.
 | --- | --- | --- |
 | P0, native macOS | Carry the locally qualified runtime/module and hardware library companions through release-kit staging, signing, archive and Homebrew publication. | Reproducible bundle from the release candidate, stable application/signing identity, and successful launch after signing. |
 | P0, native CLI | Qualify the actual installed packages and upgrades on macOS ARM64, Linux x64 and Linux ARM64, as configured in `release.toml`. | Artifact hashes, observed OS/ABI, protected-store continuity, CLI/TUI/child-process checks, and macOS notarization/downloaded-launch evidence. A source build or ad-hoc archive is insufficient. |
-| P0, Fleury | Publish reviewed Fleury and fleury_widgets versions that include [danReynolds/fleury#269](https://github.com/danReynolds/fleury/pull/269) (`93816cde`), then replace the CLI's exact Git pins with them. rk refuses to release a unit built from Git dependencies (RK-DART-201), even when they are pinned to a commit. | Reviewed dependency closure and installed CLI checks. Fleury publication is a separate release action; it has not happened as part of this work. |
+| Complete, hosted dependencies | Pin Keypass `0.1.0-dev.2` and Fleury `0.1.1`; the latter includes the former separate widget catalog. Remove the development Git pins and override. | Content-hashed hosted archives and the runtime dependency-closure gate. Installed CLI checks remain in the native distribution gate above. |
 | P1 | Reconcile documentation, assess the latest security-monitoring results and validate the final candidate. | Current installation/release claims, no unresolved applicable blocking findings, full manual CI on the exact final main commit, and retained package/archive receipts. |
 | Release | Publish the SDK before the dependent CLI, then verify the channels actually served to users. | Signed tags, SDK Pub archive audit, CLI native download and Homebrew installation checks. Publishing is a separate action after preparation. |
 
-The hosted-dependency work can proceed alongside native packaging. The SDK's
-release unit is independent of CLI packaging; `release.toml` publishes its
-package before the dependent CLI.
+The SDK's release unit is independent of CLI packaging; `release.toml`
+publishes its package before the dependent CLI.
 
 ## Native macOS packaging change
 
