@@ -158,6 +158,8 @@ jobs:
             --new=report-osv-results.json
             --gh-annotations=false
         continue-on-error: true
+      # These repository scripts use no native assets. Run them directly in the
+      # VM so app build hooks do not add native toolchain requirements.
       - name: discover reviewed dependency releases
         id: report_dependency_releases
         if: >-
@@ -165,7 +167,7 @@ jobs:
               (env.WATCHER_SELECTION == 'all' ||
                env.WATCHER_SELECTION == 'dependencies') }}
         run: >-
-          dart run watchers/watch.dart dependencies --json
+          dart --disable-dart-dev watchers/watch.dart dependencies --json
           > "$RUNNER_TEMP/dependency-releases.json"
         continue-on-error: true
       - name: normalize dependency results
@@ -232,7 +234,7 @@ jobs:
               (env.WATCHER_SELECTION == 'all' ||
                env.WATCHER_SELECTION == 'platforms') }}
         run: >-
-          dart run watchers/watch.dart platforms --json
+          dart --disable-dart-dev watchers/watch.dart platforms --json
           > "$RUNNER_TEMP/platform-findings.json"
         continue-on-error: true
       - name: normalize platform results
@@ -265,7 +267,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
-          dart run watchers/watch.dart peers --json
+          dart --disable-dart-dev watchers/watch.dart peers --json
           > "$RUNNER_TEMP/peer-findings.json"
         continue-on-error: true
       - name: normalize peer results
@@ -347,7 +349,7 @@ jobs:
           started_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           report_date="${started_at%%T*}"
           report_directory="watchers/reports/$report_date-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          dart run watchers/report.dart create \
+          dart --disable-dart-dev watchers/report.dart create \
             --run-id "$GITHUB_RUN_ID" \
             --attempt "$GITHUB_RUN_ATTEMPT" \
             --event "$GITHUB_EVENT_NAME" \
@@ -357,7 +359,7 @@ jobs:
             --platforms "$RUNNER_TEMP/watcher-inputs/platforms.json" \
             --peers "$RUNNER_TEMP/watcher-inputs/peers.json" \
             --output "$report_directory"
-          dart run watchers/report.dart summary \
+          dart --disable-dart-dev watchers/report.dart summary \
             --reports watchers/reports \
             --output watchers/reports/SUMMARY.md
           echo "report-directory=$report_directory" >> "$GITHUB_OUTPUT"

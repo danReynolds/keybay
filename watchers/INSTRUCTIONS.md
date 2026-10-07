@@ -18,7 +18,7 @@ Run `python3 -m watchers.health` first. An overdue result is a reason to finish 
 6. Regenerate `watchers/reports/SUMMARY.md` with:
 
    ```sh
-   dart run watchers/report.dart summary --reports watchers/reports --output watchers/reports/SUMMARY.md
+   dart --disable-dart-dev watchers/report.dart summary --reports watchers/reports --output watchers/reports/SUMMARY.md
    ```
 
 7. Run `dart format --output=none --set-exit-if-changed watchers`, `dart analyze watchers`, `dart test watchers/tests`, `python3 -m unittest discover -s watchers/tests -p '*_test.py'`, and `./tool/lint_workflows.sh`. Review the assessment and generated summary.
