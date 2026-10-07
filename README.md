@@ -9,11 +9,12 @@ Keybay is local-only: no account, hosted service, daemon, network path, or shell
 hook. The Dart SDK supports iOS, Android 12+, macOS, and ordinary Linux desktop.
 The CLI supports macOS and ordinary Linux desktop.
 
-Version 0.2.0 is prepared but not yet published. The SDK and CLI/TUI source is
-integrated and the hosted Keypass and Fleury dependencies are published. Native
-CLI packaging and installed-distribution qualification remain release gates. The SDK will ship on
-pub.dev and the CLI as native binaries through
-Homebrew and GitHub releases.
+The [Dart SDK 0.2.0](https://pub.dev/packages/keybay/versions/0.2.0) is published
+with passphrase, system passkey and hardware passkey protection. See the
+[publication evidence](doc/reviews/2026-10-07-sdk-publication.md).
+The CLI/TUI 0.2.0 source is integrated, but its native release remains pending
+release-kit packaging and installed-distribution qualification. It will ship
+through Homebrew and GitHub releases.
 See [release readiness](doc/release-readiness.md) and the
 [local CLI installation guide](packages/keybay_cli/README.md#install).
 
@@ -71,8 +72,9 @@ UI. Record operations and authentication listing never prompt.
 
 Every supported platform uses the same independently encrypted record frames
 and an encrypted manifest. One platform-protected root unlocks that
-application's store key. Applications can add a passphrase so platform access
-alone is insufficient.
+application's store key. Applications can add a passphrase or passkey protection
+so platform access alone is insufficient. Enrolled methods are alternatives;
+each still requires the platform-protected root.
 
 Keybay fails closed when identity, platform protection, or authenticated store
 state cannot be established. It never falls back to plaintext, process memory,

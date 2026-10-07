@@ -9,7 +9,8 @@ API has no application-ID, path, provider, or alternate-store selector.
 Requires Dart 3.11 or later, including when used through Flutter. CI tests the
 SDK at that floor with the reviewed dependency lockfile.
 
-Version 0.2.0 is prepared but not yet published; see [release readiness](release-readiness.md).
+The [0.2.0 SDK](https://pub.dev/packages/keybay/versions/0.2.0) is published with
+passkey support; see the [publication evidence](reviews/2026-10-07-sdk-publication.md).
 It is a breaking API and storage-format change from 0.1.x. V2 neither
 reads nor migrates or removes V1 stores; do not expect an upgrade to carry old
 secrets into the new store. See the [scoped release evidence](qualification-status.md#sdk-020-release-scope),
