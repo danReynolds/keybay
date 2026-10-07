@@ -57,10 +57,15 @@ In GitHub, open **Actions → Security watchers → Run workflow**, keep the bra
 For a local read-only check:
 
 ```sh
-dart run watchers/watch.dart dependencies --json
-dart run watchers/watch.dart platforms --json
-dart run watchers/watch.dart peers --json
+dart --disable-dart-dev watchers/watch.dart dependencies --json
+dart --disable-dart-dev watchers/watch.dart platforms --json
+dart --disable-dart-dev watchers/watch.dart peers --json
 ```
+
+These monitoring scripts are pure Dart and run directly in the VM. They do not
+load Keybay or Keypass and must not invoke the workspace's native app build
+hooks. The same launch mode is used for report rendering and assessment
+publication, so security monitoring does not require hardware build tools.
 
 `platforms --backfill` inspects the fixed bootstrap window without changing its forward boundary. Do not casually advance the platform boundary or peer baseline: those are reviewed history, not routine state.
 

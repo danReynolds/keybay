@@ -104,7 +104,7 @@ def prepare(run, attempt, assessment, raw_blob):
         new.mkdir(parents=True)
         (new / "raw.md").write_bytes(raw_bytes)
         (new / "assessment.md").write_text(text)
-        command("dart", "run", "watchers/report.dart", "summary", "--reports", str(reports),
+        command("dart", "--disable-dart-dev", "watchers/report.dart", "summary", "--reports", str(reports),
                 "--output", str(reports / "SUMMARY.md"))
         files = {path + "/raw.md": raw_bytes, path + "/assessment.md": text.encode(),
                  "watchers/reports/SUMMARY.md": (reports / "SUMMARY.md").read_bytes()}

@@ -22,7 +22,7 @@ Future<int> run(List<String> arguments) async {
       flags.toSet().length != flags.length ||
       selections.length != 1) {
     stderr.writeln(
-      'usage: dart run watchers/watch.dart '
+      'usage: dart --disable-dart-dev watchers/watch.dart '
       '<dependencies|platforms|peers> [--json] [--backfill]',
     );
     return 64;
