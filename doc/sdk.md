@@ -427,7 +427,15 @@ Keypass result and temporary derived material. Your PIN-input copies and
 returned record values remain your responsibility. Cancellation does not undo
 an already committed authentication change.
 
-Passkey support needs [Keypass's manual native host setup](https://github.com/danReynolds/keypass/blob/main/doc/platforms.md)
+Desktop Dart execution uses [Keypass's build hook](https://github.com/danReynolds/keypass/blob/main/doc/build-hooks.md).
+The build host needs its documented compiler and native-library development
+prerequisites even when the application only uses passphrase protection. Build
+on the target OS and architecture; desktop cross compilation is not supported
+by this hook. Distributable applications must retain the full native bundle
+and notices so end users need no compiler. Flutter desktop packaging remains
+separately qualified; the hook alone does not establish that integration.
+
+System and mobile passkey support needs [Keypass's manual native host setup](https://github.com/danReynolds/keypass/blob/main/doc/platforms.md)
 in addition to Keybay's platform integration. Adding the Dart dependency does
 not link native libraries, configure signing or grant permissions.
 

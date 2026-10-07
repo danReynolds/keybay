@@ -5,6 +5,15 @@ application. No Flutter plugin, account, daemon, or network service.
 
 Requires Dart 3.11 or later, including when used through Flutter.
 
+Desktop Dart builds also run Keypass's native build hook. The build machine
+needs CMake, a C++17 compiler, Python 3, pkg-config, libfido2 1.16+, OpenSSL 3
+and libcbor development files (plus patchelf/binutils on Linux), including for
+applications that use only passphrase protection. See
+[Keypass's build prerequisites](https://github.com/danReynolds/keypass/blob/main/doc/build-hooks.md).
+Distributors bundle the native libraries; end users do not install build tools.
+Mobile and system-passkey app hosts have separate native setup requirements
+in the [SDK guide](https://github.com/danReynolds/keybay/blob/main/doc/sdk.md#cancellation-and-native-setup).
+
 See the
 [release readiness](https://github.com/danReynolds/keybay/blob/main/doc/release-readiness.md)
 record for the SDK's qualification scope and the separate CLI distribution gates.
