@@ -1,12 +1,13 @@
 # Keybay 0.2.0 release readiness
 
-Updated October 7, 2026 after publication of the
+Updated October 9, 2026 after native RK staging and publication of the
 [SDK 0.2.0](https://pub.dev/packages/keybay/versions/0.2.0), including passkey
 protection. The [publication record](reviews/2026-10-07-sdk-publication.md)
 links the signed tag, exact-main-commit CI and served-archive audit.
 The CLI/TUI implementation is integrated but 0.2.0 native publication remains
-blocked on release-kit companion packaging and installed-distribution
-qualification. Keypass and Fleury resolve from exact hosted releases.
+pending merge of the RK packaging follow-up and installed-distribution
+qualification. The [October 9 packaging record](reviews/2026-10-09-rk-native-packaging.md)
+records accepted notarization and relocated native loads on all three targets. Keypass and Fleury resolve from exact hosted releases.
 The SDK ships on pub.dev; the CLI ships only as native binaries through
 Homebrew and GitHub releases. Dated qualification records retain the evidence
 and limitations of their original runs.
@@ -24,16 +25,16 @@ unlock for ordinary commands, and local native dependency bundling. Local
 signed split-runtime loading and extracted help/version checks pass. See
 [hardware packaging](cli-hardware-packaging.md) for the exact evidence. The
 SDK publication is complete; final CLI installed-distribution gates remain.
-The current release-kit checkout already supports a signed Dart runtime/module
-bundle; carrying the new hardware companions through its release stages remains
-integration work. The older single-file description below records the original
+The RK follow-up now carries the signed Dart runtime/module and hardware
+companions through private staging on all three targets. Published installation
+and upgrade qualification remain open. The older single-file description below records the original
 September finding, not the current release-kit implementation.
 
 ## Remaining work, in order
 
 | Priority | Work | Completion evidence |
 | --- | --- | --- |
-| P0, native macOS | Carry the locally qualified runtime/module and hardware library companions through release-kit staging, signing, archive and Homebrew publication. | Reproducible bundle from the release candidate, stable application/signing identity, and successful launch after signing. |
+| Implemented, awaiting merge | RK native bundling, compiled Local support, notices and Linux ABI baseline. | [October 9 record](reviews/2026-10-09-rk-native-packaging.md): private stage, accepted macOS notarization, preserved identity, and relocated executable/native loads. RK #118 and Keybay #96 must land; installed publication remains below. |
 | P0, native CLI | Qualify the actual installed packages and upgrades on macOS ARM64, Linux x64 and Linux ARM64, as configured in `release.toml`. | Artifact hashes, observed OS/ABI, protected-store continuity, CLI/TUI/child-process checks, and macOS notarization/downloaded-launch evidence. A source build or ad-hoc archive is insufficient. |
 | Complete, hosted dependencies | Pin Keypass `0.1.0-dev.2` and Fleury `0.1.1`; the latter includes the former separate widget catalog. Remove the development Git pins and override. | Content-hashed hosted archives and the runtime dependency-closure gate. Installed CLI checks remain in the native distribution gate above. |
 | Complete, SDK | Reconcile documentation, assess security monitoring and publish SDK 0.2.0. | [Publication evidence](reviews/2026-10-07-sdk-publication.md): full CI on the tagged main commit, successful monitoring assessment, signed tag and verified Pub archive. |
@@ -46,15 +47,17 @@ publishes its package before the dependent CLI.
 
 The original September builder used a single executable. Release-kit now
 supports a signed Dart runtime/module bundle, and Keybay's local archive helper
-includes its hardware libraries. Those hardware companions still need to pass
-through release-kit's staging, signing, notarization and Homebrew path. The
-existing post-signing launch check must remain a gate.
+includes its hardware libraries. The October 9 candidate carried those companions through RK staging, signing,
+notarization and archive creation; its generated Homebrew formula remains to be
+qualified through installation and upgrades. The post-signing launch check
+remains a gate.
 
 On October 7, authenticated notarization access succeeded after the developer
 agreement was renewed. CLI staging then failed on all three targets because
 release-kit invokes `dart compile`, which rejects Keypass build hooks.
-No CLI artifact was published. The builder must consume native assets while
-preserving the signed runtime/module and library-validation contract below.
+No CLI artifact was published. The October 9 follow-up resolved this build
+failure while preserving the signed runtime/module and library-validation
+contract below. It did not publish a CLI release.
 
 A Developer ID signed, hardened single-file CLI passed signature verification
 but was killed before `--version` on macOS 26.2 ARM64 / Dart 3.13.4. A separate

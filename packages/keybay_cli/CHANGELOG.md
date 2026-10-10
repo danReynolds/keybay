@@ -2,6 +2,9 @@
 
 ## 0.2.0
 
+- Include native dependency notices in RK archives and provide pinned Linux
+  release builders targeting glibc 2.35 on ARM64 and x64.
+
 - Pin hosted Fleury 0.1.1 and use its integrated widget catalog, notifier and
   application-exit APIs. Remove the separate widgets package and Git overrides.
 

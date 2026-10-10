@@ -50,9 +50,10 @@ checks the signatures, Team ID, timestamps and the exact load constraint.
 The local Homebrew renderer installs companions together in `libexec`, links the
 launcher into `bin`, and preserves rpath names so Homebrew does not rewrite and
 invalidate their signatures. This renderer is not an end-to-end release-kit
-publication qualification. Release-kit's existing Dart runtime/module layout
-still needs to carry the hardware companions through its staging/signing and
-publication path before releasing this feature.
+publication qualification. RK's native bundle path now carries Dart code assets through signing,
+notarization, archive creation and installation. The release archive's layout
+is declared by `rk-artifact.json`; it does not use the manual packager's
+`hardware.json`. Keep these two qualification paths distinct.
 
 On Linux the CLI remains a native Dart executable. Its adapter and bundled
 libfido2/OpenSSL/CBOR libraries use `$ORIGIN` for resolution. The OS still supplies
@@ -104,3 +105,46 @@ forwarded immediately, but completion still waits for that OS call to return.
 Physical latency, disconnection and credential capability checks remain attended
 tests. Notarization and installed upgrades are
 separate release gates, tracked in [release readiness](release-readiness.md).
+
+
+## RK release environment
+
+Native Linux releases target **glibc 2.35 or newer**, built on Ubuntu 22.04 for
+x64 and ARM64. The native build tools are confined to release builders. Runtime
+systems must still supply libstdc++, libgcc, libudev, zlib and any system
+libraries required by the bundled OpenSSL build. Alpine/musl is not supported.
+A source build uses its host's ABI and does not establish this release baseline.
+
+Build the two images from the repository root:
+
+```sh
+docker build --platform linux/arm64 -f tool/linux_release.Dockerfile -t keybay-release:arm64 .
+docker build --platform linux/amd64 -f tool/linux_release.Dockerfile -t keybay-release:amd64 .
+export RK_DART_BUILD_IMAGE='keybay-release:{arch}'
+```
+
+The Dockerfile pins the Ubuntu image, Dart 3.13.5 archives, libfido2 1.17.0 and
+RK's temporary native-build helper source. It rebuilds the helper inside each
+target architecture. The Ubuntu package repositories supply build prerequisites;
+the resulting image ID should be recorded with release qualification.
+
+On macOS, select the matching stock Dart 3.13.5 SDK on PATH and set
+`RK_DART_BUILD_TOOL` to the verified macOS helper from
+[RK's preview release](https://github.com/danReynolds/release-kit/releases/tag/dart-build-patch-3.13.5-1).
+Use an RK version with native bundle support and third-party notice support.
+The normal workflow is then `rk stage keybay_cli --timings` followed by
+`rk release keybay_cli`. Installed upgrade and actual hardware authentication
+remain required application checks before publication.
+
+`packages/keybay_cli/THIRD_PARTY_NOTICES.txt` is included by RK without a library
+list or plugin. Regenerate it after updating `tool/licenses`:
+
+```sh
+python3 tool/sync_cli_notices.py
+python3 tool/sync_cli_notices.py --check
+```
+
+Both the manual packager and RK use this same notice text. CI checks it remains
+in sync. For baseline qualification, test native calls from the extracted
+release on Ubuntu 22.04, Debian 12 and Ubuntu 24.04 with development library
+paths unavailable; `--version` alone does not load the hardware adapter.

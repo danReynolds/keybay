@@ -27,14 +27,8 @@ cmp -s "$source/LICENSE" tool/licenses/keypass.txt || { echo 'Keypass license no
 cmake -S "$source/native/hardware" -B "$native" -DCMAKE_BUILD_TYPE=Release
 cmake --build "$native" --parallel 4
 ctest --test-dir "$native" --output-on-failure
-python3 - "$output/notices.txt" <<'PY'
-from pathlib import Path
-import sys
-parts = ['Native hardware dependency notices. Versions are recorded in hardware.json.']
-for name in ('keypass', 'libfido2', 'libcbor', 'openssl', 'nlohmann-json'):
-    parts += [name, (Path('tool/licenses') / (name + '.txt')).read_text()]
-Path(sys.argv[1]).write_text('\n\n'.join(parts) + '\n')
-PY
+python3 tool/sync_cli_notices.py --check
+cp packages/keybay_cli/THIRD_PARTY_NOTICES.txt "$output/notices.txt"
 case "$(uname -s)" in
   Darwin) library=libkeypass_hardware.dylib ;;
   Linux) library=libkeypass_hardware.so ;;
