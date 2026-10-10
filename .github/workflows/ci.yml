@@ -79,6 +79,7 @@ jobs:
       - run: bash tool/install_cli_hardware_build_deps.sh
       - run: dart pub get --enforce-lockfile
       - run: dart format --output=none --set-exit-if-changed .
+      - run: python3 tool/sync_cli_notices.py --check
       - run: dart analyze --fatal-infos
       # Repository-only security tooling tests. Keep these outside the core
       # package so its published archive never contains tests that depend on
