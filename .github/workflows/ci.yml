@@ -58,7 +58,7 @@ jobs:
       # Reject unknown or modified Gradle wrapper JARs before any Android build
       # can execute them. The wrapper distribution itself is SHA-256 pinned in
       # gradle-wrapper.properties.
-      - uses: gradle/actions/wrapper-validation@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+      - uses: gradle/actions/wrapper-validation@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
 
   analyze-and-test:
     # The weekly cron is the canary tier only (see `schedule` above).
@@ -115,7 +115,7 @@ jobs:
         if: runner.os == 'Linux'
         run: ./tool/validate_publish.sh packages/keybay cryptography dbus ffi keypass
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sdk-regression-core-${{ matrix.os }}
           path: build/regression/*/report.json
@@ -144,7 +144,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y xvfb xclip xauth
       - run: ./tool/test_cli.sh core
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sdk-regression-minimum-sdk
           path: build/regression/*/report.json
@@ -186,7 +186,7 @@ jobs:
       # and start without a Keybay store.
       - run: KEYBAY_QUICKSTART=1 ./tool/test_cli_quickstart.sh
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.artifact }}
           path: build/regression/*/report.json
@@ -210,14 +210,14 @@ jobs:
       - run: bash tool/test_cli_quickstart_linux.sh
         env:
           KEYBAY_BENCHMARK_OUTPUT: ${{ runner.temp }}/cli-benchmark-linux.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cli-benchmark-linux-x64
           path: ${{ runner.temp }}/cli-benchmark-linux.json
           if-no-files-found: warn
           retention-days: 30
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sdk-regression-linux
           path: build/regression/*/report.json
@@ -242,14 +242,14 @@ jobs:
           KEYBAY_FLATPAK_REPORT: ${{ runner.temp }}/flatpak-qualification.json
         run: ./tool/test_e2e.sh flatpak
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: flatpak-qualification-linux-x64
           path: ${{ runner.temp }}/flatpak-qualification.json
           if-no-files-found: error
           retention-days: 30
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sdk-regression-flatpak
           path: build/regression/*/report.json
@@ -324,7 +324,7 @@ jobs:
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics
           script: ./tool/test_e2e.sh android
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sdk-regression-android-${{ matrix.api-level }}
           path: build/regression/*/report.json
@@ -362,7 +362,7 @@ jobs:
         working-directory: example_flutter
       - run: ./tool/test_e2e.sh ios
       - if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-xctest-diagnostics
           path: |
@@ -371,7 +371,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sdk-regression-ios
           path: build/regression/*/report.json
@@ -448,7 +448,7 @@ jobs:
       - run: bash tool/install_cli_hardware_build_deps.sh
       - run: dart pub get --enforce-lockfile
       - run: dart test test/site_demo_test.dart
-      - uses: ruby/setup-ruby@a0102e0972be65f351c307e2d64b9314a57c8073 # v1.324.0
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
           ruby-version: "3.3"
           bundler-cache: true
