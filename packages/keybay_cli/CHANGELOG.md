@@ -2,75 +2,64 @@
 
 ## 0.2.0
 
-- Include native dependency notices in RK archives and provide pinned Linux
-  release builders targeting glibc 2.35 on ARM64 and x64.
+Keybay 0.2.0 adds an interactive terminal vault, passphrase protection, and
+hardware passkey protection using compatible FIDO2 security keys.
 
-- Pin hosted Fleury 0.1.1 and use its integrated widget catalog, notifier and
-  application-exit APIs. Remove the separate widgets package and Git overrides.
+**Upgrading from 0.1.x:** this release uses the V2 store format. It does not read
+or automatically migrate V1 stores. Existing V1 data remains accessible with
+the old binary; retain access to that installation and transfer any required
+secrets before switching to 0.2.0. Do not treat an empty V2 vault as proof that
+your old data was deleted or migrated.
 
-Unreleased. The CLI ships only as native binaries through Homebrew and GitHub
-releases; it is not published to pub.dev. Native distribution qualification and
-publication remain separate from source integration.
+### Interactive vault and protection
 
-- Add hardware passkey enrollment/removal in the TUI and hardware unlock to
-  `get`, `set`, `list`, `rm`, and secret-referencing `run`. Commands select an
-  existing method, keep authentication on the controlling terminal, and drain
-  cancellation without consuming piped input or retrying a rejected PIN.
-- Bundle the native hardware adapter and its dependency notices. Local macOS
-  candidates use a dedicated signed runtime/module with exact library-load
-  constraints; native distribution and physical-device qualification remain
-  separate release gates.
+- Run `keybay open` to browse, search, add, edit, reveal, and copy secrets.
+  Values stay masked until explicitly revealed. Blur and resize hide disclosed
+  values, and five minutes of inactivity closes the session.
+- Add or remove a passphrase or hardware key in Settings → Security. Hardware
+  unlock also works with `get`, `set`, `list`, `rm`, and secret-referencing
+  `run`. Hardware keys must support the encryption capability required by
+  Keypass; ordinary passkey storage alone is insufficient.
+- The TUI remembers your last successful unlock method. Selecting a hardware
+  key starts the unlock flow immediately, with PIN entry and touch handled
+  through the controlling terminal. Cancellation does not consume piped input
+  or automatically retry a rejected PIN.
+- Center the vault in a framed layout on larger terminals and customize its
+  appearance in Settings. Small terminals retain access to the available
+  actions.
 
-- Adapt existing commands to the single-application V2 SDK and session API.
-  Existing V1 stores are not migrated automatically.
+### Commands and terminal handling
 
-- Disable core files for every command and make the process non-dumpable on
-  Linux, so a crash cannot persist an open session's store key or a revealed
-  value. A command that cannot do so exits before opening the store. `run`
-  restores the caller's core-file limit for the launched program.
-- Ignore SIGTSTP, SIGTTIN, SIGTTOU and SIGQUIT while the vault owns the
-  terminal, so it is never stopped or core-dumped with a value on screen.
-- Fix hidden input on macOS, which ignored SIGCHLD instead of SIGTSTP: Dart's
-  `ProcessSignal` numbers use Linux numbering, so the prompt now passes native
-  signal numbers to libc.
-- Copy on macOS stays on this Mac (no Universal Clipboard) and is marked
-  concealed and transient for clipboard managers.
-- Escape every Unicode format, default-ignorable and Prepend character,
-  variation selectors that do not choose an emoji's presentation, and any text
-  that would be drawn in zero cells, in revealed values; `get` refuses exactly
-  the same set. Revealed values wrap under the terminal's measured width policy,
-  so ambiguous-width letters on a CJK-configured terminal are not clipped.
-- A launch summary or prompt larger than the terminal's output buffer is
-  written whole instead of failing partway.
-- Show a platform-only `run` its launch summary on an attached terminal, flag
-  more execution-affecting variables, and state plainly that without a
-  passphrase any program running as you can read every value.
-
-- Add `keybay get KEY` as an explicit human reveal path. Stdout must be the
-  foreground controlling terminal; stdin is untouched and may be redirected.
-  Refuse captured or background output before opening the store and check the
-  output channel again immediately before revealing a value.
-
-- Add `keybay open`: a searchable interactive vault with explicit reveal/copy,
-  key editing, passphrase settings and reset recovery. Unlock stays within the
-  TUI; blur and resize hide disclosed values, and five minutes of inactivity
-  closes the session.
-- Preserve accepted text, selection and undo history when name, search or reset
-  input is rejected, using the upstream Fleury editing policy.
-- Preserve exact secret-field text, including CRLF; render printable Unicode
-  normally and escape unsafe controls. Exclude revealed values and escaped
-  previews from semantics and accessibility output.
-- Own hidden CLI input through terminal cleanup, preserve bracketed-paste bytes,
-  support bounded input without canonical-line truncation, and restore caller
-  terminal modes after EOF, cancellation and handled signals.
-- Accept simple key names as well as slash-separated names. Resolve globally
-  activated workspace identity from the CLI package's own declaration.
-- Read `.env` in the working directory by default. `-f` selects one replacement
-  file; no parent search, fallback or implicit layering occurs. Ship ready-to-use
-  reference-only manifests with all four examples.
+- Add `keybay get KEY` as an explicit reveal command. It requires foreground
+  terminal output and refuses captured or background output before opening the
+  store; redirected stdin is left untouched.
+- Read `.env` in the current directory by default. `-f` selects one replacement
+  manifest, without parent-directory searches or implicit layering.
 - Resolve child executables from the inherited PATH before applying manifest
-  values. Preserve exact environment bytes and await accepted storage work on
-  interruption before closing the session.
+  values. Preserve exact environment bytes and replace Keybay with the child
+  process through `execve`.
+- Preserve secret-field text and multiline paste, restore terminal modes on
+  cancellation and handled signals, and escape unsafe control and formatting
+  characters when displaying values.
+
+### Native distribution and security
+
+- Ship native archives for macOS ARM64, Linux ARM64, and Linux x64 through
+  GitHub releases and Homebrew. No Dart SDK is required at runtime. The CLI is
+  not distributed through pub.dev.
+- Bundle the hardware adapter and its native dependencies with their license
+  notices. macOS uses a Developer ID signed and notarized runtime/module bundle
+  with constrained library loading. Linux builders target glibc 2.35.
+- Disable core dumps while Keybay owns the vault; restore the caller's core
+  limit for launched programs. Protect terminal ownership during secret input
+  and disclosure.
+- Keep macOS clipboard copies local to the device and mark them concealed and
+  transient. Do not include revealed secret values in accessibility output.
+
+Linux requires an available Secret Service provider over the user's D-Bus
+session. Windows, Intel macOS, mobile CLI distribution, and Flatpak CLI
+packaging are outside this release. CLI hardware-key support does not claim
+system-stored passkeys for unsigned terminal programs.
 
 ## 0.1.1
 
