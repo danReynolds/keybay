@@ -41,6 +41,20 @@ class SourceTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             verify(self.source, self.manifest)
 
+    def test_injected_hook_module(self):
+        # Python executes with the bundler directory on sys.path. Check the
+        # complete hook tree so an injected module cannot shadow stdlib imports.
+        (self.source / "hook/json.py").write_text("injected")
+        with self.assertRaises(ValueError):
+            verify(self.source, self.manifest)
+
+    def test_linked_hook_directory(self):
+        hook = self.source / "hook"
+        hook.rename(self.source / "other-hook")
+        hook.symlink_to("other-hook", target_is_directory=True)
+        with self.assertRaises(ValueError):
+            verify(self.source, self.manifest)
+
     def test_linked_file_with_matching_bytes(self):
         target = self.source / "LICENSE"
         target.rename(self.source / "other-license")
