@@ -54,16 +54,11 @@ if [[ -n "${KEYBAY_BINARY:-}" ]]; then
   keybay_binary="$(cd "$(dirname "$KEYBAY_BINARY")" && pwd)/$(basename "$KEYBAY_BINARY")"
   quickstart_dir="${KEYBAY_QUICKSTART_DIR:-packages/keybay_cli/example/quickstart}"
 else
-  bash tool/build_cli_release.sh "$tmp/candidate"
+  bash tool/build_cli_test_bundle.sh "$tmp/candidate"
   version="$(awk '$1 == "version:" { print $2 }' packages/keybay_cli/pubspec.yaml)"
-  archive="$tmp/keybay-$version-test.tar.gz"
-  ./tool/package_cli_release.sh "$tmp/candidate/keybay" "$archive" "$tmp/candidate"
-  ./tool/verify_cli_archive.sh "$archive"
   ./tool/verify_cli_binary.sh "$tmp/candidate/keybay" "$version"
-  mkdir "$tmp/release"
-  tar -xzf "$archive" -C "$tmp/release"
-  keybay_binary="$tmp/release/keybay"
-  quickstart_dir="$tmp/release/example/quickstart"
+  keybay_binary="$tmp/candidate/keybay"
+  quickstart_dir=packages/keybay_cli/example/quickstart
 fi
 python3 tool/test_cli_quickstart.py \
   "$keybay_binary" \

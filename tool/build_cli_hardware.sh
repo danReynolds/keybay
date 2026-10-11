@@ -34,7 +34,27 @@ case "$(uname -s)" in
   Linux) library=libkeypass_hardware.so ;;
   *) echo 'Hardware CLI bundling supports macOS and Linux.' >&2; exit 69 ;;
 esac
-python3 tool/cli_hardware_bundle.py build "$native/$library" "$output/bundle" "$output/notices.txt"
+# Reuse the dependency package's bundler; do not maintain a second native loader
+# layout in Keybay. The pinned-source gate covers this script as well.
+stage="$(mktemp -d "$output/.bundle.XXXXXX")"
+trap 'rm -rf "$stage"' EXIT
+python3 "$source/hook/bundle.py" "$native/$library" "$stage/bundle" > "$stage/code-assets.json"
+cp "$output/notices.txt" "$stage/bundle/THIRD_PARTY_NOTICES.txt"
+python3 - "$stage" "$revision" <<'MANIFEST'
+import hashlib, json, platform, sys
+from pathlib import Path
+output = Path(sys.argv[1])
+names = json.loads((output/'code-assets.json').read_text())['libraries']
+names.append('THIRD_PARTY_NOTICES.txt')
+manifest = {'schema': 1, 'keypassRevision': sys.argv[2],
+ 'platform': 'macos' if sys.platform == 'darwin' else 'linux',
+ 'architecture': 'arm64' if platform.machine() in ('arm64', 'aarch64') else 'x64',
+ 'files': {name: hashlib.sha256((output/'bundle'/name).read_bytes()).hexdigest() for name in names}}
+(output/'bundle/hardware.json').write_text(json.dumps(manifest, indent=2)+'\n')
+MANIFEST
+# Install only after verification; retire prior managed library names.
+python3 tool/cli_hardware_bundle.py install "$stage/bundle" "$output/bundle"
+mv "$stage/code-assets.json" "$output/code-assets.json"
 python3 - "$output/hardware-build.json" <<'PY'
 import json, platform, subprocess, sys
 versions = {p: subprocess.check_output(['pkg-config', '--modversion', p], text=True).strip() for p in ('libfido2', 'libcbor', 'libcrypto')}

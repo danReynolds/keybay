@@ -23,9 +23,7 @@ void main() {
         final fixture = await _fixture(1, <String, List<int>>{
           'service/a': <int>[1],
         });
-        final session = await V2StoreEngine(
-          fixture.hostPlatform,
-        ).openPlatformOnly();
+        final session = await V2StoreEngine(fixture.hostPlatform).open();
         try {
           final hostilePrefix = fixture.bytes;
           ByteData.sublistView(
@@ -69,9 +67,7 @@ void main() {
         final fixture = await _fixture(2, <String, List<int>>{
           'service/a': <int>[1, 2, 3],
         });
-        final session = await V2StoreEngine(
-          fixture.hostPlatform,
-        ).openPlatformOnly();
+        final session = await V2StoreEngine(fixture.hostPlatform).open();
         try {
           final frame = fixture.frames['service/a']!;
           final truncated = _removeRange(fixture.bytes, frame.offset, 1);
@@ -115,7 +111,7 @@ void main() {
       );
       try {
         await expectLater(
-          V2StoreEngine(fixture.hostPlatform).openPlatformOnly(),
+          V2StoreEngine(fixture.hostPlatform).open(),
           throwsA(_failure(KeybayErrorCode.limitExceeded)),
         );
         expect(fixture.files.closedHandleCount, 1);
@@ -137,7 +133,7 @@ void main() {
           ..[fixture.packageOffset + fixture.packageLength ~/ 2] ^= 1;
         fixture.files.replaceLiveBytes(bytes);
         await expectLater(
-          V2StoreEngine(fixture.hostPlatform).openPlatformOnly(),
+          V2StoreEngine(fixture.hostPlatform).open(),
           throwsA(_failure(KeybayErrorCode.storeAuthenticationFailed)),
         );
         expect(fixture.files.activeHandleCount, 0);
@@ -152,9 +148,7 @@ void main() {
         final fixture = await _fixture(4, <String, List<int>>{
           'service/a': <int>[1],
         });
-        final session = await V2StoreEngine(
-          fixture.hostPlatform,
-        ).openPlatformOnly();
+        final session = await V2StoreEngine(fixture.hostPlatform).open();
         try {
           final bootstrap = fixture.bytes..[v2BootstrapCoreFixedBytes] ^= 1;
           fixture.files.replaceLiveBytes(bootstrap);
@@ -190,9 +184,7 @@ void main() {
         final fixture = await _fixture(seed, <String, List<int>>{
           'service/a': <int>[1, 2, 3],
         });
-        final session = await V2StoreEngine(
-          fixture.hostPlatform,
-        ).openPlatformOnly();
+        final session = await V2StoreEngine(fixture.hostPlatform).open();
         final storeKey = _storeKey(seed);
         try {
           final bytes = fixture.bytes;
@@ -251,9 +243,7 @@ void main() {
         final fixture = await _fixture(6, <String, List<int>>{
           'service/a': <int>[1, 2, 3],
         });
-        final session = await V2StoreEngine(
-          fixture.hostPlatform,
-        ).openPlatformOnly();
+        final session = await V2StoreEngine(fixture.hostPlatform).open();
         try {
           final frame = fixture.frames['service/a']!;
           final bytes = fixture.bytes..[frame.offset + 24] ^= 1;
@@ -274,9 +264,7 @@ void main() {
       final fixture = await _fixture(seed, <String, List<int>>{
         'service/a': <int>[1, 2, 3],
       });
-      final session = await V2StoreEngine(
-        fixture.hostPlatform,
-      ).openPlatformOnly();
+      final session = await V2StoreEngine(fixture.hostPlatform).open();
       final storeKey = _storeKey(seed);
       try {
         final bytes = fixture.bytes;
@@ -333,9 +321,7 @@ void main() {
           'service/a': <int>[1],
           'service/b': <int>[2],
         });
-        final session = await V2StoreEngine(
-          fixture.hostPlatform,
-        ).openPlatformOnly();
+        final session = await V2StoreEngine(fixture.hostPlatform).open();
         try {
           final selected = fixture.frames['service/a']!;
           final ignored = fixture.frames['service/b']!;
@@ -383,7 +369,7 @@ void main() {
       final session = await V2StoreEngine.debug(
         fixture.hostPlatform,
         probe,
-      ).openPlatformOnly();
+      ).open();
       try {
         final first = fixture.frames['service/a']!;
         final later = fixture.frames['service/b']!;
@@ -434,7 +420,7 @@ void main() {
         final session = await V2StoreEngine.debug(
           fixture.hostPlatform,
           probe,
-        ).openPlatformOnly();
+        ).open();
         try {
           fixture.files.closeFailure = const StoreFilesFailure(
             StoreFilesFailureCode.operationFailed,
@@ -473,10 +459,7 @@ void main() {
         );
         try {
           await expectLater(
-            V2StoreEngine.debug(
-              FakeHostPlatform(host),
-              probe,
-            ).openPlatformOnly(),
+            V2StoreEngine.debug(FakeHostPlatform(host), probe).open(),
             throwsA(_failure(KeybayErrorCode.platformOperationFailed)),
           );
           expect(protector.closeAttempts, 1);
@@ -509,7 +492,7 @@ void main() {
         );
         try {
           await expectLater(
-            V2StoreEngine(FakeHostPlatform(host)).openPlatformOnly(),
+            V2StoreEngine(FakeHostPlatform(host)).open(),
             throwsA(_failure(KeybayErrorCode.storeAuthenticationFailed)),
           );
           expect(protector.closeAttempts, 1);
@@ -532,7 +515,7 @@ void main() {
           throw const StoreFilesFailure(StoreFilesFailureCode.operationFailed);
         };
         await expectLater(
-          V2StoreEngine(fixture.hostPlatform).openPlatformOnly(),
+          V2StoreEngine(fixture.hostPlatform).open(),
           throwsA(_failure(KeybayErrorCode.storageOperationFailed)),
         );
         expect(fixture.files.activeHandleCount, 0);
@@ -549,7 +532,7 @@ void main() {
       try {
         await fixture.files.withExclusiveTransaction((_) async {
           await expectLater(
-            V2StoreEngine(fixture.hostPlatform).openPlatformOnly(),
+            V2StoreEngine(fixture.hostPlatform).open(),
             throwsA(_failure(KeybayErrorCode.storeBusy)),
           );
         });
@@ -567,7 +550,7 @@ void main() {
           StoreFilesFailureCode.operationFailed,
         );
         await expectLater(
-          V2StoreEngine(fixture.hostPlatform).openPlatformOnly(),
+          V2StoreEngine(fixture.hostPlatform).open(),
           throwsA(_failure(KeybayErrorCode.storageOperationFailed)),
         );
         expect(fixture.files.closedHandleCount, 1);
@@ -586,9 +569,7 @@ void main() {
         });
         try {
           fixture.files.hasTransactionArtifacts = true;
-          final session = await V2StoreEngine(
-            fixture.hostPlatform,
-          ).openPlatformOnly();
+          final session = await V2StoreEngine(fixture.hostPlatform).open();
           try {
             expect(fixture.files.hasTransactionArtifacts, isFalse);
             // The original generation is pinned before provider access; the
@@ -616,7 +597,7 @@ void main() {
         fixture.files.hasTransactionArtifacts = true;
 
         await expectLater(
-          V2StoreEngine(fixture.hostPlatform).openPlatformOnly(),
+          V2StoreEngine(fixture.hostPlatform).open(),
           throwsA(_failure(KeybayErrorCode.storeAuthenticationFailed)),
         );
         expect(fixture.files.hasLiveFile, isTrue);
@@ -634,9 +615,7 @@ void main() {
         final fixture = await _fixture(12, <String, List<int>>{
           'service/a': <int>[1],
         });
-        final session = await V2StoreEngine(
-          fixture.hostPlatform,
-        ).openPlatformOnly();
+        final session = await V2StoreEngine(fixture.hostPlatform).open();
         try {
           final opensBeforeTransaction = fixture.files.openCallCount;
           fixture.files.hasTransactionArtifacts = true;
@@ -664,9 +643,7 @@ void main() {
         final fixture = await _fixture(13, <String, List<int>>{
           'service/a': <int>[1, 2, 3],
         });
-        final session = await V2StoreEngine(
-          fixture.hostPlatform,
-        ).openPlatformOnly();
+        final session = await V2StoreEngine(fixture.hostPlatform).open();
         try {
           var replaced = false;
           fixture.files.beforeRead = (file, read) {

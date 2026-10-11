@@ -15,7 +15,7 @@ class SourceTest(unittest.TestCase):
         self.source = Path(self.directory.name)
         files = {"LICENSE": b"license", "pubspec.yaml": b"name: keypass",
                  "native/hardware/CMakeLists.txt": b"build",
-                 "native/hardware/adapter.cpp": b"source"}
+                 "native/hardware/adapter.cpp": b"source", "hook/bundle.py": b"bundler"}
         self.manifest = {"files": {name: hashlib.sha256(data).hexdigest()
                                    for name, data in files.items()}}
         for name, data in files.items():
@@ -38,6 +38,20 @@ class SourceTest(unittest.TestCase):
 
     def test_injected_input(self):
         (self.source / "native/hardware/extra.cmake").write_text("extra")
+        with self.assertRaises(ValueError):
+            verify(self.source, self.manifest)
+
+    def test_injected_hook_module(self):
+        # Python executes with the bundler directory on sys.path. Check the
+        # complete hook tree so an injected module cannot shadow stdlib imports.
+        (self.source / "hook/json.py").write_text("injected")
+        with self.assertRaises(ValueError):
+            verify(self.source, self.manifest)
+
+    def test_linked_hook_directory(self):
+        hook = self.source / "hook"
+        hook.rename(self.source / "other-hook")
+        hook.symlink_to("other-hook", target_is_directory=True)
         with self.assertRaises(ValueError):
             verify(self.source, self.manifest)
 

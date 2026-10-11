@@ -31,7 +31,7 @@ Future<void> main(List<String> input) async {
   final usage = cli
       ? '''Usage: ./tool/test_cli.sh [core | macos | linux | all]
 Supply one or more names; no arguments means core (no real store).
-core runs command, SDK-boundary, TUI/PTY, clipboard, exec and archive checks.
+core runs command, SDK-boundary, TUI/PTY, clipboard, exec and native bundle checks.
 macos/linux run real-provider flows with disposable identities; Linux runs in
 Docker on macOS. Missing prerequisites are blocked (69), not passed.
 Reports in build/regression distinguish CLI from SDK results. These checks do

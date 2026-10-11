@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Remove the internal platform-only open alias; qualification tests use the same
+  `open()` path as the public facade.
+- Consolidate native dependency bundling in Keypass and release signing,
+  archives, and Homebrew publication in RK. Keep floor-SDK local test builds
+  separate from release qualification.
+
 ## 0.2.0
 
 This is a breaking API and storage-format change from 0.1.x. Existing stores are

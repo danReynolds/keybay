@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local native release candidate. Signing/publication are separate operations.
+# Local test bundle for the supported SDK floor. RK owns release artifacts.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 [[ $# == 1 ]] || { echo "usage: $0 OUTPUT_DIRECTORY" >&2; exit 2; }
@@ -26,4 +26,4 @@ python3 - "$output/keybay" <<'SMOKE'
 import subprocess, sys
 subprocess.run([sys.argv[1], '--version'], check=True, timeout=20)
 SMOKE
-echo "Unsigned CLI candidate ready: $output"
+echo "Local CLI test bundle ready: $output"

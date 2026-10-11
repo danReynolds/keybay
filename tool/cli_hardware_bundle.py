@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Build/inspect the CLI's relocatable native dependency bundle.
+"""Inspect and install disposable CLI test bundles.
 
-Archive validation uses only bytes and metadata; it never loads a candidate.
-Native inspection/rewriting is restricted to libraries produced by our build.
+Keypass owns native dependency bundling. RK owns release artifacts.
 """
 from __future__ import annotations
 
@@ -11,7 +10,6 @@ import json
 import pathlib
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 
@@ -22,12 +20,6 @@ MAC = (r"libkeypass_hardware\.dylib", r"libfido2\.1\.dylib",
        r"libcrypto\.3\.dylib", r"libcbor\.[0-9.]+\.dylib")
 LINUX = (r"libkeypass_hardware\.so", r"libfido2\.so\.1",
          r"libcrypto\.so\.3", r"libcbor\.so\.[0-9.]+")
-LINUX_SYSTEM = re.compile(r"^(lib(c|m|dl|rt|pthread|stdc\+\+|gcc_s|udev|z|zstd)\.so\.[0-9]+|ld-linux[^/]*\.so\.[0-9]+)$")
-
-
-def run(*args: str) -> str:
-    return subprocess.check_output(args, text=True).strip()
-
 
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -86,89 +78,15 @@ def install(source: pathlib.Path, target: pathlib.Path) -> None:
     verify(target)
 
 
-def dependencies(path: pathlib.Path, mac: bool) -> list[str]:
-    if mac:
-        # First entry is the library's own install name.
-        return [line.strip().split(" (", 1)[0] for line in run("otool", "-L", str(path)).splitlines()[2:]]
-    return re.findall(r"\(NEEDED\).*\[([^\]]+)\]", run("readelf", "-d", str(path)))
-
-
-def is_system(name: str, mac: bool) -> bool:
-    return (name.startswith(("/usr/lib/", "/System/Library/")) if mac
-            else bool(LINUX_SYSTEM.fullmatch(name)))
-
-
-def bundle(source: pathlib.Path, output: pathlib.Path, notices: pathlib.Path) -> None:
-    mac = sys.platform == "darwin"
-    if not mac and sys.platform != "linux":
-        raise ValueError("hardware bundling supports macOS and Linux")
-    patterns = MAC if mac else LINUX
-    output.mkdir(parents=True, exist_ok=True)
-    # Clean only a previous bundle's explicitly listed generated files.
-    if (output / MANIFEST).exists():
-        for name in manifest_files((output / MANIFEST).read_bytes(), require_current=False):
-            (output / name).unlink(missing_ok=True)
-        (output / MANIFEST).unlink()
-    pending = [(source.name, source)]
-    copied = set()
-    while pending:
-        name, original = pending.pop()
-        if name in copied:
-            continue
-        if not any(re.fullmatch(pattern, name) for pattern in patterns):
-            raise ValueError(f"unexpected native dependency {name}")
-        target = output / name
-        if target.is_symlink():
-            raise ValueError(f"bundle target is a symlink: {target}")
-        shutil.copyfile(original, target)
-        target.chmod(0o755)
-        copied.add(name)
-        deps = dependencies(original, mac)
-        # ldd is used only on the trusted freshly built library, never archives.
-        resolved = {} if mac else dict(re.findall(r"^\s*(\S+) => (\S+)", run("ldd", str(original)), re.M))
-        for dep in deps:
-            if is_system(dep, mac):
-                continue
-            path = pathlib.Path(dep if mac else resolved.get(dep, ""))
-            if not path.is_absolute() or not path.is_file():
-                raise ValueError(f"cannot resolve native dependency {dep}")
-            pending.append((path.name, path))
-            if mac:
-                subprocess.run(["install_name_tool", "-change", dep, f"@loader_path/{path.name}", str(target)], check=True)
-        if mac:
-            subprocess.run(["install_name_tool", "-id", f"@rpath/{name}", str(target)], check=True)
-            load = run("otool", "-l", str(target))
-            for rpath in re.findall(r"cmd LC_RPATH\s+cmdsize \d+\s+path (.+) \(offset", load):
-                subprocess.run(["install_name_tool", "-delete_rpath", rpath, str(target)], check=True)
-            # Rewriting invalidates existing signatures. Release signing follows.
-            subprocess.run(["codesign", "--force", "--sign", "-", str(target)], check=True)
-        else:
-            subprocess.run(["patchelf", "--set-rpath", "$ORIGIN", str(target)], check=True)
-    shutil.copyfile(notices, output / NOTICES)
-    machine = run("uname", "-m")
-    item = {"schema": 1, "keypassRevision": REVISION,
-            "platform": "macos" if mac else "linux",
-            "architecture": {"arm64": "arm64", "aarch64": "arm64", "x86_64": "x64"}[machine],
-            "files": {name: digest((output / name).read_bytes()) for name in sorted(copied | {NOTICES})}}
-    (output / MANIFEST).write_text(json.dumps(item, indent=2) + "\n")
-    verify(output)
-    for name in copied:
-        for dep in dependencies(output / name, mac):
-            if not is_system(dep, mac) and (dep.removeprefix("@loader_path/") not in copied or (mac and not dep.startswith("@loader_path/"))):
-                raise ValueError(f"unbundled dependency {dep}")
-
-
 def main() -> None:
     try:
         if len(sys.argv) == 3 and sys.argv[1] == "verify":
             verify(pathlib.Path(sys.argv[2]))
-        elif len(sys.argv) == 5 and sys.argv[1] == "build":
-            bundle(*map(pathlib.Path, sys.argv[2:]))
         elif len(sys.argv) == 4 and sys.argv[1] == "install":
             install(*map(pathlib.Path, sys.argv[2:]))
         else:
-            raise ValueError("usage: cli_hardware_bundle.py build LIB OUTPUT NOTICES | verify DIR | install SOURCE TARGET")
-    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+            raise ValueError("usage: cli_hardware_bundle.py verify DIR | install SOURCE TARGET")
+    except (ValueError, OSError) as error:
         raise SystemExit(f"invalid hardware bundle: {error}") from error
 
 

@@ -109,8 +109,8 @@ jobs:
       # Keep archive-policy validation on the current-SDK Linux lane; the
       # minimum lane is reserved for runtime/AOT compatibility at the floor.
       # The CLI ships only as native binaries, never to pub.dev, so it has
-      # no publication archive; test_cli.sh above validates the exact native
-      # CLI archive.
+      # no publication archive; test_cli.sh above validates the local native
+      # CLI test bundle.
       - name: Validate SDK publication archive
         if: runner.os == 'Linux'
         run: ./tool/validate_publish.sh packages/keybay cryptography dbus ffi keypass
@@ -181,7 +181,7 @@ jobs:
       - run: KEYBAY_INTEGRATION=1 dart test test/v2_macos_unentitled_integration_test.dart --name 'public Keybay facade'
         working-directory: packages/keybay
       - run: ./tool/test_cli.sh core macos
-      # Package, verify, extract, and execute the exact README onboarding loop
+      # Build and execute the README onboarding loop
       # against the fixed-appId product. GitHub-hosted runners are disposable
       # and start without a Keybay store.
       - run: KEYBAY_QUICKSTART=1 ./tool/test_cli_quickstart.sh

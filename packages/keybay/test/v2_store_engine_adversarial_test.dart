@@ -40,7 +40,7 @@ void main() {
         final session = await V2StoreEngine(
           fixture.hostPlatform,
           entropy: entropy,
-        ).openPlatformOnly();
+        ).open();
         final before = fixture.bytes;
         Uint8List? after;
         try {
@@ -112,9 +112,7 @@ void main() {
 
         for (final corruptedKey in records.keys) {
           final fixture = await buildV2StoreFixture(records: records);
-          final session = await V2StoreEngine(
-            fixture.hostPlatform,
-          ).openPlatformOnly();
+          final session = await V2StoreEngine(fixture.hostPlatform).open();
           final corrupted = fixture.bytes;
           Uint8List? retained;
           Uint8List? after;
@@ -169,7 +167,7 @@ void main() {
         final session = await V2StoreEngine(
           fixture.hostPlatform,
           entropy: entropy,
-        ).openPlatformOnly();
+        ).open();
         final before = fixture.bytes;
         Uint8List? after;
         try {
@@ -201,9 +199,7 @@ void main() {
             'zulu/value': <int>[3],
           },
         );
-        final session = await V2StoreEngine(
-          fixture.hostPlatform,
-        ).openPlatformOnly();
+        final session = await V2StoreEngine(fixture.hostPlatform).open();
         final corrupted = fixture.bytes;
         Uint8List? retained;
         Uint8List? after;
@@ -245,9 +241,7 @@ void main() {
           'service/value': <int>[1, 2, 3],
         },
       );
-      final session = await V2StoreEngine(
-        fixture.hostPlatform,
-      ).openPlatformOnly();
+      final session = await V2StoreEngine(fixture.hostPlatform).open();
       final before = fixture.bytes;
       Uint8List? after;
       try {
@@ -301,9 +295,7 @@ void main() {
             'service/value': <int>[1, 2, 3],
           },
         );
-        final session = await V2StoreEngine(
-          fixture.hostPlatform,
-        ).openPlatformOnly();
+        final session = await V2StoreEngine(fixture.hostPlatform).open();
         final before = fixture.bytes;
         final generation = fixture.files.liveGeneration!;
         Uint8List? after;
@@ -329,9 +321,7 @@ void main() {
             expect(after, before);
           }
 
-          reopened = await V2StoreEngine(
-            fixture.hostPlatform,
-          ).openPlatformOnly();
+          reopened = await V2StoreEngine(fixture.hostPlatform).open();
           final reopenedValue = await reopened.getBytes('service/value');
           try {
             expect(
@@ -354,8 +344,8 @@ void main() {
 
   test('contending sessions never lose an acknowledged update', () async {
     final fixture = await buildV2StoreFixture();
-    final first = await V2StoreEngine(fixture.hostPlatform).openPlatformOnly();
-    final second = await V2StoreEngine(fixture.hostPlatform).openPlatformOnly();
+    final first = await V2StoreEngine(fixture.hostPlatform).open();
+    final second = await V2StoreEngine(fixture.hostPlatform).open();
     final replacementReached = Completer<void>();
     final releaseReplacement = Completer<void>();
     final initialGeneration = fixture.files.liveGeneration!;
