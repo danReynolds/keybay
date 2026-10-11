@@ -33,16 +33,16 @@ void main() {
         final engine = V2StoreEngine(platform, entropy: environment.entropy);
 
         await expectLater(
-          engine.openPlatformOnly(),
+          engine.open(),
           throwsA(
             _keybayFailure(KeybayErrorCode.applicationIdentityUnavailable),
           ),
         );
         expect(platform.resolveCalls, 1);
 
-        final first = await engine.openPlatformOnly();
+        final first = await engine.open();
         addTearDown(first.close);
-        final second = await engine.openPlatformOnly();
+        final second = await engine.open();
         addTearDown(second.close);
         expect(platform.resolveCalls, 2);
       },
@@ -60,8 +60,8 @@ void main() {
         );
         final engine = V2StoreEngine(platform, entropy: environment.entropy);
 
-        final firstOpening = engine.openPlatformOnly();
-        final secondOpening = engine.openPlatformOnly();
+        final firstOpening = engine.open();
+        final secondOpening = engine.open();
         await platform.firstResolveStarted.future;
         expect(platform.resolveCalls, 1);
         release.complete();
@@ -94,7 +94,7 @@ void main() {
         final environment = _Environment(entropyResponses: _happyEntropy());
         addTearDown(environment.dispose);
 
-        final session = await environment.engine.openPlatformOnly();
+        final session = await environment.engine.open();
         addTearDown(session.close);
         expect(session.wasInitialized, isTrue);
         expect(await session.get('service/missing'), isNull);
@@ -113,7 +113,7 @@ void main() {
         expect(await session.delete('service/blob'), isTrue);
         expect(await session.contains('service/blob'), isFalse);
 
-        final reopened = await environment.engine.openPlatformOnly();
+        final reopened = await environment.engine.open();
         addTearDown(reopened.close);
         expect(reopened.wasInitialized, isFalse);
         expect(await reopened.get('service/token'), 'replacement');
@@ -137,10 +137,10 @@ void main() {
         );
         addTearDown(environment.dispose);
 
-        final session = await environment.engine.openPlatformOnly();
+        final session = await environment.engine.open();
         await session.set('service/token', 'secret');
         final otherRuntime = V2StoreEngine(environment.platform);
-        final otherSession = await otherRuntime.openPlatformOnly();
+        final otherSession = await otherRuntime.open();
         addTearDown(otherSession.close);
 
         await environment.engine.reset();
@@ -158,7 +158,7 @@ void main() {
         );
         expect(environment.files.hasLiveFile, isFalse);
 
-        final fresh = await environment.engine.openPlatformOnly();
+        final fresh = await environment.engine.open();
         addTearDown(fresh.close);
         expect(fresh.wasInitialized, isTrue);
         expect(await fresh.get('service/token'), isNull);
@@ -175,7 +175,7 @@ void main() {
       );
       await creation.lease.close();
       await expectLater(
-        rootOnly.engine.openPlatformOnly(),
+        rootOnly.engine.open(),
         throwsA(_keybayFailure(KeybayErrorCode.storeStateConflict)),
       );
       expect(rootOnly.files.hasLiveFile, isFalse);
@@ -186,7 +186,7 @@ void main() {
       );
       addTearDown(staged.dispose);
       await expectLater(
-        staged.engine.openPlatformOnly(),
+        staged.engine.open(),
         throwsA(_keybayFailure(KeybayErrorCode.storeStateConflict)),
       );
       expect(staged.registry.rootCount, 0);
@@ -195,7 +195,7 @@ void main() {
         entropyResponses: _initializationEntropy(0x50),
       );
       addTearDown(fileOnly.dispose);
-      final initialized = await fileOnly.engine.openPlatformOnly();
+      final initialized = await fileOnly.engine.open();
       await initialized.close();
       final reset = await fileOnly.protector.prepareReset(
         interaction: PlatformInteraction.forbidden,
@@ -203,7 +203,7 @@ void main() {
       await reset.commit();
       await reset.close();
       await expectLater(
-        fileOnly.engine.openPlatformOnly(),
+        fileOnly.engine.open(),
         throwsA(_keybayFailure(KeybayErrorCode.platformKeyInvalidated)),
       );
       expect(fileOnly.files.hasLiveFile, isTrue);
@@ -214,12 +214,12 @@ void main() {
         entropyResponses: _initializationEntropy(0x60),
       );
       addTearDown(environment.dispose);
-      final initialized = await environment.engine.openPlatformOnly();
+      final initialized = await environment.engine.open();
       await initialized.close();
       final generation = environment.files.liveGeneration;
       environment.files.hasTransactionArtifacts = true;
 
-      final reopened = await environment.engine.openPlatformOnly();
+      final reopened = await environment.engine.open();
       addTearDown(reopened.close);
 
       expect(reopened.wasInitialized, isFalse);
@@ -234,7 +234,7 @@ void main() {
       () async {
         final environment = _Environment(entropyResponses: _happyEntropy());
         addTearDown(environment.dispose);
-        final session = await environment.engine.openPlatformOnly();
+        final session = await environment.engine.open();
         addTearDown(session.close);
         environment.files.hasTransactionArtifacts = true;
 
@@ -246,7 +246,7 @@ void main() {
         expect(environment.files.hasTransactionArtifacts, isTrue);
 
         await session.close();
-        final reopened = await environment.engine.openPlatformOnly();
+        final reopened = await environment.engine.open();
         addTearDown(reopened.close);
         expect(environment.files.hasTransactionArtifacts, isFalse);
         expect(await reopened.get('service/token'), isNull);
@@ -261,7 +261,7 @@ void main() {
       environment.entropy.nextFailure = const V2EntropyFailure();
 
       await expectLater(
-        environment.engine.openPlatformOnly(),
+        environment.engine.open(),
         throwsA(_keybayFailure(KeybayErrorCode.entropyUnavailable)),
       );
       expect(environment.registry.rootCount, 0);
@@ -274,7 +274,7 @@ void main() {
         entropyResponses: _initializationEntropy(0x30),
       );
       addTearDown(before.dispose);
-      final beforeSession = await before.engine.openPlatformOnly();
+      final beforeSession = await before.engine.open();
       addTearDown(beforeSession.close);
       before.files.failResetBeforeLiveRevocation = true;
       await expectLater(
@@ -289,7 +289,7 @@ void main() {
         entropyResponses: _initializationEntropy(0x50),
       );
       addTearDown(after.dispose);
-      final afterSession = await after.engine.openPlatformOnly();
+      final afterSession = await after.engine.open();
       addTearDown(afterSession.close);
       after.files.failResetAfterLiveRevocation = true;
       await expectLater(
@@ -312,7 +312,7 @@ void main() {
         resetFailure: SoftwareResetFailure.incompleteAfterMutation,
       );
       addTearDown(environment.dispose);
-      final session = await environment.engine.openPlatformOnly();
+      final session = await environment.engine.open();
       addTearDown(session.close);
 
       await expectLater(
@@ -342,7 +342,7 @@ void main() {
           ],
         );
         addTearDown(environment.dispose);
-        final session = await environment.engine.openPlatformOnly();
+        final session = await environment.engine.open();
         addTearDown(session.close);
         await session.set('service/token', 'old-value');
 
@@ -397,7 +397,7 @@ void main() {
         );
 
         await expectLater(
-          engine.openPlatformOnly(),
+          engine.open(),
           throwsA(_keybayFailure(KeybayErrorCode.storageOperationFailed)),
         );
         expect(probe.failedOpenKeyMaterialWasCleared, isTrue);
@@ -405,7 +405,7 @@ void main() {
         expect(environment.registry.rootCount, 1);
 
         environment.files.transactionCleanupFailure = null;
-        final reopened = await engine.openPlatformOnly();
+        final reopened = await engine.open();
         addTearDown(reopened.close);
         expect(reopened.wasInitialized, isFalse);
       },
@@ -427,7 +427,7 @@ void main() {
             );
 
         await expectLater(
-          environment.engine.openPlatformOnly(),
+          environment.engine.open(),
           throwsA(_keybayFailure(KeybayErrorCode.storageOperationFailed)),
         );
         expect(environment.files.hasLiveFile, isFalse);
@@ -436,7 +436,7 @@ void main() {
 
         environment.files.beforeReplaceLive = null;
         await environment.engine.reset();
-        final recovered = await environment.engine.openPlatformOnly();
+        final recovered = await environment.engine.open();
         addTearDown(recovered.close);
         expect(recovered.wasInitialized, isTrue);
       },
@@ -455,7 +455,7 @@ void main() {
             );
 
         await expectLater(
-          environment.engine.openPlatformOnly(),
+          environment.engine.open(),
           throwsA(_keybayFailure(KeybayErrorCode.storageOperationFailed)),
         );
         expect(environment.files.hasLiveFile, isTrue);
@@ -463,7 +463,7 @@ void main() {
         expect(environment.registry.rootCount, 1);
 
         environment.files.afterReplaceLive = null;
-        final reopened = await environment.engine.openPlatformOnly();
+        final reopened = await environment.engine.open();
         addTearDown(reopened.close);
         expect(reopened.wasInitialized, isFalse);
         expect(await reopened.get('service/missing'), isNull);
@@ -480,7 +480,7 @@ void main() {
       };
 
       await expectLater(
-        environment.engine.openPlatformOnly(),
+        environment.engine.open(),
         throwsA(_keybayFailure(KeybayErrorCode.storeAuthenticationFailed)),
       );
       expect(environment.files.hasLiveFile, isFalse);
@@ -495,7 +495,7 @@ void main() {
           entropyResponses: _initializationEntropy(0x60),
         );
         addTearDown(environment.dispose);
-        final session = await environment.engine.openPlatformOnly();
+        final session = await environment.engine.open();
         addTearDown(session.close);
         environment.files.transactionCleanupFailure = const StoreFilesFailure(
           StoreFilesFailureCode.operationFailed,

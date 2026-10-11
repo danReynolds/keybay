@@ -15,7 +15,7 @@ class SourceTest(unittest.TestCase):
         self.source = Path(self.directory.name)
         files = {"LICENSE": b"license", "pubspec.yaml": b"name: keypass",
                  "native/hardware/CMakeLists.txt": b"build",
-                 "native/hardware/adapter.cpp": b"source"}
+                 "native/hardware/adapter.cpp": b"source", "hook/bundle.py": b"bundler"}
         self.manifest = {"files": {name: hashlib.sha256(data).hexdigest()
                                    for name, data in files.items()}}
         for name, data in files.items():

@@ -52,9 +52,6 @@ final class V2StoreEngine {
     cancellation: cancellation,
   );
 
-  /// Compatibility spelling for platform-only M4/M5 qualification tests.
-  Future<V2StoreSession> openPlatformOnly() => open();
-
   Future<V2StoreSession> _open(_CredentialSnapshot? credential) =>
       _future(() async {
         PinnedStoreFile? pin;

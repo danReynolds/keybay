@@ -23,7 +23,7 @@ void main() {
       addTearDown(fixture.dispose);
 
       final reader = V2StoreEngine(fixture.hostPlatform);
-      final session = await reader.openPlatformOnly();
+      final session = await reader.open();
       addTearDown(session.close);
 
       expect(fixture.hostPlatform.resolveCount, 1);
@@ -53,7 +53,7 @@ void main() {
         addTearDown(fixture.dispose);
 
         await expectLater(
-          V2StoreEngine(fixture.hostPlatform).openPlatformOnly(),
+          V2StoreEngine(fixture.hostPlatform).open(),
           throwsA(_keybayFailure(KeybayErrorCode.authRequired)),
         );
 
@@ -79,9 +79,7 @@ void main() {
           },
         );
         addTearDown(fixture.dispose);
-        final session = await V2StoreEngine(
-          fixture.hostPlatform,
-        ).openPlatformOnly();
+        final session = await V2StoreEngine(fixture.hostPlatform).open();
         addTearDown(session.close);
 
         var readStart = fixture.files.reads.length;
@@ -167,9 +165,7 @@ void main() {
         records: <String, List<int>>{'service/token': utf8.encode('secret')},
       );
       addTearDown(fixture.dispose);
-      final session = await V2StoreEngine(
-        fixture.hostPlatform,
-      ).openPlatformOnly();
+      final session = await V2StoreEngine(fixture.hostPlatform).open();
       addTearDown(session.close);
 
       final opensBefore = fixture.files.openCallCount;
@@ -184,9 +180,7 @@ void main() {
     test('key and batch limits fail before storage access', () async {
       final fixture = await buildV2StoreFixture();
       addTearDown(fixture.dispose);
-      final session = await V2StoreEngine(
-        fixture.hostPlatform,
-      ).openPlatformOnly();
+      final session = await V2StoreEngine(fixture.hostPlatform).open();
       addTearDown(session.close);
       final opensBefore = fixture.files.openCallCount;
 
@@ -216,9 +210,7 @@ void main() {
           },
         );
         addTearDown(fixture.dispose);
-        final session = await V2StoreEngine(
-          fixture.hostPlatform,
-        ).openPlatformOnly();
+        final session = await V2StoreEngine(fixture.hostPlatform).open();
         addTearDown(session.close);
 
         final bytes = await session.getBytes('binary/not-utf8');
@@ -238,9 +230,7 @@ void main() {
           records: <String, List<int>>{'service/token': utf8.encode('secret')},
         );
         addTearDown(fixture.dispose);
-        final session = await V2StoreEngine(
-          fixture.hostPlatform,
-        ).openPlatformOnly();
+        final session = await V2StoreEngine(fixture.hostPlatform).open();
 
         final readStarted = Completer<void>();
         final releaseRead = Completer<void>();
@@ -293,9 +283,7 @@ void main() {
         },
       );
       addTearDown(fixture.dispose);
-      final session = await V2StoreEngine(
-        fixture.hostPlatform,
-      ).openPlatformOnly();
+      final session = await V2StoreEngine(fixture.hostPlatform).open();
       addTearDown(session.close);
 
       final firstReadStarted = Completer<void>();
@@ -334,9 +322,7 @@ void main() {
           },
         );
         addTearDown(fixture.dispose);
-        final session = await V2StoreEngine(
-          fixture.hostPlatform,
-        ).openPlatformOnly();
+        final session = await V2StoreEngine(fixture.hostPlatform).open();
         final firstReadStarted = Completer<void>();
         final releaseFirstRead = Completer<void>();
         addTearDown(() {
@@ -386,9 +372,7 @@ void main() {
           },
         );
         addTearDown(fixture.dispose);
-        final session = await V2StoreEngine(
-          fixture.hostPlatform,
-        ).openPlatformOnly();
+        final session = await V2StoreEngine(fixture.hostPlatform).open();
         addTearDown(session.close);
 
         late Future<void> closing;
@@ -428,9 +412,7 @@ void main() {
         sharedStoreKey.fillRange(0, sharedStoreKey.length, 0);
       }
       addTearDown(replacement.dispose);
-      final session = await V2StoreEngine(
-        original.hostPlatform,
-      ).openPlatformOnly();
+      final session = await V2StoreEngine(original.hostPlatform).open();
       addTearDown(session.close);
 
       final originalGeneration = original.files.liveGeneration;

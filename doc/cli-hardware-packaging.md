@@ -5,55 +5,44 @@ OpenSSL 3 and CBOR. `tool/build_cli_hardware.sh` resolves the source from Dart's
 package configuration and verifies native inputs against `tool/keypass-source.json`,
 which records the reviewed release commit, registry archive hash and file hashes.
 It rejects modified, missing, additional or linked native inputs,
-runs its native tests, and creates a relocatable bundle. It does not access a
-device or vault.
+runs its native tests, and invokes Keypass's bundler for local qualification.
+It does not access a device or vault.
 
-## Local build and verification
+## Build and verification
 
-Install build dependencies on a development/CI host with
-`bash tool/install_cli_hardware_build_deps.sh`. This uses Homebrew on macOS;
-on Linux it installs development packages and, when necessary, builds
-checksum-pinned libfido2 1.17.0. End users do not run this script.
+Install development dependencies with
+`bash tool/install_cli_hardware_build_deps.sh`. End users install the finished
+CLI and do not need compilers or native development libraries.
+
+Keypass owns native dependency discovery and relocation in `hook/bundle.py`.
+RK owns release builds, code-asset layout, signing, notarization, archives,
+checksums and Homebrew publication, configured in `release.toml`. Stage the
+release with `rk stage keybay_cli` and publish with `rk release keybay_cli`.
+The release archive declares its layout in `rk-artifact.json`.
+
+For local qualification on the supported Dart SDK floor:
 
 ```sh
-bash tool/build_cli_release.sh build/cli-candidate
-bash tool/test_cli_hardware_bundle.sh build/cli-candidate
-# macOS only; use the intended Developer ID and Team ID:
-bash tool/sign_cli_macos.sh build/cli-candidate/keybay "$SIGNING_IDENTITY" "$TEAM_ID"
-bash tool/package_cli_release.sh build/cli-candidate/keybay \
-  build/keybay-candidate.tar.gz build/cli-candidate
-bash tool/verify_cli_archive.sh build/keybay-candidate.tar.gz
+bash tool/build_cli_test_bundle.sh build/cli-test
+bash tool/test_cli_hardware_bundle.sh build/cli-test
 ```
 
-The archive includes the CLI, four native libraries, dependency license notices,
-`hardware.json`, and the existing quickstart files. The manifest records native
-file hashes, Keypass revision, architecture and dependency versions. Hashes
-detect inconsistent packaging; release checksums/signatures establish provenance.
-Archive validation reads metadata and bytes without extracting or executing a
-candidate. Its exact allowlist rejects missing libraries, unexpected files,
-links, traversal, duplicate members and changed digests.
+This is a disposable test bundle, not a second release format. Its `hardware.json`
+is a local file-integrity receipt; it is never used by RK publication. Native
+source inputs, including Keypass's bundler, are checked against the pinned hosted
+package. The test bundle verifies relocation without a device ceremony.
 
-On macOS the CLI is a native launcher, a dedicated matching Dart runtime and
-an AOT module, plus the Dart license. It resolves installed companions through
-the executable's real path, including a Homebrew-style symlink. Single-file
-`dart compile exe` remains useful for development but is not the hardened
-release format. Build stages replace executable files by rename to avoid stale
-kernel signature caches from overwriting previously executed Mach-O files.
+The narrow `keybay_compile` helper and explicit native-host loading remain
+necessary because stock Dart cannot yet pass compile-time declarations through
+`dart build cli` or emit the separate AOT module used by hardened macOS hosts.
+RK provides these capabilities through its hook-aware build helper for releases.
+There is no retry through the manual loader when a code asset fails.
 
-The hardware libraries use relative dependency paths and `@rpath` install IDs.
-Signing includes all libraries and the module before the runtime. The runtime
-keeps the CLI's frozen signing identity, enables hardened runtime, carries no
-entitlement exceptions, and admits only the exact signed code hashes of its
-module and native libraries. macOS system libraries remain available. Verification
-checks the signatures, Team ID, timestamps and the exact load constraint.
-
-The local Homebrew renderer installs companions together in `libexec`, links the
-launcher into `bin`, and preserves rpath names so Homebrew does not rewrite and
-invalidate their signatures. This renderer is not an end-to-end release-kit
-publication qualification. RK's native bundle path now carries Dart code assets through signing,
-notarization, archive creation and installation. The release archive's layout
-is declared by `rk-artifact.json`; it does not use the manual packager's
-`hardware.json`. Keep these two qualification paths distinct.
+On macOS releases contain a launcher, a dedicated matching Dart runtime, an
+AOT module and native code assets. RK signs the complete bundle, constrains
+runtime library loading to the signed companions, and preserves the frozen
+CLI signing identity through installation. Local ad-hoc tests do not establish
+Developer ID, notarization or installed-release qualification.
 
 On Linux the CLI remains a native Dart executable. Its adapter and bundled
 libfido2/OpenSSL/CBOR libraries use `$ORIGIN` for resolution. The OS still supplies
@@ -71,12 +60,6 @@ adapter and its dependency closure on a matching desktop build host. `dart
 build cli` produces a relocatable `bin`/`lib` bundle. The consumer no longer
 needs a native-library path in ordinary source execution. The native development
 prerequisites above still apply.
-
-The custom signed-runtime build in this document explicitly uses Keypass's
-manual-bundle compatibility mode. It retains the tested signing/layout contract
-until the release builder can consume code assets in that format. This is
-separate from automatic local hook preparation; do not switch the signed release
-to the SDK's single-file executable without requalifying its hardened launch.
 
 Dart 3.12's hook discovery is sensitive to invocation cwd. A generic rk local
 bootstrap prepares hooks in the owning project and then launches the original

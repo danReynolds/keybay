@@ -34,9 +34,7 @@ void main() {
       final original = fixture.bytes;
       try {
         // Establish the positive oracle before trying modified generations.
-        final session = await V2StoreEngine(
-          fixture.hostPlatform,
-        ).openPlatformOnly();
+        final session = await V2StoreEngine(fixture.hostPlatform).open();
         try {
           final values = await session.getManyBytes(records.keys);
           try {
@@ -112,7 +110,7 @@ Future<void> _runCase(
   final session = await V2StoreEngine.debug(
     FakeHostPlatform(host),
     probe,
-  ).openPlatformOnly();
+  ).open();
   var bytes = Uint8List.fromList(original);
   var expected = KeybayErrorCode.storeAuthenticationFailed;
   try {
