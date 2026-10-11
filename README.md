@@ -12,11 +12,13 @@ The CLI supports macOS and ordinary Linux desktop.
 The [Dart SDK 0.2.0](https://pub.dev/packages/keybay/versions/0.2.0) is published
 with passphrase, system passkey and hardware passkey protection. See the
 [publication evidence](doc/reviews/2026-10-07-sdk-publication.md).
-The CLI/TUI 0.2.0 source is integrated, but its native release remains pending
-release-kit packaging and installed-distribution qualification. It will ship
-through Homebrew and GitHub releases.
-See [release readiness](doc/release-readiness.md) and the
-[local CLI installation guide](packages/keybay_cli/README.md#install).
+The [CLI/TUI 0.2.0 release](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.2.0) is available
+for macOS ARM64 and Linux ARM64/x64 through Homebrew and GitHub downloads.
+See the [installation guide](packages/keybay_cli/README.md#install) and
+[CLI publication record](doc/reviews/2026-10-11-cli-publication.md).
+
+**Upgrading from 0.1.x:** V1 vaults are not read or automatically migrated.
+Keep access to the old installation and transfer required secrets before switching.
 
 ## CLI
 

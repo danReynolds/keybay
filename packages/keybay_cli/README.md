@@ -1,11 +1,10 @@
 # keybay CLI
 
-The in-tree V2 CLI provides run-scoped secret injection and a foreground
-Fleury vault with `keybay open` on ordinary macOS and Linux desktop. CLI 0.2.0
-is not yet published; see [release readiness](../../doc/release-readiness.md)
-for the native packaging and hosted-dependency gates. No account, Keybay server,
-resident Keybay process, network access, or shell hook. Keybay writes no
-plaintext secret file.
+Keybay CLI 0.2.0 provides run-scoped secret injection and an interactive vault
+with `keybay open` on macOS ARM64 and ordinary Linux ARM64/x64 desktop.
+It is available through [GitHub releases](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.2.0) and Homebrew.
+No account, Keybay server, resident Keybay process, network access, or shell
+hook is required. Keybay writes no plaintext secret file.
 
 Keybay keeps non-secret configuration literal in a committed manifest and
 stores secret values behind explicit `kb://` references:
@@ -27,14 +26,37 @@ invokes a shell or stays resident as a wrapper.
 
 ## Install
 
-Use an official V2 native release when available. The CLI ships only as native
-binaries through Homebrew and GitHub releases; it is not published to pub.dev.
-A release's embedded application ID and stable packaging establish the intended
-SDK identity and provider behavior. Hardened macOS distribution must qualify a
-dedicated signed Dart AOT runtime and signed module; a local single-file build
-below is a development artifact, not evidence that hardened distribution works.
-Installing from source with `dart install` or Pub activation also gives a
-development build, not a supported installation.
+Install the native release with Homebrew:
+
+```sh
+brew install danReynolds/tap/keybay
+keybay --version
+keybay open
+```
+
+To update an existing Homebrew installation, run `brew update` followed by
+`brew upgrade keybay`.
+
+**Before upgrading from 0.1.x:** V2 does not read or automatically migrate V1
+stores. Retain access to the old installation and transfer required secrets
+before switching. Your old vault is preserved; it does not appear in the new
+V2 vault automatically.
+
+[Direct archives](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.2.0) are available for
+macOS ARM64, Linux ARM64, and Linux x64. Preserve the entire extracted directory:
+macOS starts with `./keybay`, and Linux starts with `./bin/keybay`. The companion
+files are required. No Dart SDK is needed; the CLI is not published to pub.dev.
+Linux requires glibc 2.35 or newer and an available Secret Service provider.
+
+The macOS release contains a Developer ID signed and notarized dedicated runtime,
+application module, and hardware libraries. See the
+[publication and qualification record](../../doc/reviews/2026-10-11-cli-publication.md)
+for the exact hashes, identity, and observed installation checks.
+
+### Development builds
+
+Installing from source with `dart install` or Pub activation produces a
+local development build, not the signed distribution above.
 
 Contributors can build the in-tree executable from the repository root:
 
@@ -74,7 +96,7 @@ Releases are produced locally by rk from maintainer-signed tags. Verify the tag
 before trusting a download; do not infer GitHub-hosted build provenance or a
 separate Keybay attestation unless that specific release actually provides it.
 ```sh
-VERSION=X.Y.Z
+VERSION=0.2.0
 git verify-tag "keybay_cli-v$VERSION"
 ```
 
@@ -84,9 +106,23 @@ allowed-signers file; it is published at
 establishes that the tag was signed by that maintainer-controlled key; no claim
 about the private key's storage is required to perform the check.
 
-The exact archive, signature, checksum, notarization, and Homebrew verification
-commands will be documented from the first hardened rk release's actual public
-artifacts rather than promised in advance.
+Download `release-manifest.json` and the archive for your platform from the
+same release. The signed tag's annotation binds the SHA-256 of that manifest;
+check that binding before trusting the archive hashes inside it. Compare the
+manifest and archive with `shasum -a 256` (macOS) or `sha256sum` (Linux).
+The [publication record](../../doc/reviews/2026-10-11-cli-publication.md)
+records the exact manifest and archive digests.
+
+On macOS, after extracting the archive, verify the signed runtime:
+
+```sh
+codesign --verify --strict --check-notarization lib/keybay/bin/dartaotruntime
+codesign -d -r- lib/keybay/bin/dartaotruntime
+```
+
+The runtime identity is `io.github.danreynolds.keybay.cli`, signed by
+Developer ID Application: Pollyn Inc (`5AHFA9FUZG`). All code companions must
+remain present; the release verification checks their signatures as well.
 
 On ordinary Linux desktop, Keybay requires a reachable, unlocked Secret
 Service provider over the user D-Bus session. It does not shell out to
