@@ -5,13 +5,13 @@ and [Keypass 0.1.0-dev.2](https://pub.dev/packages/keypass/versions/0.1.0-dev.2)
 are published. The [SDK publication record](reviews/2026-10-07-sdk-publication.md)
 links its signed tag, exact-commit CI and served-archive audit.
 
-RK #118 and Keybay #96 are merged. Native CLI 0.2.0 staging, installed-package
-qualification and attended macOS YubiKey unlock have passed within the scope
-of the [October 11 candidate record](reviews/2026-10-11-cli-release-candidate.md).
-The final documentation commit must be staged and checked before publication.
-Public GitHub downloads and the public Homebrew channel remain unverified until
-that publication occurs. These are distinct from the local archive and isolated
-Homebrew installation checks already completed.
+[CLI 0.2.0](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.2.0)
+is now published through GitHub and Homebrew. The
+[CLI publication record](reviews/2026-10-11-cli-publication.md) links exact-commit
+CI, the signed tag and manifest, verified public downloads, the actual Homebrew
+upgrade, and RK's GitHub installation. The
+[candidate record](reviews/2026-10-11-cli-release-candidate.md) preserves the
+attended YubiKey and installed Linux evidence without widening its scope.
 
 **Upgrade warning:** V2 neither reads nor automatically migrates V1 stores.
 Keep access to the old installation and transfer required secrets before
@@ -23,14 +23,14 @@ no website requirement. Keypass remains an explicitly pinned prerelease;
 publication does not turn deferred device/lifecycle work into passing evidence.
 Dated qualification records retain their original scope and limitations.
 
-## Remaining work, in order
+## Release status
 
 | Status | Work | Completion evidence |
 | --- | --- | --- |
 | Complete | RK bundling, notices and Linux ABI baseline. | RK #118 and Keybay #96 merged; signed/notarized macOS and glibc 2.35 Linux artifacts staged. |
 | Complete within recorded scope | Installed native candidate qualification. | [Candidate record](reviews/2026-10-11-cli-release-candidate.md): isolated Homebrew upgrade, Linux installed CLI/TUI/protected-store checks, macOS YubiKey unlock in two fresh processes. |
 | Complete | Hosted dependencies and SDK publication. | Keypass 0.1.0-dev.2, Fleury 0.1.1 and Keybay SDK 0.2.0 are published; runtime dependencies remain pinned. |
-| Release, CLI | Stage the final documentation commit, publish CLI 0.2.0 and verify served artifacts. | Exact source CI, stage/artifact comparison, signed CLI tag, GitHub archive hashes, public Homebrew install/upgrade and published installation guidance. |
+| Complete, CLI | Publish CLI 0.2.0 and verify served artifacts. | [Publication record](reviews/2026-10-11-cli-publication.md): exact source CI, signed tag, served hashes, public Homebrew upgrade and RK installation. |
 
 The SDK's release unit is independent of CLI packaging; `release.toml`
 publishes its package before the dependent CLI. Already-published SDK versions
@@ -43,7 +43,7 @@ supports a signed Dart runtime/module bundle, and Keybay's local archive helper
 includes its hardware libraries. The October 9 candidate carried those companions through RK staging, signing,
 notarization and archive creation. The October 10 installed candidate passed
 isolated Homebrew installation and upgrade using that generated formula, plus
-post-signing launch and native loading. Public-channel verification remains.
+post-signing launch and native loading. Public-channel verification subsequently passed; see the publication record.
 
 On October 7, authenticated notarization access succeeded after the developer
 agreement was renewed. CLI staging then failed on all three targets because
@@ -106,7 +106,8 @@ On September 21, Docker was recovered and fresh macOS CLI provider, Linux
 CLI core/provider and Linux SDK provider checks passed. The
 [desktop follow-up](cli-qualification-status.md#desktop-provider-follow-up-2026-09-21)
 records exact scope. The October 11 candidate record supplies the later
-installed-package and notarization evidence; public-channel checks remain.
+installed-package and notarization evidence; the publication record adds the
+later public-channel checks.
 
 ## Security and scope
 
@@ -150,7 +151,7 @@ not verify CLI native archives or Homebrew, which need their own final checks.
 
 SDK publication and its verification are recorded in the
 [October 7 publication record](reviews/2026-10-07-sdk-publication.md).
-After CLI publication, update its installation guide and homepage with the
-actual native release and verification links. Until those artifacts exist,
-local path activation and the identity-aware development build remain the
-documented CLI dogfood paths.
+The [CLI installation guide](../packages/keybay_cli/README.md#install) and
+homepage now link the published native release. Local path activation remains
+a development option with a different macOS Keychain trust boundary, not the
+recommended production installation.
