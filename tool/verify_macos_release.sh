@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Verify the frozen code-identity contract. Strict mode is the release gate;
-# KEYBAY_ALLOW_ADHOC=1 exists only so the structural checks can run locally.
+# Verify the executable's frozen code-identity contract, not a release bundle.
+# RK verifies production artifacts. KEYBAY_ALLOW_ADHOC=1 permits local checks.
 set -euo pipefail
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then

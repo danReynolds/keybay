@@ -5,7 +5,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/keybay-cli-test.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 repo="$PWD"
-for program in dart python3 ruby; do
+for program in dart python3; do
   command -v "$program" >/dev/null || { echo "missing prerequisite: $program" >&2; exit 69; }
 done
 dart analyze --fatal-infos packages/keybay_cli
