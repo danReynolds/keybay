@@ -15,7 +15,7 @@ def verify(source: Path, manifest: dict) -> None:
     hook = source / "hook"
     paths = [source / "LICENSE", source / "pubspec.yaml", native, hook,
              *native.rglob("*"), *hook.rglob("*")]
-    if any(path.is_symlink() for path in paths):
+    if any(path.is_symlink() for path in [source / "native", *paths]):
         raise ValueError("Keypass native build inputs contain a symlink")
     files = {path.relative_to(source).as_posix(): path
              for path in paths if path.is_file()}
