@@ -1,6 +1,6 @@
 part of 'keybay_v2.dart';
 
-/// Commit migration/provider verification state before publishing a session.
+/// Commit provider verification state before publishing a session.
 /// The original package is a compare-and-swap token. Ordinary record writes
 /// preserve it and are merged by copying the latest authenticated generation.
 Future<void> _commitOpenedMetadata({

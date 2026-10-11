@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Remove the obsolete V2 singleton-passphrase format and its automatic migration.
+  Such stores now fail with `unsupportedStoreVersion` without changing vault or
+  platform state. Current methods-based passphrase/passkey stores and platform-only
+  stores retain their existing encodings.
+
 - Remove the internal platform-only open alias; qualification tests use the same
   `open()` path as the public facade.
 - Consolidate native dependency bundling in Keypass and release signing,

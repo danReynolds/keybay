@@ -17,8 +17,6 @@ const String v2ManifestKeyInfo = 'keybay:v2:s1:key:manifest';
 const String v2RecordFrameKeyInfo = 'keybay:v2:s1:key:record-frame';
 const String v2PlatformPackageAadLabel = 'keybay:v2:s1:aad:platform-package';
 const String v2ManifestAadLabel = 'keybay:v2:s1:aad:manifest';
-const String v2PassphraseEnvelopeAadLabel =
-    'keybay:v2:s1:aad:passphrase-envelope';
 const String v2RecordFrameAadLabel = 'keybay:v2:s1:aad:record-frame';
 
 enum V2CryptoFailureCode { invalidInput, authenticationFailed }
@@ -72,28 +70,6 @@ Uint8List encodeManifestAad({
     storageDomain,
     encodeBootstrap(bootstrap),
     sealedPackage,
-  ]);
-}
-
-/// Inner-envelope AAD binds a passphrase route to one store-key epoch.
-Uint8List encodePassphraseEnvelopeAad({
-  required Uint8List storeId,
-  required int epoch,
-  required Uint8List methodId,
-  required int profileId,
-  required Uint8List salt,
-}) {
-  _requireLength(storeId, V2StoreLimits.storeIdBytes);
-  _requireEpoch(epoch);
-  _requireLength(methodId, V2StoreLimits.methodIdBytes);
-  if (profileId != v2FirstPassphraseProfile) _invalidInput();
-  _requireLength(salt, V2StoreLimits.argonSaltBytes);
-  return _encodeAad(v2PassphraseEnvelopeAadLabel, <List<int>>[
-    storeId,
-    _u64(epoch),
-    methodId,
-    <int>[profileId],
-    salt,
   ]);
 }
 
@@ -379,77 +355,6 @@ Future<Uint8List> _openRecordFrameOwned({
   } finally {
     frameKey.destroy();
   }
-}
-
-/// Seals `Kstore` inside the passphrase envelope.
-Future<Uint8List> sealPassphraseEnvelope({
-  required Uint8List passphraseKey,
-  required Uint8List storeKey,
-  required Uint8List storeId,
-  required int epoch,
-  required Uint8List methodId,
-  required int profileId,
-  required Uint8List salt,
-  required Uint8List nonce,
-}) {
-  _requireLength(passphraseKey, V2StoreLimits.storeKeyBytes);
-  _requireLength(storeKey, V2StoreLimits.storeKeyBytes);
-  _requireLength(nonce, V2StoreLimits.nonceBytes);
-  final aad = encodePassphraseEnvelopeAad(
-    storeId: storeId,
-    epoch: epoch,
-    methodId: methodId,
-    profileId: profileId,
-    salt: salt,
-  );
-  final keySnapshot = Uint8List.fromList(passphraseKey);
-  final storeKeySnapshot = Uint8List.fromList(storeKey);
-  final nonceSnapshot = Uint8List.fromList(nonce);
-  final ownedKey = SecretKeyData(keySnapshot, overwriteWhenDestroyed: true);
-  return _withCleanup(
-    () => _sealOwned(
-      plaintext: storeKeySnapshot,
-      key: ownedKey,
-      nonce: nonceSnapshot,
-      aad: aad,
-    ),
-    () {
-      ownedKey.destroy();
-      _clear(storeKeySnapshot);
-    },
-  );
-}
-
-/// Authenticates the passphrase envelope and returns caller-owned `Kstore`.
-Future<Uint8List> openPassphraseEnvelope({
-  required Uint8List passphraseKey,
-  required Uint8List storeId,
-  required int epoch,
-  required Uint8List methodId,
-  required int profileId,
-  required Uint8List salt,
-  required Uint8List innerEnvelope,
-}) {
-  _requireLength(passphraseKey, V2StoreLimits.storeKeyBytes);
-  final expectedLength =
-      V2StoreLimits.nonceBytes +
-      V2StoreLimits.storeKeyBytes +
-      V2StoreLimits.tagBytes;
-  _requireLength(innerEnvelope, expectedLength);
-  final aad = encodePassphraseEnvelopeAad(
-    storeId: storeId,
-    epoch: epoch,
-    methodId: methodId,
-    profileId: profileId,
-    salt: salt,
-  );
-  final keySnapshot = Uint8List.fromList(passphraseKey);
-  final envelopeSnapshot = Uint8List.fromList(innerEnvelope);
-  final ownedKey = SecretKeyData(keySnapshot, overwriteWhenDestroyed: true);
-  return _withCleanup(
-    () => _openOwned(sealed: envelopeSnapshot, key: ownedKey, aad: aad),
-    ownedKey.destroy,
-  );
 }
 
 /// SHA-256 commitment to the exact serialized frame bytes.

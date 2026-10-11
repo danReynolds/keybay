@@ -47,7 +47,7 @@ void main() {
           ),
         );
         final oversized = Uint8List(
-          V2StoreLimits.legacyStoreBytes +
+          V2StoreLimits.platformStoreBytes +
               (suite == v2MethodsSuite ? bootstrap.sealedPackageLength : 0) +
               1,
         )..setRange(0, original.length, original);
@@ -123,7 +123,7 @@ void main() {
       final full = await _readState(env);
       expect(full.counter, 9);
       expect(full.nonPackage, V2StoreLimits.nonPackageStoreBytes);
-      expect(full.length, greaterThan(V2StoreLimits.legacyStoreBytes));
+      expect(full.length, greaterThan(V2StoreLimits.platformStoreBytes));
 
       final last = records['capacity/15']!;
       expect(last.length, lessThan(V2StoreLimits.recordValueBytes));

@@ -25,9 +25,6 @@ void main() {
   late Uint8List sealedPackage;
   late Uint8List storeId;
   late Uint8List storeKey;
-  late Uint8List methodId;
-  late Uint8List salt;
-  late Uint8List passphraseKey;
   late V2BootstrapCore bootstrapCore;
   late V2Bootstrap bootstrap;
 
@@ -36,9 +33,6 @@ void main() {
     sealedPackage = inputBytes('sealedPackage');
     storeId = inputBytes('storeId');
     storeKey = inputBytes('storeKey');
-    methodId = inputBytes('methodId');
-    salt = inputBytes('salt');
-    passphraseKey = inputBytes('passphraseKey');
     bootstrapCore = V2BootstrapCore(inputBytes('providerState'));
     bootstrap = V2Bootstrap(
       core: bootstrapCore,
@@ -83,16 +77,6 @@ void main() {
           sealedPackage: sealedPackage,
         ),
         outputBytes('manifestAad'),
-      );
-      expect(
-        encodePassphraseEnvelopeAad(
-          storeId: storeId,
-          epoch: inputInt('epoch'),
-          methodId: methodId,
-          profileId: v2FirstPassphraseProfile,
-          salt: salt,
-        ),
-        outputBytes('passphraseAad'),
       );
       expect(
         encodeRecordFrameAad(
@@ -173,45 +157,6 @@ void main() {
       );
       opened.clear();
       manifest.clear();
-    });
-
-    test('freezes passphrase envelope and package plaintext', () async {
-      final envelope = await sealPassphraseEnvelope(
-        passphraseKey: passphraseKey,
-        storeKey: storeKey,
-        storeId: storeId,
-        epoch: inputInt('epoch'),
-        methodId: methodId,
-        profileId: v2FirstPassphraseProfile,
-        salt: salt,
-        nonce: inputBytes('passphraseNonce'),
-      );
-      expect(envelope, outputBytes('passphraseEnvelope'));
-      expect(
-        await openPassphraseEnvelope(
-          passphraseKey: passphraseKey,
-          storeId: storeId,
-          epoch: inputInt('epoch'),
-          methodId: methodId,
-          profileId: v2FirstPassphraseProfile,
-          salt: salt,
-          innerEnvelope: envelope,
-        ),
-        storeKey,
-      );
-      expect(
-        encodeKeyPackage(
-          V2PassphrasePackage(
-            storeId: storeId,
-            epoch: inputInt('epoch'),
-            methodId: methodId,
-            profileId: v2FirstPassphraseProfile,
-            salt: salt,
-            innerEnvelope: envelope,
-          ),
-        ),
-        outputBytes('passphrasePackagePlaintext'),
-      );
     });
   });
 
@@ -302,23 +247,6 @@ void main() {
           bootstrap: bootstrap,
           sealedPackage: changedPackage,
           sealedManifest: sealed,
-        ),
-        throwsA(_cryptoFailure(V2CryptoFailureCode.authenticationFailed)),
-      );
-    });
-
-    test('passphrase envelope binds all method metadata', () async {
-      final envelope = outputBytes('passphraseEnvelope');
-      final changedSalt = Uint8List.fromList(salt)..[0] ^= 1;
-      await expectLater(
-        openPassphraseEnvelope(
-          passphraseKey: passphraseKey,
-          storeId: storeId,
-          epoch: inputInt('epoch'),
-          methodId: methodId,
-          profileId: v2FirstPassphraseProfile,
-          salt: changedSalt,
-          innerEnvelope: envelope,
         ),
         throwsA(_cryptoFailure(V2CryptoFailureCode.authenticationFailed)),
       );

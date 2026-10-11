@@ -154,75 +154,6 @@ final class V2StoreEngine {
                     );
                   }
                   storeKey = package.takeStoreKey();
-                case V2PassphrasePackage():
-                  if (credential == null) {
-                    throw _error(
-                      KeybayErrorCode.authRequired,
-                      'This store requires an additional credential.',
-                      authMethods: _describePackage(package),
-                    );
-                  }
-                  if (credential.passkey != null) {
-                    throw _error(
-                      KeybayErrorCode.protectionMismatch,
-                      'The store requires its configured passphrase.',
-                    );
-                  }
-                  if (credential.methodId != null &&
-                      credential.methodId != encodeMethodId(package.methodId)) {
-                    throw _error(
-                      KeybayErrorCode.authMethodNotConfigured,
-                      'The requested method is not configured.',
-                    );
-                  }
-                  final material = await _derivePassphraseAndReleaseCredential(
-                    deriver: _passphraseDeriver,
-                    credential: credential,
-                    profileId: package.profileId,
-                    salt: package.salt,
-                  );
-                  try {
-                    try {
-                      storeKey = await openPassphraseEnvelope(
-                        passphraseKey: material,
-                        storeId: storeId!,
-                        epoch: package.epoch,
-                        methodId: package.methodId,
-                        profileId: package.profileId,
-                        salt: package.salt,
-                        innerEnvelope: package.innerEnvelope,
-                      );
-                    } on V2CryptoFailure {
-                      throw _error(
-                        KeybayErrorCode.unlockFailed,
-                        'The supplied credential did not unlock the store.',
-                      );
-                    }
-                    final source = await _openAuthenticatedGeneration(
-                      host: host,
-                      pin: openedPin,
-                      storeKey: storeKey!,
-                      storeId: storeId!,
-                    );
-                    source.clear();
-                    final migrated = await _enrollMethod(
-                      engine: this,
-                      credential: credential,
-                      storeId: storeId!,
-                      epoch: package.epoch,
-                      storeKey: storeKey!,
-                      methodId: package.methodId,
-                      legacySalt: package.salt,
-                      legacyMaterial: material,
-                    );
-                    replacement = V2MethodsPackage(
-                      storeId: storeId!,
-                      epoch: package.epoch,
-                      methods: [migrated],
-                    );
-                  } finally {
-                    _clear(material);
-                  }
                 case V2MethodsPackage():
                   if (credential == null) {
                     throw _error(
@@ -260,9 +191,7 @@ final class V2StoreEngine {
                     );
                   }
               }
-              if (package is V2MethodsPackage ||
-                  replacement != null ||
-                  hadStaging) {
+              if (package is V2MethodsPackage || hadStaging) {
                 await _commitOpenedMetadata(
                   engine: this,
                   host: host,

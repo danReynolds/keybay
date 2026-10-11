@@ -68,12 +68,6 @@ AuthMethod _describeMethod(V2AuthMethodEnvelope method, Uint8List storeId) {
 
 List<AuthMethod> _describePackage(V2KeyPackage package) => switch (package) {
   V2PlatformOnlyPackage() => const [],
-  V2PassphrasePackage() => [
-    PassphraseMethod._(
-      encodeMethodId(package.methodId),
-      base64UrlEncode(package.storeId),
-    ),
-  ],
   V2MethodsPackage() => _describeMethods(package),
 };
 
@@ -189,8 +183,6 @@ Future<V2AuthMethodEnvelope> _enrollMethod({
   required int epoch,
   required Uint8List storeKey,
   required Uint8List methodId,
-  Uint8List? legacySalt,
-  Uint8List? legacyMaterial,
 }) async {
   final request = credential.passkey;
   _checkPasskeyCancelled(credential);
@@ -199,8 +191,7 @@ Future<V2AuthMethodEnvelope> _enrollMethod({
       : request.route == PasskeyRoute.system
       ? V2AuthMethodKind.systemPasskey
       : V2AuthMethodKind.hardwarePasskey;
-  final salt =
-      legacySalt ?? engine._entropy.randomBytes(V2StoreLimits.argonSaltBytes);
+  final salt = engine._entropy.randomBytes(V2StoreLimits.argonSaltBytes);
   Uint8List? material;
   Uint8List? privateKey;
   PasskeyResult? result;
@@ -208,14 +199,12 @@ Future<V2AuthMethodEnvelope> _enrollMethod({
   var recordId = '';
   try {
     if (request == null) {
-      material = legacyMaterial != null
-          ? Uint8List.fromList(legacyMaterial)
-          : await _derivePassphraseAndReleaseCredential(
-              deriver: engine._passphraseDeriver,
-              credential: credential,
-              profileId: v2FirstPassphraseProfile,
-              salt: salt,
-            );
+      material = await _derivePassphraseAndReleaseCredential(
+        deriver: engine._passphraseDeriver,
+        credential: credential,
+        profileId: v2FirstPassphraseProfile,
+        salt: salt,
+      );
     } else {
       result = await _runPasskey(
         () => engine
@@ -439,12 +428,6 @@ Future<_PolicyReplacement> _buildAuthReplacement({
   required int epoch,
   required Uint8List storeKey,
 }) async {
-  if (current is V2PassphrasePackage) {
-    throw _error(
-      KeybayErrorCode.staleSession,
-      'Reopen the legacy store before changing its authentication.',
-    );
-  }
   final methods = current is V2MethodsPackage
       ? current.methods
       : <V2AuthMethodEnvelope>[];

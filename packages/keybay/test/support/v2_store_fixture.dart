@@ -191,22 +191,27 @@ Future<V2StoreFixture> buildV2StoreFixture({
     );
     lease = creation.lease;
     final providerState = lease.providerState.copyBytes();
-    final bootstrapCore = V2BootstrapCore(providerState);
+    final bootstrapCore = V2BootstrapCore(
+      providerState,
+      suite: passphraseProtected ? v2MethodsSuite : v2PrimitiveSuite,
+    );
     _clear(providerState);
 
     keyPackage = passphraseProtected
-        ? V2PassphrasePackage(
+        ? V2MethodsPackage(
             storeId: ownedStoreId,
             epoch: epoch,
-            methodId: _sequence(0x20, V2StoreLimits.methodIdBytes),
-            profileId: v2FirstPassphraseProfile,
-            salt: _sequence(0x30, V2StoreLimits.argonSaltBytes),
-            innerEnvelope: _sequence(
-              0x70,
-              V2StoreLimits.nonceBytes +
-                  V2StoreLimits.storeKeyBytes +
-                  V2StoreLimits.tagBytes,
-            ),
+            methods: [
+              V2AuthMethodEnvelope(
+                methodId: _sequence(0x20, V2StoreLimits.methodIdBytes),
+                kind: V2AuthMethodKind.passphrase,
+                label: '',
+                profileId: v2FirstPassphraseProfile,
+                salt: _sequence(0x30, V2StoreLimits.argonSaltBytes),
+                publicKey: _sequence(0x40, 32),
+                keyEnvelope: _sequence(0x70, 80),
+              ),
+            ],
           )
         : V2PlatformOnlyPackage(
             storeId: ownedStoreId,
