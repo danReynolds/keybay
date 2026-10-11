@@ -9,12 +9,12 @@ import 'package:test/test.dart';
 void main() {
   group('V2 frozen limits', () {
     test('are finite and internally consistent', () {
-      expect(V2StoreLimits.legacyStoreBytes, 16 * 1024 * 1024);
+      expect(V2StoreLimits.platformStoreBytes, 16 * 1024 * 1024);
       expect(V2StoreLimits.nonPackageStoreBytes, 16 * 1024 * 1024);
       expect(V2StoreLimits.storeBytes, 16 * 1024 * 1024 + 128 * 1024);
       expect(V2StoreLimits.getManyResultBytes, 16 * 1024 * 1024);
       expect(V2StoreLimits.providerStateBytes, 64);
-      expect(V2StoreLimits.legacySealedPackageBytes, 4096);
+      expect(V2StoreLimits.platformSealedPackageBytes, 4096);
       expect(V2StoreLimits.sealedPackageBytes, 128 * 1024);
       expect(V2StoreLimits.recordCount, 4096);
       expect(V2StoreLimits.recordKeyBytes, 120);
@@ -115,7 +115,7 @@ void main() {
       for (final suite in [v2PrimitiveSuite, v2MethodsSuite]) {
         final core = V2BootstrapCore(const [], suite: suite);
         final limit = suite == v2PrimitiveSuite
-            ? V2StoreLimits.legacySealedPackageBytes
+            ? V2StoreLimits.platformSealedPackageBytes
             : V2StoreLimits.sealedPackageBytes;
         final encoded = encodeBootstrap(
           V2Bootstrap(core: core, sealedPackageLength: limit),
@@ -187,14 +187,6 @@ void main() {
     final storeId = _sequence(0x10, V2StoreLimits.storeIdBytes);
     final storeKey = _sequence(0x20, V2StoreLimits.storeKeyBytes);
     final methodId = _sequence(0x40, V2StoreLimits.methodIdBytes);
-    final salt = _sequence(0x50, V2StoreLimits.argonSaltBytes);
-    final envelope = _sequence(
-      0x60,
-      V2StoreLimits.nonceBytes +
-          V2StoreLimits.storeKeyBytes +
-          V2StoreLimits.tagBytes,
-    );
-
     test('platform-only form is fixed width and round-trips', () {
       final package = V2PlatformOnlyPackage(
         storeId: storeId,
@@ -235,35 +227,7 @@ void main() {
       expect(() => encodeKeyPackage(package), throwsStateError);
     });
 
-    test('passphrase form is fixed width and round-trips', () {
-      final encoded = encodeKeyPackage(
-        V2PassphrasePackage(
-          storeId: storeId,
-          epoch: 8,
-          methodId: methodId,
-          profileId: v2FirstPassphraseProfile,
-          salt: salt,
-          innerEnvelope: envelope,
-        ),
-      );
-      expect(encoded, hasLength(v2PassphrasePackageBytes));
-      final decoded = decodeKeyPackage(encoded) as V2PassphrasePackage;
-      expect(decoded.storeId, storeId);
-      expect(decoded.epoch, 8);
-      expect(decoded.methodId, methodId);
-      expect(decoded.profileId, v2FirstPassphraseProfile);
-      expect(decoded.salt, salt);
-      expect(decoded.innerEnvelope, envelope);
-
-      decoded.methodId.fillRange(0, methodId.length, 0);
-      decoded.salt.fillRange(0, salt.length, 0);
-      decoded.innerEnvelope.fillRange(0, envelope.length, 0);
-      expect(decoded.methodId, methodId);
-      expect(decoded.salt, salt);
-      expect(decoded.innerEnvelope, envelope);
-    });
-
-    test('unknown policies, profiles, lengths, and epoch zero fail closed', () {
+    test('unknown policies, lengths, and epoch zero fail closed', () {
       final platform = encodeKeyPackage(
         V2PlatformOnlyPackage(storeId: storeId, epoch: 1, storeKey: storeKey),
       );
@@ -290,17 +254,6 @@ void main() {
       expect(
         () => decodeKeyPackage(excessiveEpoch),
         throwsA(_formatFailure(V2FormatFailureCode.invalidEncoding)),
-      );
-      expect(
-        () => V2PassphrasePackage(
-          storeId: storeId,
-          epoch: 1,
-          methodId: methodId,
-          profileId: 2,
-          salt: salt,
-          innerEnvelope: envelope,
-        ),
-        throwsA(_formatFailure(V2FormatFailureCode.unsupportedKdfProfile)),
       );
       final invalidStoreId = List<int>.of(storeId)..[0] = 256;
       expect(
@@ -488,14 +441,14 @@ void main() {
         sealedPackageLength: 130,
       );
       final layout = deriveStoreLayout(
-        fileLength: V2StoreLimits.legacyStoreBytes,
+        fileLength: V2StoreLimits.platformStoreBytes,
         bootstrap: bootstrap,
         sealedManifestLength: 44,
       );
-      expect(layout.trailerOffset, V2StoreLimits.legacyStoreBytes - 4);
+      expect(layout.trailerOffset, V2StoreLimits.platformStoreBytes - 4);
       expect(
         () => validateStoreLength(
-          fileLength: V2StoreLimits.legacyStoreBytes + 1,
+          fileLength: V2StoreLimits.platformStoreBytes + 1,
           bootstrap: bootstrap,
         ),
         throwsA(_formatFailure(V2FormatFailureCode.limitExceeded)),

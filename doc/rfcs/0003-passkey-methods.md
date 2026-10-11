@@ -1,8 +1,9 @@
 # RFC 0003: Passkey methods
 
-- Status: implemented on the integration branch; review and release gates apply
+- Status: implemented
 - Date: 2026-10-02
 - Consumer API decision: accepted 2026-10-04, add/list/remove only
+- Cleanup: 2026-10-11, removed singleton-passphrase compatibility and migration
 - Amends: [RFC 0001](0001-per-application-stores.md)
 - Consumer contract: [SDK guide](../sdk.md#add-passkey-protection)
 
@@ -82,14 +83,15 @@ the suite. Suite 1 retains its 4096-byte sealed-package cap; suite 2 allows
 `fileLength - sealedPackageLength <= 16 MiB`. Its absolute physical cap is
 16 MiB plus 128 KiB. Every reader and record writer enforces the suite's bound;
 records cannot consume the space reserved for authentication metadata. This
-admits every valid legacy snapshot's content during migration and lets a full
-passkey vault persist growing verifier state. The aggregate plaintext read
+lets a full passkey vault persist growing verifier state. The aggregate plaintext read
 cap remains 16 MiB. Policy 2 requires suite 2. Older suite-1-only readers reject
 the new suite before using its package. No implicit downgrade occurs after
 removal.
 
-Policy 0 (platform-only) and legacy policy 1 (singleton passphrase) remain
-readable. Policy 2 encodes, using unsigned big-endian integers:
+Policy 0 (platform-only) remains readable. Policy 1 (the retired singleton
+passphrase format) is unsupported; opening it never migrates, resets, or rewrites
+state. Current passphrase and passkey methods use policy 2, encoded with unsigned
+big-endian integers:
 
 ```text
 storeId:16 | epoch:u64 | policy:u8=2 | count:u32
@@ -161,7 +163,7 @@ decrypt future rotated records. Possession of an old complete snapshot still
 permits opening that snapshot. An actor controlling an authenticated process
 can change policy; this design does not claim to defeat that attacker.
 
-## Transactions and migration
+## Transactions
 
 Protected open pins a generation before any credential ceremony, obtains a
 candidate key, and authenticates its manifest. Before publishing a session it
@@ -178,14 +180,6 @@ Cancellation is checked before provider access and after cleanup. Cancellation
 or I/O failure racing durable replacement cannot undo a completed transaction;
 the caller must inspect state on a deliberate retry. Provider enrollment may
 leave an unused passkey behind when subsequent local persistence fails.
-
-A legacy suite-1 passphrase open first recovers its key and authenticates the
-original manifest. While the verified Argon result is still owned, Keybay
-derives the new private method key and seals the same store key under its public
-key. Migration preserves method ID, salt, epoch, and encrypted record frames,
-then atomically commits suite 2, policy 2, and a newly authenticated manifest.
-Wrong credentials cannot migrate state. Failed or uncertain commits return no
-session; whichever complete generation is live remains reopenable.
 
 Auth changes authenticate and prepare outside the exclusive file transaction.
 After any enrollment/prompt, a second transaction compares the exact prefix,
@@ -212,7 +206,7 @@ released and the new generation is already committed.
 The HPKE implementation is tested against the published RFC 9180 vector and
 independently generated Python fixtures, including every-byte tampering,
 context separation, low-order inputs, cleanup, and survivor rotation.
-Format, legacy migration, mixed-credential engine, transactional failure,
+Format rejection, mixed-credential engine, transactional failure,
 counter persistence, callback reentrancy, and cross-engine concurrency tests
 exercise the production Keypass facade with a test backend.
 

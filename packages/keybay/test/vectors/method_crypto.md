@@ -65,7 +65,7 @@ every context byte, independent info/AAD changes, credential/salt/context
 separation, rewrapping with only a survivor's public key, and caller mutation
 immediately after starting an operation. The framing and engine suites must
 separately cover method-directory authentication, actual record revocation,
-canonical context encoding, migration and atomic commit failures.
+canonical context encoding, retired-format rejection and atomic commit failures.
 
 Sources: [RFC 9180](https://www.rfc-editor.org/rfc/rfc9180.html),
 [RFC 7748](https://www.rfc-editor.org/rfc/rfc7748.html).

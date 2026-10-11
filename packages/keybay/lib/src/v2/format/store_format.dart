@@ -13,30 +13,28 @@ part 'auth_package.dart';
 const List<int> v2StoreMagic = <int>[0x4b, 0x42, 0x56, 0x32]; // KBV2
 const int v2PrimitiveSuite = 1;
 const int v2PlatformOnlyPolicy = 0;
-const int v2PassphrasePolicy = 1;
 const int v2FirstPassphraseProfile = 1;
 const int v2RecordFrameType = 1;
 const int v2BootstrapCoreFixedBytes = 10;
 const int v2BootstrapLengthBytes = 4;
 const int v2ManifestLengthBytes = 4;
 const int v2PlatformOnlyPackageBytes = 57;
-const int v2PassphrasePackageBytes = 130;
 
 /// Frozen resource bounds applied before allocation or cryptographic work.
 abstract final class V2StoreLimits {
-  static const int legacyStoreBytes = 16 * 1024 * 1024;
+  static const int platformStoreBytes = 16 * 1024 * 1024;
   // Suite 2 reserves the complete package allowance outside this budget so
   // verifier metadata can grow without making a full store impossible to open.
-  static const int nonPackageStoreBytes = legacyStoreBytes;
+  static const int nonPackageStoreBytes = platformStoreBytes;
   static const int storeBytes = nonPackageStoreBytes + sealedPackageBytes;
   static const int providerStateBytes = 64;
-  static const int legacySealedPackageBytes = 4 * 1024;
+  static const int platformSealedPackageBytes = 4 * 1024;
   static const int sealedPackageBytes = 128 * 1024;
   static const int recordCount = 4096;
   static const int recordKeyBytes = 120;
   static const int recordValueBytes = 1024 * 1024;
   static const int getManyInputs = 1024;
-  static const int getManyResultBytes = legacyStoreBytes;
+  static const int getManyResultBytes = platformStoreBytes;
   static const int storeIdBytes = 16;
   static const int methodIdBytes = 16;
   static const int argonSaltBytes = 16;
@@ -108,7 +106,7 @@ final class V2Bootstrap {
     if (sealedPackageLength < 1 ||
         sealedPackageLength >
             (core.suite == v2PrimitiveSuite
-                ? V2StoreLimits.legacySealedPackageBytes
+                ? V2StoreLimits.platformSealedPackageBytes
                 : V2StoreLimits.sealedPackageBytes)) {
       throw const V2FormatFailure(V2FormatFailureCode.limitExceeded);
     }
@@ -262,51 +260,6 @@ final class V2PlatformOnlyPackage extends V2KeyPackage {
   }
 }
 
-final class V2PassphrasePackage extends V2KeyPackage {
-  V2PassphrasePackage({
-    required super.storeId,
-    required super.epoch,
-    required List<int> methodId,
-    required int profileId,
-    required List<int> salt,
-    required List<int> innerEnvelope,
-  }) : profileId = _validatedProfileId(profileId),
-       _methodId = _fixedCopy(methodId, V2StoreLimits.methodIdBytes),
-       _salt = _fixedCopy(salt, V2StoreLimits.argonSaltBytes),
-       _innerEnvelope = _fixedCopy(
-         innerEnvelope,
-         V2StoreLimits.nonceBytes +
-             V2StoreLimits.storeKeyBytes +
-             V2StoreLimits.tagBytes,
-       );
-
-  final Uint8List _methodId;
-  final int profileId;
-  final Uint8List _salt;
-  final Uint8List _innerEnvelope;
-
-  Uint8List get methodId {
-    _ensureAvailable();
-    return Uint8List.fromList(_methodId);
-  }
-
-  Uint8List get salt {
-    _ensureAvailable();
-    return Uint8List.fromList(_salt);
-  }
-
-  Uint8List get innerEnvelope {
-    _ensureAvailable();
-    return Uint8List.fromList(_innerEnvelope);
-  }
-
-  @override
-  void clear() {
-    if (_isCleared) return;
-    _markCleared();
-  }
-}
-
 Uint8List encodeKeyPackage(V2KeyPackage package) {
   package._ensureAvailable();
   final out = BytesBuilder(copy: false)
@@ -319,13 +272,6 @@ Uint8List encodeKeyPackage(V2KeyPackage package) {
       out
         ..addByte(v2PlatformOnlyPolicy)
         ..add(package._storeKeyForEncoding);
-    case V2PassphrasePackage():
-      out
-        ..addByte(v2PassphrasePolicy)
-        ..add(package._methodId)
-        ..addByte(package.profileId)
-        ..add(package._salt)
-        ..add(package._innerEnvelope);
   }
   return out.takeBytes();
 }
@@ -347,17 +293,6 @@ V2KeyPackage decodeKeyPackage(Uint8List bytes) {
         storeId: storeId,
         epoch: epoch,
         storeKey: Uint8List.sublistView(bytes, commonLength),
-      );
-    case v2PassphrasePolicy:
-      if (bytes.length != v2PassphrasePackageBytes) _invalid();
-      final profileId = bytes[41];
-      return V2PassphrasePackage(
-        storeId: storeId,
-        epoch: epoch,
-        methodId: Uint8List.sublistView(bytes, 25, 41),
-        profileId: profileId,
-        salt: Uint8List.sublistView(bytes, 42, 58),
-        innerEnvelope: Uint8List.sublistView(bytes, 58),
       );
     default:
       throw const V2FormatFailure(V2FormatFailureCode.unsupportedPolicy);
@@ -668,7 +603,7 @@ void validateStoreLength({
 }) {
   if (fileLength < 0 || fileLength > V2StoreLimits.storeBytes) _limit();
   if (bootstrap.core.suite == v2PrimitiveSuite) {
-    if (fileLength > V2StoreLimits.legacyStoreBytes) _limit();
+    if (fileLength > V2StoreLimits.platformStoreBytes) _limit();
   } else if (fileLength - bootstrap.sealedPackageLength >
       V2StoreLimits.nonPackageStoreBytes) {
     _limit();

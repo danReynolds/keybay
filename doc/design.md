@@ -144,10 +144,12 @@ the removed credential plus an old snapshot cannot derive another method's
 private key and open later generations. Old snapshots themselves remain
 recoverable with their old credentials; this is not rollback protection.
 
-New protected stores use bootstrap suite 2 and policy 2. Suite 1 singleton
-passphrase stores migrate transactionally on a successful authenticated open;
-wrong credentials cannot migrate them. The new package cap is 128 KiB while
-suite 1 retains its 4 KiB cap. Older clients fail closed on suite 2.
+Protected stores use bootstrap suite 2 and policy 2 for both passphrases and
+passkeys. The retired singleton-passphrase policy 1 is rejected with
+`unsupportedStoreVersion`; open never migrates, resets, or rewrites it. Current
+methods and platform-only encodings are unchanged. Suite 2 permits a 128 KiB
+sealed package while suite 1 retains its 4 KiB cap. Older suite-1-only clients
+fail closed on suite 2.
 
 Credential APIs accept mutable bytes. Keybay snapshots caller input
 synchronously and clears its owned copy after the operation. Sessions clear
