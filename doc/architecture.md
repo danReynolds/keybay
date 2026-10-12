@@ -61,8 +61,8 @@ platform boundaries
 
 The common engine acquires platform protection through `HostPlatform` and
 passkey material through Keypass. Keybay owns derivation, method envelopes,
-record integrity and atomic storage; Keypass owns provider/device interaction
-and temporary results. Platform code cannot feed a runtime identity, arbitrary
+record integrity and atomic storage. Keypass owns provider/device interaction
+and transfers successful temporary results to Keybay, which disposes them. Platform code cannot feed a runtime identity, arbitrary
 path or alternate provider selector into the public API.
 
 ## Stored file
