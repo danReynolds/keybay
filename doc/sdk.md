@@ -1,25 +1,15 @@
 # Dart and Flutter SDK
 
-[Architecture](architecture.md) · [Security policy](../SECURITY.md) ·
-[Passkey methods RFC](rfcs/0003-passkey-methods.md) ·
-[External review guide](external-review.md)
+Keybay gives each host application one encrypted local store. Requires Dart
+3.11+; Flutter is an optional native host, not an SDK dependency.
 
-Keybay gives each host application one encrypted local store. The production
-API has no application-ID, path, provider, or alternate-store selector.
+[Security](../SECURITY.md) · [Architecture](architecture.md) ·
+[Passkey construction](rfcs/0003-passkey-methods.md) · [External review](external-review.md)
 
-Requires Dart 3.11 or later, including when used through Flutter. CI tests the
-SDK at that floor with the reviewed dependency lockfile.
-
-The [0.2.0 SDK](https://pub.dev/packages/keybay/versions/0.2.0) is published with
-passkey support; see the [publication evidence](reviews/2026-10-07-sdk-publication.md).
-It is a breaking API and storage-format change from 0.1.x. V2 neither
-reads nor migrates or removes V1 stores; do not expect an upgrade to carry old
-secrets into the new store. See the [scoped release evidence](qualification-status.md#sdk-020-release-scope),
-including deferred physical lifecycle work and Argon2 performance acceptance.
-Current source also rejects the retired V2 singleton-passphrase encoding with
-`unsupportedStoreVersion`, without changing the file or provider state. That
-post-0.2.0 cleanup is unreleased; current methods-based and platform-only encodings
-are unchanged. No automatic conversion or recovery fallback is supplied.
+**Format compatibility:** V1 stores are not read, migrated or deleted. Current
+source also rejects retired V2 singleton-passphrase packages; published 0.2.0
+retains that conversion. Current methods-based and platform-only encodings are
+unchanged. See [release readiness](release-readiness.md) before upgrading.
 
 <a id="sdk-quickstart"></a>
 
@@ -31,143 +21,104 @@ import 'package:keybay/keybay.dart';
 final session = await Keybay.open();
 try {
   await session.set('service/api-token', 's3cr3t');
-
   final token = await session.get('service/api-token');
   final present = await session.contains('service/api-token');
   final names = await session.listKeys();
-
   await session.delete('service/api-token');
 } finally {
   await session.close();
 }
 ```
 
-Credential-free `open()` initializes fully absent state with platform protection.
-`open(credential: ...)` only authenticates an existing store: it never enrolls
-protection, even on first use or after reset. A missing encrypted file returns
-`storeNotFound` before accessing a credential provider or creating a platform
-root. Use an authenticated session's `auth.add` to enroll protection before
-writing records that should require it.
+- `open()` initializes fully absent state with platform protection.
+- `open(credential: ...)` authenticates an existing store; it never enrolls.
+  With no live file or staging state, it returns `storeNotFound` before platform
+  or credential access. Enroll through `session.auth.add` before writing values
+  that should require the added protection.
+- A retained platform root without a complete file returns `storeStateConflict`
+  on initialization. Do not automatically reset; see [recovery](#errors-and-limits).
+- `close()` rejects new work, drains accepted operations and clears the owned
+  store-key buffer. Keep sessions open only as long as needed.
 
-A retained platform root without its complete encrypted file makes
-credential-free initialization return `storeStateConflict`; see
-[recovery](#errors-and-limits). There is no separate create/configure step.
-The session retains the recovered store key, not every record name or value.
-`close` rejects new work, lets accepted work settle, and clears Keybay's
-in-memory store-key buffer. Process exit also releases memory, but explicit
-closure keeps the exposure window bounded in long-lived applications.
+Open, auth changes and reset may invoke trusted provider UI. Record operations
+and `auth.list()` never prompt or acquire a provider, even on failure.
 
-`Keybay.open()`, `session.auth.add/remove`, and `Keybay.reset()` may
-invoke trusted OS or provider UI. Applications should call them from a context
-that can accommodate that interaction. Record operations and `auth.list()`
-never prompt or acquire the platform provider, including when an operation fails.
-There is no option to bypass mandatory platform protection. The application
-supplies passphrase bytes explicitly; direct hardware passkeys use the
-application's supplied PIN bytes. Credential objects have no UI callbacks;
-missing PINs and ambiguous connections return typed errors for the application
-to handle.
+| Operation | Behavior |
+| --- | --- |
+| `get` / `set` | String values. |
+| `getBytes` / `setBytes` | Binary values; returned buffers belong to the caller. |
+| `getManyBytes` | Exact requested records from one authenticated generation. |
+| `listKeys` | Authenticated names without decrypting record values. |
+| `clearAll` | Remove records, keep protection. |
+| `Keybay.reset()` | Delete current store, staging and deletable provider state; retain coordination locks. |
 
-Strings are the default API. Binary callers use `getBytes` and `setBytes`.
-`getManyBytes` authenticates one store generation and returns only the exact
-requested records. `listKeys` decrypts the authenticated manifest but no record
-values. Returned byte arrays belong to the caller.
-
-`clearAll` removes all records but keeps the store and its protection policy.
-Selector-free `Keybay.reset()` removes the current application's encrypted store,
-staging, and deletable provider state, retaining nonsecret coordination locks.
-Reset does not open or initialize a replacement store;
-the next successful open generates a fresh store key. Flatpak retains the
-portal-owned application secret, so restoring an older complete encrypted store
-can restore access with the protection that applied to that snapshot.
+Reset does not initialize a replacement. The next open creates a fresh store key.
+Flatpak retains its portal secret; restoring an old complete snapshot can restore
+access under that snapshot's policy.
 
 ## Application identity
 
-iOS, Android, and entitled macOS applications use signed/package identity
-facts established by the host platform. The Flatpak candidate uses the running
-sandbox's `/.flatpak-info`, independently of a Dart namespace declaration.
-Ordinary Dart programs on Linux and
-unentitled macOS declare a stable namespace in the pubspec that owns their
-entrypoint:
+The API has no application-ID, path, provider or store selector. iOS, Android and
+entitled macOS use platform-authenticated identity. Flatpak uses sandbox facts
+from `/.flatpak-info`. Ordinary Dart executables on Linux and unentitled macOS
+declare a stable namespace in the pubspec owning their entrypoint:
 
 ```yaml
 keybay:
   application_id: com.example.my_app
 ```
 
-The declaration is build metadata, not a runtime selector. It prevents
-accidental collisions, but on an ordinary unsandboxed desktop it is not an
-authorization boundary: another same-user program can declare the same value.
-Additional passphrase or physical-passkey protection is particularly useful
-there: the desktop namespace alone does not prevent another same-user program
-from reaching the platform root.
+This prevents accidental collisions, not access by another same-user program.
+Additional passphrase or hardware protection makes platform/file access alone
+insufficient.
 
-`dart run` can resolve the owning pubspec. Raw AOT executables cannot, so build
-them through:
+`dart run` resolves the owning pubspec. Embed the declaration for AOT builds:
 
 ```sh
 dart run keybay:keybay_compile bin/app.dart -o build/app
 ```
 
-This validates the owning declaration and embeds it in the executable. Add
-`--aot-snapshot` before the entrypoint to produce a separate native AOT module.
-On macOS, the qualified hardened Developer ID form signs that module and its
-dedicated `dartaotruntime` with the same team; see [macOS packaging](platforms/macos.md#hardened-aot-packaging).
-Recognized `dart install` bundles retain their owning declaration, which Keybay
-checks against any embedded declaration.
+Use `--aot-snapshot` before the entrypoint for a separate AOT module. Hardened
+macOS distribution signs that module and a dedicated `dartaotruntime` with the
+same team; see [macOS packaging](platforms/macos.md#hardened-aot-packaging).
+Recognized `dart install` bundles retain their declaration, checked against any
+embedded value.
 
-The desktop `package:test` runner uses a generated temporary entrypoint whose
-owning application identity cannot be established. `Keybay.open()` there fails
-closed with `applicationIdentityUnavailable`. Test your application's store
-integration through a small declared `dart run` program or the appropriate
-Flutter native integration runner. The SDK does not expose an identity override
-for tests.
-
-Flutter hosts also need the checked-in integration described by their platform
-page, notably `KeybayApplicationIdentifier` in the processed iOS Info.plist.
+The generated desktop `package:test` entrypoint has no resolvable application
+identity and fails with `applicationIdentityUnavailable`. Use a declared
+`dart run` integration program or native Flutter runner; there is no test override.
+Flutter hosts also need platform integration, including
+`KeybayApplicationIdentifier` in the processed iOS Info.plist.
 
 ## Add passphrase protection
 
-Passphrases are additional to mandatory platform protection, never a
-replacement for it. A store supports zero or one passphrase method alongside
-multiple passkey methods. When both are configured, they are alternative ways
-to unlock the same store; Keybay does not require both.
+Protection is `platform AND (passphrase OR passkey A OR passkey B ...)`.
+A store allows one passphrase and eight total methods. Adding a second
+passphrase fails with `authMethodAlreadyConfigured`.
 
 ```dart
-import 'dart:convert';
-import 'dart:typed_data';
-
 final session = await Keybay.open();
 try {
-  final phrase = Uint8List.fromList(utf8.encode(userPassphrase));
-  try {
-    final method = await session.auth.add(
-      PassphraseCredential(phrase: phrase),
-    );
-    print(method.id); // Nonsecret enrollment identifier; remove accepts method.
-  } finally {
-    phrase.fillRange(0, phrase.length, 0);
-  }
+  final phrase = await readPassphraseBytes(); // Your app's input UI.
+  final adding = session.auth.add(PassphraseCredential(phrase: phrase));
+  phrase.fillRange(0, phrase.length, 0);
+  final method = await adding;
 } finally {
   await session.close();
 }
 ```
 
-The credential borrows caller-owned mutable bytes. Keybay snapshots them when
-the operation is called and clears its copy when that operation settles; the
-caller clears its original as soon as practical. Dart cannot guarantee that all
-copies made by the VM, strings, or operating system are zeroed, so avoid
-constructing passphrases as immutable Dart strings when the input layer can
-produce bytes directly.
+Operations synchronously copy caller-owned passphrase/PIN bytes and clear that
+copy when they settle. Clear your input buffers after submitting the call.
+Prefer bytes from your input layer: immutable Dart strings and VM/OS copies
+cannot be reliably erased.
 
-Once protected, a credential-free open fails with `authRequired`:
+After enrollment, credential-free open returns `authRequired`. To reopen:
 
 ```dart
 final phrase = await readPassphraseBytes();
-final opening = Keybay.open(
-  credential: PassphraseCredential(phrase: phrase),
-);
+final opening = Keybay.open(credential: PassphraseCredential(phrase: phrase));
 phrase.fillRange(0, phrase.length, 0);
-
 final session = await opening;
 try {
   final token = await session.get('service/api-token');
@@ -176,46 +127,27 @@ try {
 }
 ```
 
-Passphrase management occurs only through an authenticated session:
+To change a passphrase, remove the old method and add a new one:
 
 ```dart
 final methods = await session.auth.list();
-final passphrase = methods.whereType<PassphraseMethod>().single;
-await session.auth.remove(passphrase);
-
-// A different passphrase is a new enrollment with a new ID.
-await session.auth.add(
-  PassphraseCredential(phrase: newPhraseBytes),
-);
+await session.auth.remove(methods.whereType<PassphraseMethod>().single);
+await session.auth.add(PassphraseCredential(phrase: newPhraseBytes));
 ```
 
-Auth management consists of `add`, `list`, and `remove`. There is no `update`
-or `replace`. Removing and adding are separate commits. To change a passphrase,
-remove the current one before adding another. If it was the only method, the
-vault uses platform-only protection between those calls and stays that way if
-adding fails. Other enrolled methods remain available.
-
-Adding or removing protection rotates the store key and re-encrypts every
-record. This protects the new generation; an older complete snapshot retains
-its original protection when the corresponding platform material is available.
-Removing an unlock method does not revoke API tokens at their issuers or erase
-external backups.
+These are separate commits. **Removing the last method returns to platform-only
+protection**, which persists if adding fails. There is no update/replace.
+Auth changes rotate the store key and re-encrypt records; they do not revoke
+older snapshots, issuer tokens or external backups.
 
 ## Add passkey protection
 
-Passkeys supply additional encryption protection through
-[Keypass](https://github.com/danReynolds/keypass). Keybay owns the Keypass client,
-temporary secret, derivation, encrypted method envelopes and their authenticated
-persistence. Applications never handle a `PasskeyResult` or saved Keypass record.
-
-Credentials contain authentication input. Constructing one opens no device or
-provider UI. System credentials can be reused as immutable configuration:
+Keybay owns the [Keypass](https://github.com/danReynolds/keypass) client, temporary
+secret, derivation and authenticated records. Your app supplies credential data
+and UI; constructing a credential does not start a ceremony.
 
 ```dart
-const systemPasskey = PasskeyCredential.system(
-  rpId: 'vault.example.com',
-);
-
+const systemPasskey = PasskeyCredential.system(rpId: 'vault.example.com');
 final session = await Keybay.open();
 try {
   await session.auth.add(systemPasskey, label: 'Personal vault');
@@ -225,66 +157,42 @@ try {
 }
 ```
 
-For an already protected store, first open it with its existing credential.
-Await enrollment before writing data that should require the new protection.
-On a later run, authenticate with the existing enrollment:
+For an already protected store, open with its existing credential first.
+Later, `Keybay.open(credential: systemPasskey)` authenticates the saved method;
+opening never creates a passkey.
+
+For a physical FIDO2 key:
 
 ```dart
-final session = await Keybay.open(credential: systemPasskey);
-try {
-  final token = await session.get('service/api-token');
-} finally {
-  await session.close();
-}
-```
-
-Opening never creates a passkey. A missing encrypted file produces
-`storeNotFound` before platform-root access or a passkey ceremony.
-
-For physical FIDO2 keys, provide an optional PIN as UTF-8 bytes:
-
-```dart
-final pin = await readHardwarePinBytes(); // Your app's input UI.
+final pin = await readHardwarePinBytes();
 final adding = session.auth.add(
-  PasskeyCredential.hardware(
-    rpId: 'dev.example.vault',
-    pin: pin,
-  ),
+  PasskeyCredential.hardware(rpId: 'dev.example.vault', pin: pin),
   label: 'Backup key',
 );
 pin.fillRange(0, pin.length, 0);
 final backup = await adding;
 ```
 
-Keybay snapshots PIN bytes synchronously, as it does passphrases, and clears
-its copy when the ceremony finishes or the operation fails. It never saves the
-PIN in an enrollment. The caller remains responsible for clearing its own copy.
-The optional PIN must contain 4–63 UTF-8 bytes with no NUL; the authenticator
-applies its own PIN policy. Omit it when the platform/key supplies user
-verification itself. A key requiring application PIN entry then returns
-`passkeyOperationFailed` with `passkeyCode == pinRequired`. The app can ask for
-input and deliberately retry; rejected PINs are never retried automatically.
-
-| Credential field | Contract |
+| Credential field | Meaning |
 | --- | --- |
-| `rpId` | Required relying-party scope. Use the associated domain for system passkeys, or a stable DNS-shaped identifier for direct hardware. |
-| `displayName` | Optional provider presentation text, defaulting to the RP ID. |
-| `pin` | Hardware-only, optional caller-owned UTF-8 bytes for this attempt. |
+| `rpId` | Required scope: associated domain for system passkeys, stable DNS-shaped namespace for direct hardware. |
+| `displayName` | Optional provider text; defaults to the RP ID. |
+| `pin` | Hardware-only UTF-8 bytes for this attempt; optional, never persisted. |
 
-The RP ID is not an endpoint, a Keybay store selector, or a replacement for
-`keybay.application_id`. Direct hardware access needs no hosted website and
-makes no claim to authenticate the calling executable. Using the same RP ID
-for two routes does not make separately enrolled credentials interchangeable.
+The RP ID is not an endpoint, unique credential ID or Keybay application ID.
+Direct hardware needs no website and does not authenticate the calling
+executable. Matching RP IDs do not make separate enrollments interchangeable.
 
-There are no PIN prompts, connection pickers, or event callbacks in a Keybay
-credential. The app owns input and progress UI. Direct hardware discovery
-selects a sole connection; multiple candidates report `deviceSelectionRequired`.
-Disconnect other keys/readers before retrying. Advanced connection selection
-and event handling remain available in Keypass itself.
+A supplied PIN must be 4–63 UTF-8 bytes with no NUL; the key also applies its
+own policy. Omit it if verification happens on the key/platform. When a PIN is
+needed, Keybay returns `passkeyOperationFailed` with `passkeyCode == pinRequired`.
+Ask for input and retry deliberately; rejected PINs are never retried automatically.
+
+Credentials have no callbacks. A sole hardware connection is selected;
+multiple candidates return `deviceSelectionRequired`. Disconnect other keys or
+readers before retrying. Keypass itself supports richer connection/event UI.
 
 ### Select and manage methods
-
-The accepted consumer surface is:
 
 ```dart
 Keybay.open(credential: credential, methodId: selectedId);
@@ -293,20 +201,11 @@ session.auth.list();
 session.auth.remove(method);
 ```
 
-`methodId` is optional on `open`. Labels are optional on `add`, defaulting to
-`Passphrase` or `Keybay vault`. Both `open` and `add` accept an optional
-`PasskeyCancellation` for passkey attempts; neither stores it in the credential.
-
-Protection remains `platform AND (passphrase OR passkey A OR passkey B ...)`.
-A store supports zero or one passphrase and multiple passkeys, up to eight total
-methods. Adding a second passphrase fails with `authMethodAlreadyConfigured`.
-Every successful add creates a new opaque method ID; adding never overwrites
-an enrollment.
-
-`auth.list()` returns immutable, fully authenticated descriptors without
-prompting. Every method exposes `id` and `label`. A `PasskeyMethod` also exposes
-`rpId` and `route`. Descriptors contain no credential material. They can be
-passed directly to `remove`, including after reopening the same vault:
+Every add creates a fresh method ID. Optional labels default to `Passphrase`
+or `Keybay vault`. `auth.list()` returns immutable, authenticated descriptors
+with `id` and `label`; `PasskeyMethod` also has `rpId` and `route`.
+Descriptors contain no credential material and can be removed after reopening
+that same vault:
 
 ```dart
 final methods = await session.auth.list();
@@ -314,21 +213,20 @@ final selected = await chooseMethod(methods); // Your app's selection UI.
 await session.auth.remove(selected);
 ```
 
-Removal validates both vault identity and method ID. A method from another
-vault, a reset vault, or an already removed enrollment fails with
-`authMethodNotConfigured`. Object instance identity is irrelevant. Removing
-the last method deliberately returns the store to platform-only protection.
+Removal checks vault identity and method ID, not object identity. Foreign,
+reset-vault and already removed descriptors return `authMethodNotConfigured`.
+Removing the last method leaves platform-only protection.
 
-For passkey unlock, `methodId` selects among this vault's enrolled methods:
+For passkey unlock, selection happens before prompting:
 
-| Request | Behavior before a passkey prompt |
+| Request | Result |
 | --- | --- |
-| Explicit ID exists and matches kind, RP ID and route | Unlock exactly that method. |
-| Explicit ID does not exist | `authMethodNotConfigured`. |
-| Explicit ID names a different kind, RP ID or route | `protectionMismatch`. |
-| No ID and one matching method exists | Unlock that method. |
-| No ID and no matching method exists | `protectionMismatch`. |
-| No ID and several matching methods exist | `authMethodSelectionRequired` with compatible hints. |
+| Explicit ID matches kind, RP ID and route | Unlock exactly that method. |
+| Explicit ID is absent | `authMethodNotConfigured`. |
+| Explicit ID has another kind, RP ID or route | `protectionMismatch`. |
+| No ID; one matching method | Unlock it. |
+| No ID; no matching method | `protectionMismatch`. |
+| No ID; several matching methods | `authMethodSelectionRequired` with compatible hints. |
 
 ```dart
 final session = await Keybay.open(
@@ -340,173 +238,109 @@ final session = await Keybay.open(
 );
 ```
 
-The RP ID scopes credentials; it is not a unique passkey identifier. Keybay
-loads the selected enrollment's internal record to request that exact passkey.
-It never tries every credential until one works. Labels and display names do
-not select methods. The application retains its expected RP configuration.
+Keybay requests the selected record's exact credential. It does not try every
+passkey, and labels do not select methods. Keep your expected RP configuration
+in the application.
 
-To swap hardware keys, add the new key before removing the old enrollment:
+For replacement keys, add before removing when capacity allows:
 
 ```dart
-final next = await session.auth.add(
+await session.auth.add(
   PasskeyCredential.hardware(rpId: 'dev.example.vault', pin: newKeyPinBytes),
   label: 'New everyday key',
 );
 await session.auth.remove(backup);
 ```
 
-During these two commits, both keys are enrolled. If removal fails, the old
-method may still be enrolled; inspect the list before retrying. At the method
-limit, an enrollment must be removed before another can be added.
-
-Each add or remove atomically commits its own encrypted policy and rotated
-store generation. An I/O failure reported after file replacement can leave
-that operation committed: reopen and inspect before retrying. Provider
-registration may leave a newly created passkey behind if local persistence
-fails. Removing a Keybay method does not delete the provider's passkey or make
-older complete snapshots undecryptable.
+Each auth change commits independently. An I/O error after file replacement may
+mean it committed: reopen and inspect before retrying. Registration can leave
+an orphan provider credential if local persistence fails. Removal does not
+delete a provider credential or revoke older snapshots.
 
 ### Authentication errors and hints
 
-When additional protection exists, a credential-free open returns
-`authRequired` without invoking a passkey prompt. Opening the mandatory platform
-root may still require its normal OS interaction.
+Catch `KeybayException` and branch on `code`, not message text.
+Credential-free open of a protected store returns `authRequired` without a
+passkey ceremony, though platform-root access may invoke OS UI.
 
-`KeybayException.authMethods` contains method-selection hints for
-`authRequired` and `authMethodSelectionRequired`. The platform package has been
-authenticated, but these hints are **not trusted as fully authenticated store
-policy until a method unlocks successfully**. They may help display choices;
-do not use them to grant access, change protection or replace your application's
-expected RP configuration. After opening, use `session.auth.list()` for the
-authenticated method list.
+`authRequired` and `authMethodSelectionRequired` can carry `authMethods` hints.
+These are authenticated by the platform package, **not yet by the store's
+credential-protected manifest**. Use them for display/selection only, never to
+grant access, change policy or replace expected RP configuration. After opening,
+`auth.list()` supplies the authenticated list.
 
-Keypass failures report `KeybayErrorCode.passkeyOperationFailed` with a
-redacted `KeybayException.passkeyCode`. For example:
-
-```dart
-try {
-  await session.auth.add(
-    const PasskeyCredential.system(rpId: 'vault.example.com'),
-  );
-} on KeybayException catch (error) {
-  if (error.code == KeybayErrorCode.passkeyOperationFailed &&
-      error.passkeyCode == PasskeyErrorCode.cancelled) {
-    // The user canceled the passkey interaction.
-  } else {
-    rethrow;
-  }
-}
-```
-
-Other passkey details distinguish missing native hosts, unsupported PRF,
-unavailable credentials, rejected/blocked PINs and verification failures.
-They contain no raw provider response or secret. An unavailable passkey does
-not authorize trying a passphrase automatically; the application may offer an
-independently configured method for the user to choose.
+Passkey failures use `passkeyOperationFailed` and a redacted `passkeyCode`,
+including `cancelled`, missing host/PRF/credential, PIN errors and verification
+failure. They do not expose raw provider data or secrets. Failure does not
+trigger fallback; offer another enrolled method for the user to choose.
 
 ### Cancellation and native setup
 
-Always await `open` and authentication-management operations to settlement.
-Abandoning their Futures or calling `Future.timeout` alone neither cancels
-native work nor closes a session returned later.
+`open` and `auth.add` accept an optional `PasskeyCancellation`:
 
 ```dart
 final cancellation = PasskeyCancellation();
 final opening = Keybay.open(
-  credential: PasskeyCredential.system(
-    rpId: 'vault.example.com',
-  ),
+  credential: const PasskeyCredential.system(rpId: 'vault.example.com'),
   cancellation: cancellation,
 );
 // Connect a Cancel control to cancellation.cancel().
 final session = await opening;
 try {
-  // Use the authenticated session, or close it if its initiating UI has gone.
+  // Use the session, or close it if the initiating screen has gone.
 } finally {
   await session.close();
 }
 ```
 
-Keep cleanup running if the initiating screen closes: cancel the signal, await
-the original Future, and close any successful session. Keybay clears its own
-Keypass result and temporary derived material. Your PIN-input copies and
-returned record values remain your responsibility. Cancellation does not undo
-an already committed authentication change.
+Cancel, await settlement and close any successful session even if its screen
+has gone. `Future.timeout` alone does not cancel native work. Cancellation
+cannot undo an already committed auth change. Keybay clears its temporary
+Keypass/derived material; your input copies and returned values remain yours.
 
-Desktop Dart execution uses [Keypass's build hook](https://github.com/danReynolds/keypass/blob/main/doc/build-hooks.md).
-The build host needs its documented compiler and native-library development
-prerequisites even when the application only uses passphrase protection. Build
-on the target OS and architecture; desktop cross compilation is not supported
-by this hook. Distributable applications must retain the full native bundle
-and notices so end users need no compiler. Flutter desktop packaging remains
-separately qualified; the hook alone does not establish that integration.
+Desktop Dart builds use [Keypass build hooks](https://github.com/danReynolds/keypass/blob/main/doc/build-hooks.md).
+Install their native build prerequisites even for passphrase-only apps. Build
+on the target OS/architecture and distribute the complete bundle and notices.
+The hook does not qualify Flutter desktop packaging.
 
-System and mobile passkey support needs [Keypass's manual native host setup](https://github.com/danReynolds/keypass/blob/main/doc/platforms.md)
-in addition to Keybay's platform integration. Adding the Dart dependency does
-not link native libraries, configure signing or grant permissions.
+[Keypass native setup](https://github.com/danReynolds/keypass/blob/main/doc/platforms.md)
+is additional to Keybay's platform setup:
 
-- System passkeys use the OS provider dialog. Apple apps need their associated
-  domain/AASA and native host; Android apps need Digital Asset Links and the
-  native Activity integration.
-- Direct desktop hardware uses the packaged USB adapter. Phone hardware uses
-  the corresponding NFC/USB adapter and permissions. This direct route requires
-  no hosted website, AASA, Digital Asset Links or Keypass API key.
-- Native window/Activity discovery, supported transports and provider PRF
-  capability still apply. Follow Keypass's platform matrix; its deferred
-  qualifications are not blanket support claims.
+- System: Apple associated domain/AASA and native host; Android Digital Asset
+  Links and Activity integration. The OS presents the provider dialog.
+- Hardware: desktop USB adapter or phone NFC/USB adapter and permissions.
+  No website, association file or Keypass API key.
 
-The SDK has no Flutter dependency; Flutter can be a native application host.
-Passkeys remain additional to Keybay's mandatory platform root. A synced
-passkey does not by itself make the encrypted Keybay store portable to a new
-device, and successful authentication does not imply a backup/recovery policy.
-Once open, record operations and `auth.list()` remain prompt-free.
+Support depends on the native host, transport and provider's PRF capability.
+A Dart dependency alone cannot configure signing, libraries or permissions.
+Passkeys do not replace the platform root or make vaults portable by themselves.
 
 ## Errors and limits
 
-Catch `KeybayException` and branch on `code`, not human-readable text. Important
-codes include `storeNotFound`, `authRequired`, `authMethodSelectionRequired`,
-`passkeyOperationFailed`, `unlockFailed`, `platformProtectorUnavailable`,
-`platformProtectorLocked`, `storeAuthenticationFailed`, `storeStateConflict`,
-`storeBusy`, `staleSession`, and `sessionClosed`. Error strings never contain
-record values, passphrases, provider state, or unrestricted paths.
+| Error | Response |
+| --- | --- |
+| `storeNotFound` | Credential-based open found no live file or staging state. No provider/root access or enrollment occurred; a root may still exist. Offer explicit first-use setup. |
+| `storeStateConflict` | Files/provider state cannot safely open or initialize. Investigate; reset only when deliberate data loss is acceptable. |
+| `staleSession` / `storeAuthenticationFailed` | Close and attempt authenticated reopen. Failure is not permission to erase state. |
+| `storeBusy` | Retry with bounded backoff within the application's deadline. |
+| `sessionClosed` | Open a new session. |
 
-`storeNotFound` means a credential-based open found no live encrypted file
-(and no incomplete staging state). No method was enrolled, no root was created
-or acquired, and no passphrase was derived. This does not prove that the
-platform root is absent. Do not automatically treat a failed unlock as permission
-to initialize or reset; make first-use setup an explicit application flow.
+A retained root after interrupted initialization or an Apple reinstall/restore
+can cause `storeStateConflict`; the error does not prove its cause. Deliberate
+recovery is `Keybay.reset()` followed by open. Never reset automatically on
+conflict or authentication failure. [Physical restore qualification](mobile-failure-qualification.md)
+remains incomplete.
 
-`storeStateConflict` means the observed files/provider state cannot safely be
-opened or initialized. A retained root without a complete file can occur after
-an interrupted first initialization, or on iOS/entitled macOS if a reinstall or
-same-device restore retains Keychain state while the excluded store file is
-absent. It is not proof that reinstall occurred. When the application has
-established that starting over is appropriate and accepts loss of any previous
-local store, explicitly call `Keybay.reset()`, then reopen. Never automatically
-reset every conflict or authentication failure. Physical reinstall/restore
-qualification remains tracked in the [mobile procedures](mobile-failure-qualification.md).
+Local invalidation reports `staleSession`. Cross-process rotation, an operation
+already running during rotation, or damaged/replaced data may instead report
+`storeAuthenticationFailed`. Locks have a one-second acquisition deadline;
+provider UI or Argon2 may hold them longer.
 
-A known local invalidation reports `staleSession`. Rotation in another process
-or isolate may instead report `storeAuthenticationFailed`, as can damaged or
-replaced data. An operation already running during a same-runtime rotation can
-also report `storeAuthenticationFailed`; subsequent operations observe the local
-invalidation and report `staleSession`. Close the old session and attempt an
-authenticated reopen; keep a failed reopen as an error, not permission to erase
-state.
-
-Mutations use a one-second lock-acquisition deadline. Another operation may
-hold the lock longer while provider UI or Argon2 completes. Retry `storeBusy`
-with bounded backoff within your application's deadline; do not spin or treat
-it as data loss.
-
-Record keys use 1–120 ASCII characters in slash-separated segments matching
-`[A-Za-z0-9][A-Za-z0-9._-]*`. Empty, `.` and `..` segments are invalid. A slash
-organizes names; it does not create another store or protection domain.
+Keys are 1–120 ASCII characters in slash-separated segments matching
+`[A-Za-z0-9][A-Za-z0-9._-]*`; empty, `.` and `..` segments are invalid.
+Slashes organize names, not security domains.
 
 ## Platform summary
-
-All supported profiles store one encrypted framed file and one small
-platform-protected root per application:
 
 | Host | Application boundary | File | Platform root |
 |---|---|---|---|
@@ -516,15 +350,9 @@ platform-protected root per application:
 | unentitled macOS / CLI | declared namespace only | derived Application Support directory | one item in the explicit login Keychain |
 | ordinary Linux desktop | declared namespace only | derived XDG data directory | one item in unlocked Secret Service |
 
-The Flatpak candidate binds `/.flatpak-info` identity and its fixed private data
-directory to the XDG Secret Portal. Its reusable secret is domain-separated into
-Keybay's wrapping root. Native Linux evidence with two installed application IDs
-has passed for the recorded GNOME configuration, as has the bounded nested
-Docker lane. See the [qualification report](qualification-status.md) for source
-applicability; these runs do not qualify every provider or permission set. A detected Flatpak never falls back to
-ordinary Secret Service. Snap, Windows, and unsupported provider configurations
-fail closed.
-
-See the individual [iOS](platforms/ios.md), [Android](platforms/android.md),
-[macOS](platforms/macos.md), and [Linux](platforms/linux.md) pages for the exact
-guarantees and limitations.
+See [iOS](platforms/ios.md), [Android](platforms/android.md),
+[macOS](platforms/macos.md) and [Linux](platforms/linux.md) for setup.
+The Flatpak candidate uses sandbox identity and XDG Secret Portal; it never
+falls back to Secret Service. Snap, Windows and unsupported providers fail
+closed. The [qualification report](qualification-status.md) records observed
+configurations and remaining work.

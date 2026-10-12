@@ -2,47 +2,40 @@
 
 # Keybay
 
-Keep local secrets out of your repository and in one encrypted store belonging
-to the host application.
+Encrypted local secrets for Dart applications and the terminal. No Keybay
+account, service, daemon or shell hook.
 
-Keybay operates locally without a Keybay account, hosted service, daemon or shell
-hook. A chosen OS passkey provider may have its own network/sync requirements. The Dart SDK supports iOS, Android 12+, macOS, and ordinary Linux desktop.
-The CLI supports macOS and ordinary Linux desktop.
+The [Dart SDK](https://pub.dev/packages/keybay) supports iOS, Android 12+, macOS
+and ordinary Linux desktop. The [CLI](packages/keybay_cli/README.md) ships for
+macOS ARM64 and Linux ARM64/x64. Both are at 0.2.0; APIs and formats may change
+before 1.0. Provider/device coverage is recorded in [release readiness](doc/release-readiness.md).
 
-The [Dart SDK 0.2.0](https://pub.dev/packages/keybay/versions/0.2.0) is published
-with passphrase, system passkey and hardware passkey protection. See the
-[publication evidence](doc/reviews/2026-10-07-sdk-publication.md).
-The [CLI/TUI 0.2.0 release](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.2.0) is available
-for macOS ARM64 and Linux ARM64/x64 through Homebrew and GitHub downloads.
-See the [installation guide](packages/keybay_cli/README.md#install) and
-[CLI publication record](doc/reviews/2026-10-11-cli-publication.md).
-
-**Upgrading from 0.1.x:** V1 vaults are not read or automatically migrated.
-Keep access to the old installation and transfer required secrets before switching.
-
-For external assessment, start with the [review guide](doc/external-review.md).
-It distinguishes published versions from the current source, maps the security
-boundaries to code/tests, and lists open work. Current source additionally
-rejects retired V2 singleton-passphrase packages without migration; that cleanup
-is unreleased and does not change current methods-based or platform-only formats.
+**Upgrading:** V1 vaults are not migrated. Current source also rejects retired
+V2 singleton-passphrase packages, unlike published 0.2.0. Keep access to the old
+installation and transfer needed secrets before switching; see the
+[changelog](packages/keybay/CHANGELOG.md#unreleased).
 
 ## CLI
 
-Commit a reference, not its value:
+```sh
+brew install danReynolds/tap/keybay
+keybay set my-app/api-key
+keybay open
+```
+
+Commit a reference in `.env`, then launch your application:
 
 ```dotenv
-OPENAI_API_KEY=kb://my-app/openai-api-key
+API_KEY=kb://my-app/api-key
 ```
 
 ```sh
-keybay set my-app/openai-api-key
-keybay get my-app/openai-api-key
 keybay run -- ./app
 ```
 
-The CLI is one application with one store. Slash-separated key names organize
-records; they are not separate security domains. See the
-[CLI guide](packages/keybay_cli/README.md).
+The child receives the secret as an environment variable. The CLI uses one
+store; slash-separated names organize records, not security domains.
+See [commands and installation](packages/keybay_cli/README.md).
 
 ## Dart and Flutter
 
@@ -58,52 +51,23 @@ try {
 }
 ```
 
-There is no runtime application-ID or store selector. Keybay derives an
-OS-authenticated application identity where the platform provides one; ordinary
-Dart executables declare their namespace in the owning `pubspec.yaml`. See the
-[SDK guide](doc/sdk.md).
+Each host application gets one store, derived from its platform identity or
+declared desktop namespace. See the [SDK guide](doc/sdk.md) for native setup,
+identity and passphrase/passkey enrollment.
 
-SDK 0.2.0 replaces the 0.1.x API and encrypted format; V1 stores are not read,
-migrated or removed. The [release scope](doc/qualification-status.md#sdk-020-release-scope)
-records deferred physical lifecycle qualification and lower-priority Argon2
-performance acceptance. They are not passing qualification claims.
+## Protection
 
-A retained platform root without its complete encrypted file returns
-`storeStateConflict`, including after some interrupted initializations or Apple
-reinstalls/restores. Follow the [deliberate recovery guidance](doc/sdk.md#errors-and-limits);
-do not automatically reset on error.
+Platform protection is mandatory. Optional passphrases and passkeys add
+cryptographic protection: `platform AND (passphrase OR passkey A OR passkey B)`.
+A credential-based open only authenticates; enrollment uses `session.auth.add`.
+Record operations never prompt.
 
-Opening, changing authentication, and resetting may invoke trusted OS/provider
-UI. Record operations and authentication listing never prompt.
+Desktop namespaces are not same-user authorization boundaries. Enroll an
+additional method to make access to the platform root and file insufficient.
+A synced passkey alone does not make the vault portable.
 
-## Security
+- [Security policy](SECURITY.md): guarantees, trust boundaries and reporting.
+- [External review guide](doc/external-review.md): source map, evidence and open work.
+- [Platform regressions](doc/platform-regression.md): run `./tool/test_e2e.sh all`.
 
-Every supported platform uses the same independently encrypted record frames
-and an encrypted manifest. One platform-protected root unlocks that
-application's store key. Applications can add a passphrase or passkey protection
-so platform access alone is insufficient. Enrolled methods are alternatives;
-each still requires the platform-protected root.
-
-Keybay fails closed when identity, platform protection, or authenticated store
-state cannot be established. It never falls back to plaintext, process memory,
-another provider, or pre-V2 storage. See [SECURITY.md](SECURITY.md) and the
-accepted [V2 architecture RFC](doc/rfcs/0001-per-application-stores.md), amended
-by [RFC 0003 for passkey methods](doc/rfcs/0003-passkey-methods.md).
-
-The Flatpak candidate uses authenticated sandbox identity, private ciphertext,
-and XDG Secret Portal protection. The repeatable Linux regression exercises two
-installed application IDs, including inside the tested nested Docker setup.
-Remaining release evidence is tracked in the
-[security suite](doc/device-security-suite.md). It never falls back to raw
-Secret Service. Windows, Snap, and unsupported provider configurations fail
-closed. See the [Linux profile](doc/platforms/linux.md), including Flatpak's
-retained portal secret after reset.
-
-## Development tests
-
-Run `./tool/test_e2e.sh all` for the routine SDK regressions, or select a subset
-such as `./tool/test_e2e.sh linux flatpak`. See the
-[platform regression guide](doc/platform-regression.md) for prerequisites,
-reports, CI, and the separate physical-device qualification procedures.
-
-Pre-1.0 APIs and the file format may still change. MIT licensed.
+MIT licensed.

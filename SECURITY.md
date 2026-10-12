@@ -1,202 +1,117 @@
 # Keybay security
 
-Use a maintained operating-system release with its current security updates.
-Keybay relies on the OS sandbox, credential providers and native libraries; it
-cannot repair vulnerabilities in those components. An SDK minimum version is
-an API compatibility floor, not a recommendation to run an unpatched OS.
-Qualification records apply only to the OS builds and provider configurations
-they name; a new security update does not automatically renew those records.
+Keybay encrypts local application secrets. Platform protection is mandatory;
+passphrases and passkeys optionally add another cryptographic requirement.
 
-Keybay holds local secrets for applications and its CLI on macOS, iOS, Android,
-and ordinary Linux desktop. It is austere on purpose: one store shape, no
-weaker configuration mode, and no platform claim without matching evidence.
+Use maintained, patched operating systems and providers. There has been no
+independent human security audit. The [review guide](doc/external-review.md)
+records exact source/release baselines, prior reviews and outstanding work.
 
 ## Storage model
 
-Every supported application has one atomically replaced encrypted file. Record
-names live in an authenticated encrypted manifest; each value is an independent
-XChaCha20-Poly1305 frame. One random store key derives separate manifest and
-frame keys. A small key package routes from the platform protector to that
-store key.
+Each application has one atomically replaced encrypted file. An encrypted,
+authenticated manifest holds record names; values are separate
+XChaCha20-Poly1305 frames. A random store key derives separate manifest/frame
+keys and is wrapped by the platform-protected key package.
 
-| Host | Platform protection | Application isolation |
-|---|---|---|
-| iOS | exact signed Data Protection Keychain group | signed group plus app-private file container |
-| Android 12+ | one non-exportable Android Keystore key | installed package/UID sandbox plus no-backup file directory |
-| entitled macOS | exact signed Data Protection Keychain group | root isolated by entitlement; file isolation depends separately on App Sandbox |
-| unentitled macOS / CLI | one explicit login-Keychain item | declared namespace and restrictive files; not a portable app sandbox |
-| ordinary Linux desktop | one Secret Service item | declared namespace and restrictive files; not an OS-enforced app boundary |
+| Host | Platform protection | Application boundary |
+| --- | --- | --- |
+| iOS | Data Protection Keychain, exact signed group | Signed group and app-private files |
+| Android 12+ | Non-exportable Android Keystore key | Package/UID sandbox and no-backup files |
+| Entitled macOS | Data Protection Keychain, exact signed group | Root isolated by entitlement; file isolation depends on App Sandbox |
+| Unentitled macOS / CLI | Explicit login-Keychain item | Declared namespace and restrictive files, not an app sandbox |
+| Ordinary Linux desktop | Secret Service item | Declared namespace and restrictive files, not an app sandbox |
 
-Platform protection is mandatory. Applications may enroll zero or one passphrase
-and multiple passkeys, with at most eight methods in total. When methods exist,
-opening requires `platform AND (passphrase OR passkey A OR passkey B ...)`.
-With no methods the store is platform-only. Configuring multiple methods does
-not require presenting them together.
+The [Flatpak candidate](doc/platforms/linux.md) uses sandbox identity and XDG
+Secret Portal, never raw Secret Service. Snap, Windows and unsupported providers
+fail closed. [Qualification](doc/qualification-status.md) is configuration-specific.
 
-Passphrases use Argon2id; passkeys use verified repeatable PRF material from
-Keypass. Both derive a method-specific X25519 recipient key through HKDF.
-An HPKE envelope wraps the random store key, and the platform protector seals
-the method package. The authenticated manifest binds the complete package.
-The saved Keypass record is recovery/verification metadata, not its secret.
-See [RFC 0003](doc/rfcs/0003-passkey-methods.md) for the precise construction.
+With enrolled methods, opening requires
+`platform AND (passphrase OR passkey A OR passkey B ...)`.
+A store supports one passphrase at most and eight methods total. Argon2id
+passphrase output or verified Keypass PRF material derives a method-specific
+X25519 recipient through HKDF. HPKE wraps the store key; the platform seals
+the method package, which the manifest authenticates. See
+[RFC 0003](doc/rfcs/0003-passkey-methods.md) for the construction.
 
-This additional protection matters on ordinary Linux and unentitled macOS,
-where another same-user program may claim the declared namespace and reach
-login-bound storage. For a platform-only CLI vault, a program running as you
-can use `keybay list` and secret-referencing `keybay run` without a credential
-prompt. A terminal check would not change that: a program can supply its own
-pseudo-terminal. Enroll a passphrase or hardware passkey to make platform/file
-access alone insufficient. This does not protect an already compromised or
-unlocked process.
+On ordinary Linux and unentitled macOS, another same-user program may claim
+the namespace and reach platform storage. For a platform-only CLI vault, it can
+use `list` and secret-referencing `run` without a credential prompt. Enroll a
+passphrase or hardware passkey to make platform/file access alone insufficient.
+A pseudo-terminal or UI prompt is not an authorization boundary.
 
-System passkeys require a supported native app host and its domain associations.
-Direct hardware access uses an RP namespace without authenticating the requesting
-executable. Keypass requires compatible PRF/verification capabilities; a biometric
-success boolean or ordinary passkey login is insufficient. Neither route silently
-falls back to another credential. Synced passkeys do not bypass Keybay's required
-platform root or make its encrypted file portable.
-
-The Flatpak candidate uses authenticated sandbox identity and XDG Secret Portal
-protection. Two installed application IDs passed isolation checks in the
-recorded native Linux and nested Docker configurations. The [qualification
-report](doc/qualification-status.md) names their sources, providers and limits;
-hermetic transport tests alone do not establish sandbox identity.
-Flatpak never falls back to raw Secret Service. Snap, Windows, and unsupported
-provider configurations fail closed.
-
-Opening, changing authentication, and resetting may invoke trusted OS/provider
-UI. Record operations and authentication listing never prompt. The public API
-has no interaction option.
-
-Record operations do not acquire any platform provider, including on failure.
-Cross-process rotation can therefore report `storeAuthenticationFailed` rather
-than `staleSession`. Classic macOS Keychain and Linux Secret Service acquisitions
-also reject forbidden interaction before provider calls; neither offers a
-portable guarantee against provider-specific access-control UI per call.
+System passkeys need a supported app host and domain association. Direct
+hardware RP namespaces do not authenticate the calling executable. Ordinary
+passkey login or a biometric success boolean cannot replace verified PRF
+material. Synced passkeys do not bypass the mandatory platform root.
 
 ## What Keybay protects
 
-Keybay is designed so that:
+- Managed persistent files contain no plaintext record values.
+- A file alone is insufficient without the platform root; enrolled methods
+  additionally require one matching credential.
+- Corruption, wrong keys and unsupported state fail before returning plaintext.
+- Concurrent writers commit one complete authenticated generation.
+- Stored data cannot redirect platform selection.
 
-- its managed persistent files contain no plaintext record values;
-- an encrypted file is insufficient without its platform-protected root;
-- when additional methods are configured, one enrolled credential remains
-  necessary even with access to the root item and file;
-- corruption, wrong keys, unsupported formats, and missing provider state fail
-  before plaintext is returned;
-- concurrent writers produce one authenticated complete generation; and
-- platform selection cannot be redirected by fields in the encrypted file.
-
-The full threat model and numbered evidence-linked invariants are in
-[doc/design.md](doc/design.md). The accepted construction is
-[RFC 0001](doc/rfcs/0001-per-application-stores.md).
+Record operations and `auth.list()` never prompt or acquire a provider, even
+on failure. Open, auth changes and reset may invoke trusted provider UI.
+The [design](doc/design.md) and [storage RFC](doc/rfcs/0001-per-application-stores.md)
+define the invariants and threat model.
 
 ## What Keybay does not protect
 
-Plaintext explicitly returned to an application is ordinary process data.
-Keybay does not defend against root/kernel compromise, code injected into the
-host process, a malicious Keybay binary, keyloggers, screen capture, terminal
-compromise, or rollback to an older complete authentic snapshot. Flatpak reset
-removes the encrypted store and staging but retains nonsecret coordination
-locks and the portal-owned application secret.
-The next successful open creates a fresh store key; restoring an old complete
-encrypted store can nevertheless restore access under its old protection.
-Adding or removing a method rotates the current store key and re-encrypts every
-record; it does not revoke older snapshots or credentials at their issuer.
-Removing a passkey method does not delete the credential from its provider/key.
+Keybay does not defend against root/kernel compromise, injected or malicious
+host code, keyloggers, terminal/screen capture, denial of service by actors able
+to delete state, or rollback to an older authentic snapshot. Returned plaintext
+is ordinary application data. An attacker controlling an unlocked session can
+change its protection policy.
 
-Auth management is `add`, `list` and `remove(method)`, with no update or replace.
-Removing the last method deliberately returns to platform-only protection.
-Changing a passphrase requires removal then a separate add; if it was the last
-method, protection remains platform-only between those calls and if adding fails.
-An authenticated session can change policy. This is not protection against an
-attacker who already controls that session. Credential-based `open` authenticates
-only; it never enrolls or repairs missing state.
+Auth changes rotate the current store key and re-encrypt records. They do not
+revoke old snapshots, issuer tokens or provider credentials. Removing the last
+method returns to platform-only protection. Passphrase replacement is separate
+remove/add commits: if it was the last method, the weaker state persists until
+adding succeeds. Credential-based open never enrolls or repairs state.
 
-The CLI disables its own core files, and on Linux makes itself non-dumpable,
-because an open session's store key would otherwise persist in a crash dump. It
-exits before opening the store if it cannot.
-SDK applications hold the same key while a session is open; whether to disable
-crash dumps is a process-wide choice left to the host application.
+Reset deletes files and deletable provider state, retaining coordination locks.
+Flatpak also retains its portal secret. The next open creates a fresh store key;
+restoring an old complete snapshot can restore its former access policy.
 
-An additional credential does not prevent denial of service by an actor that
-can delete or replace both provider state and application files. Best-effort clearing narrows
-the lifetime of Keybay-owned mutable buffers but cannot prove erasure of every
-Dart VM, cryptographic dependency, or operating-system copy. In particular,
-the pinned HKDF implementation returns an immutable key wrapper whose destruction
-discards its reference without overwriting the dependency's backing bytes.
-The Argon2 production workspace is native memory; Keybay overwrites its retained
-workspace view before releasing it. This narrows one specific lifetime without
-claiming erasure of dependency-internal hash state or every process copy.
+Buffer clearing is best-effort, not proof of erasure of VM/OS/dependency copies.
+Keybay wipes its native Argon2 workspace before freeing it. The pinned HKDF
+wrapper discards its immutable backing bytes without overwriting them.
+The CLI disables core files and becomes non-dumpable on Linux before opening;
+SDK hosts must choose their own process-wide dump policy.
 
-For the CLI, `get` is a disclosure guard rather than an authorization boundary:
-it refuses redirected/captured output before decrypting, but a foreground
-terminal can display the selected value. `run` necessarily supplies referenced
-values to its child process. Neither operation reveals unrelated records.
-Copying a secret deliberately releases it to the OS clipboard. macOS uses
-current-host-only and sensitive/transient markers, which clipboard managers
-may choose to honor. Linux currently uses `wl-copy`/`xclip` without a sensitivity
-hint; clipboard history can retain copied secrets. Clearing the active clipboard
-does not erase another application's history.
+CLI `get` rejects captured/redirected output, but that disclosure guard is not
+authorization. `run` gives referenced secrets to its child. Copy releases a
+secret to the OS clipboard: macOS marks it current-host-only and
+sensitive/transient; Linux currently supplies no sensitivity hint. Clipboard
+managers may retain it, and clearing the clipboard cannot erase their history.
 
 ## Engineering and evidence
 
-Runtime dependencies are exact-pinned and the resolved hosted closure is
-checked in CI. Changes run formatting, analysis, unit/adversarial tests, and the
-affected genuine provider lanes. Simulator and emulator runs prove API paths,
-not physical secure-hardware mediation. Hardware claims are made only from
-measured platform metadata and retained qualification.
+Runtime dependencies are exact-pinned. CI checks the hosted dependency closure,
+formatting, analysis, adversarial tests and affected provider lanes. Simulators,
+fakes and readiness probes do not establish physical secure-hardware behavior.
 
-The current device, lifecycle, and provider evidence is tracked in
-[doc/device-security-suite.md](doc/device-security-suite.md). A separate Claude
-review and follow-up accepted the five remediations; that review phase is
-closed. Findings, retained evidence and remaining qualification gates are
-recorded in the [review record](doc/security-review.md).
-It is an AI model review, not a human external audit; Keybay has one maintainer.
-
-The [September 21 engineering audit](doc/security-review.md#engineering-audit-2026-09-21)
-found no new confirmed vulnerability in the reviewed SDK/CLI source and passed
-fresh core, terminal and deterministic tamper checks. That result does not
-replace ongoing advisory triage or qualify a signed native release. The
-[release-readiness record](doc/release-readiness.md) separates published SDK/CLI
-artifacts from unreleased source cleanup and retained platform evidence.
-
-The [September 22 pre-release assessment](doc/security-review.md#pre-release-assessment-2026-09-22)
-was the first review of the CLI/TUI and the Fleury paths it reaches. It found
-three Medium and six Low issues, including one pre-existing; each is resolved
-or explicitly accepted in that record.
-
-For SDK 0.2.0, remaining physical lock/reboot, auth-change interruption and
-actual backup/restore/transfer work is deferred until devices are available.
-Maintained-device Argon2 latency/memory acceptance is lower-priority follow-up.
-These are unqualified properties, not release claims; the
-[scoped qualification record](doc/qualification-status.md#sdk-020-release-scope)
-names the observed configurations. The release adds no performance guarantee
-or broader device/provider coverage through those deferrals.
-
-## External review and open work
-
-The [review guide](doc/external-review.md) gives an exact implementation baseline,
-the separately published versions, a source/test map and the outstanding work.
-It includes Go reference-tool advisory maintenance, Apple patched-device
-requalification, Linux clipboard hardening and deferred physical lifecycle tests.
-The earlier reviews predate the complete passkey integration; their conclusions
-must not be extended to that construction without reviewing it.
-
-Current source rejects V1 and retired V2 singleton-passphrase packages. It
-contains no automatic conversion. Published 0.2.0 predates the latter cleanup;
-reviewers must identify which source/artifact they tested. Current methods-based
-passphrase/passkey and platform-only encodings are unchanged by that cleanup.
+- [External review](doc/external-review.md): code/test map, advisory maintenance,
+  qualification gaps and review procedure.
+- [Security review record](doc/security-review.md): prior AI reviews and findings;
+  these predate the complete passkey integration.
+- [Release readiness](doc/release-readiness.md): published artifacts versus newer
+  source. Current source rejects V1 and retired V2 singleton formats without
+  migration; published 0.2.0 retains the latter conversion.
 
 ## Reporting
 
-Use GitHub [private vulnerability reporting](https://github.com/danReynolds/keybay/security/advisories/new)
-or email **me@danreynolds.ca**. Do not open a public issue for an undisclosed
-security bug. Critical and High findings block the next release.
+Use [private vulnerability reporting](https://github.com/danReynolds/keybay/security/advisories/new)
+or **me@danreynolds.ca**. Do not disclose security bugs in public issues.
+Critical and High findings block the next release.
 
-Releases are signed with the maintainer-controlled SSH key. Verify a tag with:
+Release tags are signed with the maintainer's SSH key:
 
 ```sh
-git verify-tag v0.2.0             # SDK release
-git verify-tag keybay_cli-v0.2.0  # CLI release
+git verify-tag v0.2.0             # SDK
+git verify-tag keybay_cli-v0.2.0  # CLI
 ```
