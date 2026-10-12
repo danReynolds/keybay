@@ -1,5 +1,15 @@
 # Latest platform qualification
 
+Paths under `build/` below identify local, ignored receipts, not files shipped
+in this repository. Request the named redacted artifacts from the maintainer
+for review; their absence from a checkout is not passing evidence.
+
+
+For October publication and passkey evidence, start with the
+[external review guide](external-review.md) and [release record](release-readiness.md).
+This page preserves the earlier platform baseline and explicit release deferrals;
+its September review date is not a fresh review of the complete passkey integration.
+
 Status reviewed **2026-09-21**. The latest [engineering audit](security-review.md#engineering-audit-2026-09-21)
 passed SDK/CLI core and terminal regressions and a 20,000-case tamper canary.
 It did not renew native provider, physical-device or signed-distribution proof.
@@ -92,7 +102,7 @@ AOT KDF vectors matched in five fresh processes on ARM64 and five under Rosetta.
 Measurements remain observations without accepted device budgets; the
 before/after ARM64 comparison ran on a loaded host.
 
-The [local follow-up pack](../build/qualification/claude-remediation-20260907/REVIEW_NEXT.md)
+The local follow-up pack (`build/qualification/claude-remediation-20260907/REVIEW_NEXT.md`)
 retains the diff, source identity, public reports and failed attempts. No physical
 device or signed-app run was repeated for this remediation. The accepted
 source-applicability review carries earlier physical evidence forward for the
@@ -101,7 +111,7 @@ ordering. New reader-failure and KDF-cleanup behavior has hermetic and platform
 CI coverage; these changes alone do not require repeating completed physical
 procedures. The original Claude review pack remains unchanged and verifies.
 Both reviewer reports and the available receipts now have a separate
-[acceptance evidence record](../build/qualification/claude-review-acceptance-20260907/README.md).
+acceptance evidence record (`build/qualification/claude-review-acceptance-20260907/README.md`).
 
 ## SDK 0.2.0 release scope
 
@@ -130,7 +140,7 @@ qualification on Dart 3.11.0 (500 passed; five platform/workspace skips).
 The 238 KB SDK publish dry run passed with only the three deliberate exact-pin
 warnings. Hosted dependency versions and the reviewed runtime digest are
 unchanged; the Flutter lockfile changes only the local SDK version to 0.2.0.
-The [closeout evidence](../build/qualification/sdk-closeout-20260907/README.md)
+The closeout evidence (`build/qualification/sdk-closeout-20260907/README.md`)
 records exact source, final CI/integration results and the separate publication
 state. Additional notarization or executable distribution is outside this SDK
 package closeout.
@@ -190,8 +200,8 @@ credentials, rollback anchors and root rotation are also outside this scope.
   found no additional confirmed SDK correctness or security defect in the reviewed
   paths. SR-004 corrects an overbroad HKDF memory-clearing claim. Runtime source,
   format, API and dependencies are unchanged; nine new regressions use the existing
-  core lane. The local [review record](../build/qualification/sdk-adversarial-review-20260906/review.json)
-  and [core log](../build/qualification/sdk-adversarial-review-20260906/core.log)
+  core lane. The local review record (`build/qualification/sdk-adversarial-review-20260906/review.json`)
+  and core log (`build/qualification/sdk-adversarial-review-20260906/core.log`)
   record 493 passes and three host-specific skips; the run's dirty-source flag represents
   the new uncommitted tests against base `80873887…`, not a runtime change.
   The complete [follow-up CI run](https://github.com/danReynolds/keybay/actions/runs/34045994325)
@@ -295,60 +305,60 @@ The SDK runtime, dependency locks and physical iOS harness
 are byte-for-byte unchanged across these revisions; only tests, qualification
 tooling and documentation changed. Failed runs remain retained as history.
 
-These links resolve to retained **local build artifacts**, which are not
+These paths identify retained **local build artifacts**, which are not
 included in a fresh checkout:
 
-- [Physical Android crash qualification](../build/qualification/android-crash-20260906T154620Z/observation.json),
-  [native report](../build/qualification/android-crash-20260906T154620Z/crash/report.json),
-  and [reproduction instructions](../build/qualification/android-crash-20260906T154620Z/REPRODUCE.md).
-- [Physical iOS upgrade/crash follow-up](../build/qualification/ios-physical-followup-20260906/observation.json),
-  [upgrade report](../build/qualification/ios-physical-followup-20260906/upgrade/report.json),
-  [crash report](../build/qualification/ios-physical-followup-20260906/crash/report.json),
-  and [reproduction instructions](../build/qualification/ios-physical-followup-20260906/REPRODUCE.md).
-- [Public CI and iOS evidence addendum](../build/qualification/signing-followup-20260906/security-review/keybay-sdk-review-20260906-addendum.tar.gz).
-- [CI follow-up and source applicability](../build/qualification/signing-followup-20260906/ci-qualification.json)
-  and [native x64 Flatpak assertions](../build/qualification/signing-followup-20260906/ci-seventh-run/flatpak-x64/flatpak-qualification.json).
-- [Qualification follow-up and source applicability](../build/qualification/signing-followup-20260906/observation.json)
-  and [reproduction instructions](../build/qualification/signing-followup-20260906/REPRODUCE.md).
-- [Latest clean-source macOS/Linux/Flatpak regression](../build/qualification/signing-followup-20260906/provider-regression/report.json)
-  and [two-app Flatpak assertions](../build/qualification/signing-followup-20260906/provider-regression/flatpak.json).
-- [Hardened runtime/module qualification](../build/qualification/signing-followup-20260906/macos-developer-id-2pkkrf2d/report.json),
-  and [mobile crash runner preparation](../build/qualification/mobile-crash-preparation-20260906/preparation.json).
-- [Latest failure-case qualification and source applicability](../build/qualification/failure-cases-20260906/observation.json),
-  [real prompted Flatpak assertions](../build/qualification/failure-cases-20260906/flatpak-final/flatpak.json),
-  and [standalone signing reproduction](../build/qualification/failure-cases-20260906/signing-probe/result.json).
-- [Core and native macOS regression](../build/regression/run-uJg7PI/report.json).
+- Physical Android crash qualification (`build/qualification/android-crash-20260906T154620Z/observation.json`),
+  native report (`build/qualification/android-crash-20260906T154620Z/crash/report.json`),
+  and reproduction instructions (`build/qualification/android-crash-20260906T154620Z/REPRODUCE.md`).
+- Physical iOS upgrade/crash follow-up (`build/qualification/ios-physical-followup-20260906/observation.json`),
+  upgrade report (`build/qualification/ios-physical-followup-20260906/upgrade/report.json`),
+  crash report (`build/qualification/ios-physical-followup-20260906/crash/report.json`),
+  and reproduction instructions (`build/qualification/ios-physical-followup-20260906/REPRODUCE.md`).
+- Public CI and iOS evidence addendum (`build/qualification/signing-followup-20260906/security-review/keybay-sdk-review-20260906-addendum.tar.gz`).
+- CI follow-up and source applicability (`build/qualification/signing-followup-20260906/ci-qualification.json`)
+  and native x64 Flatpak assertions (`build/qualification/signing-followup-20260906/ci-seventh-run/flatpak-x64/flatpak-qualification.json`).
+- Qualification follow-up and source applicability (`build/qualification/signing-followup-20260906/observation.json`)
+  and reproduction instructions (`build/qualification/signing-followup-20260906/REPRODUCE.md`).
+- Latest clean-source macOS/Linux/Flatpak regression (`build/qualification/signing-followup-20260906/provider-regression/report.json`)
+  and two-app Flatpak assertions (`build/qualification/signing-followup-20260906/provider-regression/flatpak.json`).
+- Hardened runtime/module qualification (`build/qualification/signing-followup-20260906/macos-developer-id-2pkkrf2d/report.json`),
+  and mobile crash runner preparation (`build/qualification/mobile-crash-preparation-20260906/preparation.json`).
+- Latest failure-case qualification and source applicability (`build/qualification/failure-cases-20260906/observation.json`),
+  real prompted Flatpak assertions (`build/qualification/failure-cases-20260906/flatpak-final/flatpak.json`),
+  and standalone signing reproduction (`build/qualification/failure-cases-20260906/signing-probe/result.json`).
+- Core and native macOS regression (`build/regression/run-uJg7PI/report.json`).
   Its aggregate status is blocked because Docker was stopped; the core and
   macOS rows passed. Later Linux/Flatpak results supersede those blocked rows.
-- [Linux and Flatpak regression](../build/regression/run-Yb6Q3w/report.json) and
-  [detailed Flatpak assertions and provider versions](../build/regression/run-Yb6Q3w/flatpak.json).
-- [Android emulator / iOS simulator regression](../build/regression/run-jXhPun/report.json).
-- [Physical Android report](../build/qualification/20260904T231637Z/android-pixel6a-20260905T001537Z/report.json)
-  and [hardware, source, test and cleanup observations](../build/qualification/20260904T231637Z/android-pixel6a-20260905T001537Z/observation.json).
-- [Android Profile/AOT process continuity](../build/qualification/android-physical-20260905T205513Z/lifecycle/report.json),
-  [source, artifact and cleanup observations](../build/qualification/android-physical-20260905T205513Z/observation.json),
-  and [reproduction instructions](../build/qualification/android-physical-20260905T205513Z/REPRODUCE.md).
-- [Android passphrase-protected upgrade](../build/qualification/android-upgrade-20260906T010717Z/upgrade/report.json),
-  [source, artifacts and cleanup observations](../build/qualification/android-upgrade-20260906T010717Z/observation.json),
-  and [reproduction instructions](../build/qualification/android-upgrade-20260906T010717Z/REPRODUCE.md).
-- [Mobile upgrade preparation and native process-crash checks](../build/qualification/mobile-upgrade-preparation-20260905T235609Z/observation.json),
-  [native crash test events](../build/qualification/mobile-upgrade-preparation-20260905T235609Z/crash-tests.jsonl),
-  [runner test events](../build/qualification/mobile-upgrade-preparation-20260905T235609Z/runner-tests.jsonl),
-  and [reproduction instructions](../build/qualification/mobile-upgrade-preparation-20260905T235609Z/REPRODUCE.md).
-- [Current signed macOS qualification](../build/qualification/macos-signed-20260905T200022Z/observation.json),
-  [phase receipts](../build/qualification/macos-signed-20260905T200022Z/regression/report.json),
-  and [reproduction instructions](../build/qualification/macos-signed-20260905T200022Z/REPRODUCE.md).
-  The [earlier blocked rerun](../build/qualification/20260904T231637Z/macos-final-signed-blocked.json)
+- Linux and Flatpak regression (`build/regression/run-Yb6Q3w/report.json`) and
+  detailed Flatpak assertions and provider versions (`build/regression/run-Yb6Q3w/flatpak.json`).
+- Android emulator / iOS simulator regression (`build/regression/run-jXhPun/report.json`).
+- Physical Android report (`build/qualification/20260904T231637Z/android-pixel6a-20260905T001537Z/report.json`)
+  and hardware, source, test and cleanup observations (`build/qualification/20260904T231637Z/android-pixel6a-20260905T001537Z/observation.json`).
+- Android Profile/AOT process continuity (`build/qualification/android-physical-20260905T205513Z/lifecycle/report.json`),
+  source, artifact and cleanup observations (`build/qualification/android-physical-20260905T205513Z/observation.json`),
+  and reproduction instructions (`build/qualification/android-physical-20260905T205513Z/REPRODUCE.md`).
+- Android passphrase-protected upgrade (`build/qualification/android-upgrade-20260906T010717Z/upgrade/report.json`),
+  source, artifacts and cleanup observations (`build/qualification/android-upgrade-20260906T010717Z/observation.json`),
+  and reproduction instructions (`build/qualification/android-upgrade-20260906T010717Z/REPRODUCE.md`).
+- Mobile upgrade preparation and native process-crash checks (`build/qualification/mobile-upgrade-preparation-20260905T235609Z/observation.json`),
+  native crash test events (`build/qualification/mobile-upgrade-preparation-20260905T235609Z/crash-tests.jsonl`),
+  runner test events (`build/qualification/mobile-upgrade-preparation-20260905T235609Z/runner-tests.jsonl`),
+  and reproduction instructions (`build/qualification/mobile-upgrade-preparation-20260905T235609Z/REPRODUCE.md`).
+- Current signed macOS qualification (`build/qualification/macos-signed-20260905T200022Z/observation.json`),
+  phase receipts (`build/qualification/macos-signed-20260905T200022Z/regression/report.json`),
+  and reproduction instructions (`build/qualification/macos-signed-20260905T200022Z/REPRODUCE.md`).
+  The earlier blocked rerun (`build/qualification/20260904T231637Z/macos-final-signed-blocked.json`)
   remains as historical evidence; its development-signing gaps are superseded.
-- [Current physical iOS qualification](../build/qualification/ios-physical-20260905T201952Z/observation.json),
-  [baseline scenarios](../build/qualification/ios-physical-20260905T201952Z/baseline/report.json),
-  [Profile/AOT process continuity](../build/qualification/ios-physical-20260905T201952Z/lifecycle/report.json),
-  and [reproduction instructions](../build/qualification/ios-physical-20260905T201952Z/REPRODUCE.md).
-  The [historical physical baseline](../build/qualification/20260904T231637Z/ios-baseline.json)
+- Current physical iOS qualification (`build/qualification/ios-physical-20260905T201952Z/observation.json`),
+  baseline scenarios (`build/qualification/ios-physical-20260905T201952Z/baseline/report.json`),
+  Profile/AOT process continuity (`build/qualification/ios-physical-20260905T201952Z/lifecycle/report.json`),
+  and reproduction instructions (`build/qualification/ios-physical-20260905T201952Z/REPRODUCE.md`).
+  The historical physical baseline (`build/qualification/20260904T231637Z/ios-baseline.json`)
   predates the iOS container-binding correction and is superseded.
-- [Engineering evidence index](../build/qualification/20260904T231637Z/engineering-checks.json),
-  [retained Docker source/environment evidence](../build/qualification/20260904T231637Z/flatpak-nested-docker/result.json),
-  and [GNOME backend source review and its limits](../build/qualification/20260904T231637Z/flatpak-backend-review/source-review.md).
+- Engineering evidence index (`build/qualification/20260904T231637Z/engineering-checks.json`),
+  retained Docker source/environment evidence (`build/qualification/20260904T231637Z/flatpak-nested-docker/result.json`),
+  and GNOME backend source review and its limits (`build/qualification/20260904T231637Z/flatpak-backend-review/source-review.md`).
 
 Use the [regression commands](platform-regression.md) for repeatable checks and
 the [device security suite](device-security-suite.md) for the remaining

@@ -16,8 +16,9 @@ does not retry the other profile after an operation fails.
 - **File isolation:** entitled apps need App Sandbox for container isolation.
   An unsandboxed app's private file permissions do not isolate it from its own user.
 - **Hardware assurance:** neither generic Keychain root carries a Secure Enclave claim.
-- **Passphrase:** optional in both profiles; recommended for high-value records
-  in the account-level profile.
+- **Additional methods:** optional passphrase/passkeys; recommended for high-value
+  records in the account-level profile. Any one enrolled method plus the platform
+  root is required when methods exist.
 - **Main limitation:** signed-group key access and file sandboxing are separate.
   Login-Keychain ACLs are not a portable application-isolation guarantee.
 
@@ -79,7 +80,8 @@ but `dart run`, unsigned/ad-hoc builds, binary replacement, and invoking a
 trusted CLI do not form one portable application sandbox. Another same-user
 process may also modify the application files.
 
-Use a Keybay passphrase for passwords and other high-value records. It keeps
+Use a Keybay passphrase or passkey for passwords and other high-value records.
+Either method keeps
 the store key unavailable from the login-Keychain item and encrypted file
 alone. It cannot prevent an authorized same-user actor from deleting or
 replacing those artifacts.

@@ -6,8 +6,11 @@ The latest [engineering audit](security-review.md#engineering-audit-2026-09-21)
 at `7965a5e` passed **211 CLI tests**, **36 native TUI PTY cases**, **22
 hidden-input cases**, and private-pasteboard/archive/identity checks on macOS
 ARM64 / Dart 3.12.2. It did not renew real-provider or distribution evidence.
-C4 installed-artifact qualification and hosted Fleury dependencies remain
-outstanding; [release readiness](release-readiness.md) defines those gates.
+That September snapshot predates C4 completion and hosted dependency publication.
+The [October 11 publication record](reviews/2026-10-11-cli-publication.md)
+records the released native artifacts and observed installation; the
+[candidate record](reviews/2026-10-11-cli-release-candidate.md) records attended
+hardware checks. These later receipts do not renew every physical lifecycle test.
 The CLI ships only as native binaries through Homebrew and GitHub releases,
 not pub.dev.
 The separate [SDK qualification](qualification-status.md) retains its scope.

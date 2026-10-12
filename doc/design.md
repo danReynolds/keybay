@@ -56,8 +56,8 @@ It does not claim to resist:
 Ordinary unsandboxed Linux and unentitled macOS have a further limit. Their
 declared application namespace is not an authorization boundary. A same-user
 program may claim it and may reach the login credential store and files. A
-Keybay passphrase prevents those artifacts alone from yielding the store key;
-it cannot prevent denial of service by an actor with the authority to delete or
+Keybay passphrase or passkey prevents those artifacts alone from yielding the
+store key; it cannot prevent denial of service by an actor with the authority to delete or
 replace them.
 
 ## Security guarantees

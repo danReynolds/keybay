@@ -1,5 +1,15 @@
 # Keybay security review record
 
+Paths under `build/` below identify local, ignored receipts, not files shipped
+in this repository. Request the named redacted artifacts from the maintainer
+for review; their absence from a checkout is not passing evidence.
+
+
+Dated assessments below apply to their named source revisions. Start a new
+review with the [external review guide](external-review.md), which includes the
+subsequent passkey construction, published artifacts and open security work.
+These AI-assisted assessments do not constitute an independent human audit.
+
 ## Pre-release assessment, 2026-09-22
 
 This assessment targeted the CLI and TUI, which no independent review had
@@ -80,7 +90,7 @@ remediations and the informational dispositions at `0042f6d…`.
 approval or a claim of a human external audit.
 
 Both reports and the available reviewer receipts are retained byte-for-byte in
-the [acceptance evidence](../build/qualification/claude-review-acceptance-20260907/README.md)
+the acceptance evidence (`build/qualification/claude-review-acceptance-20260907/README.md`)
 with a hash manifest. They are reviewer executions, separately attributed from
 project CI/device runs; null or scratch-commit receipt identities have not been
 relabelled as clean-source runs. CLI/TUI were outside that review and were
@@ -125,7 +135,7 @@ followed at `b4b198a…`. All 14 normal CI jobs passed for that exact source,
 including native Intel core/provider coverage. The [qualification report](qualification-status.md)
 retains local Rosetta timing failures and distinguishes new CI evidence from
 earlier physical and signing runs. Missing lifecycle/release evidence remains
-missing. The [local follow-up brief](../build/qualification/claude-remediation-20260907/REVIEW_NEXT.md)
+missing. The local follow-up brief (`build/qualification/claude-remediation-20260907/REVIEW_NEXT.md`)
 provides the exact diff and retained reports. The accepted follow-up adds real
 Rosetta native-provider and additional Dart-version runs. Its remaining
 same-runtime in-flight error-classification clarification is now in the SDK
@@ -151,17 +161,17 @@ source/evidence claims. They do not describe the new provider-free record path.
 
 Read [architecture](architecture.md), [RFC 0001](rfcs/0001-per-application-stores.md)
 and the [qualification report](qualification-status.md) first. The retained
-[handoff archive](../build/qualification/signing-followup-20260906/security-review/keybay-sdk-review-20260906-r2.tar.gz)
+handoff archive (`build/qualification/signing-followup-20260906/security-review/keybay-sdk-review-20260906-r2.tar.gz`)
 includes a source manifest, exact snapshot identity, selected
 public evidence, and this brief. Raw device/provider logs and signing material
 are excluded. No external recipient has been selected or sent the package.
 
 The R2 archive remains immutable at `387c0d97…`. Subsequent physical iOS
 upgrade/crash evidence and native CI reports are linked from the qualification
-report and retained in a [public evidence addendum](../build/qualification/signing-followup-20260906/security-review/keybay-sdk-review-20260906-addendum.tar.gz).
+report and retained in a public evidence addendum (`build/qualification/signing-followup-20260906/security-review/keybay-sdk-review-20260906-addendum.tar.gz`).
 Later changes affect test fixtures, CI and documentation;
 the reviewed SDK runtime, dependency locks and physical iOS harness are unchanged.
-A subsequent [physical Android crash report](../build/qualification/android-crash-20260906T154620Z/observation.json)
+A subsequent physical Android crash report (`build/qualification/android-crash-20260906T154620Z/observation.json`)
 adds native termination/recovery and cleanup evidence for the unchanged SDK and
 mobile fixture; it does not alter either immutable archive.
 

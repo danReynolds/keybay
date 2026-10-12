@@ -16,12 +16,16 @@ in the [SDK guide](https://github.com/danReynolds/keybay/blob/main/doc/sdk.md#ca
 
 See the
 [release readiness](https://github.com/danReynolds/keybay/blob/main/doc/release-readiness.md)
-record for the SDK's qualification scope and the separate CLI distribution gates.
+record for the SDK's qualification scope and separate published CLI artifacts.
+The [external review guide](https://github.com/danReynolds/keybay/blob/main/doc/external-review.md)
+identifies the source baseline, dependency pins and outstanding security work.
 
 Version 0.2.0 replaces the 0.1.x API and encrypted format. It does not read,
 migrate or delete existing V1 stores. An upgrade does not carry those secrets
 into a V2 store; applications needing the old data must handle that transition
-before adopting this version.
+before adopting this version. Current source also removes the retired V2
+singleton-passphrase reader/migration; this post-0.2.0 cleanup is unreleased.
+Current methods-based passphrase/passkey and platform-only encodings are unchanged.
 
 ```dart
 import 'package:keybay/keybay.dart';
@@ -162,7 +166,7 @@ passkey alone does not make a vault file portable.
 
 See the [SDK guide](https://github.com/danReynolds/keybay/blob/main/doc/sdk.md),
 [security policy](https://github.com/danReynolds/keybay/blob/main/SECURITY.md), and
-[V2 RFC](https://github.com/danReynolds/keybay/blob/main/doc/rfcs/0001-per-application-stores.md).
+[passkey methods RFC](https://github.com/danReynolds/keybay/blob/main/doc/rfcs/0003-passkey-methods.md).
 
 Supported production profiles are iOS, Android 12+, macOS, and ordinary Linux
 desktop. The Flatpak candidate uses sandbox identity, private ciphertext, and

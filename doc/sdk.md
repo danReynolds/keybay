@@ -1,7 +1,8 @@
 # Dart and Flutter SDK
 
 [Architecture](architecture.md) · [Security policy](../SECURITY.md) ·
-[Accepted V2 RFC](rfcs/0001-per-application-stores.md)
+[Passkey methods RFC](rfcs/0003-passkey-methods.md) ·
+[External review guide](external-review.md)
 
 Keybay gives each host application one encrypted local store. The production
 API has no application-ID, path, provider, or alternate-store selector.
@@ -15,6 +16,10 @@ It is a breaking API and storage-format change from 0.1.x. V2 neither
 reads nor migrates or removes V1 stores; do not expect an upgrade to carry old
 secrets into the new store. See the [scoped release evidence](qualification-status.md#sdk-020-release-scope),
 including deferred physical lifecycle work and Argon2 performance acceptance.
+Current source also rejects the retired V2 singleton-passphrase encoding with
+`unsupportedStoreVersion`, without changing the file or provider state. That
+post-0.2.0 cleanup is unreleased; current methods-based and platform-only encodings
+are unchanged. No automatic conversion or recovery fallback is supplied.
 
 <a id="sdk-quickstart"></a>
 

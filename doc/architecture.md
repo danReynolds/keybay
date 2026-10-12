@@ -1,7 +1,9 @@
 # Keybay V2 architecture
 
-The accepted design is [RFC 0001](rfcs/0001-per-application-stores.md). This is
-the short implementation map.
+The accepted design is [RFC 0001](rfcs/0001-per-application-stores.md), amended
+by [RFC 0003](rfcs/0003-passkey-methods.md) for passkey methods. This is the
+current-source implementation map; the [review guide](external-review.md)
+distinguishes it from published artifacts.
 
 ## One shape
 
@@ -42,7 +44,8 @@ public API
 common engine
   framed reader + writer + protection rotation
   bounded binary format + XChaCha20-Poly1305 + HKDF-SHA256
-  Argon2id passphrase derivation
+  Argon2id passphrase derivation / verified Keypass PRF material
+  method-specific X25519 recipient keys + HPKE store-key envelopes
 
 host profile
   authenticated/declared application identity
@@ -56,9 +59,11 @@ platform boundaries
   Linux Secret Service and XDG Secret Portal through typed D-Bus
 ```
 
-The common engine depends only on the `HostPlatform` contract. Platform code
-cannot choose another application's identity or feed an arbitrary path or
-provider into the public API.
+The common engine acquires platform protection through `HostPlatform` and
+passkey material through Keypass. Keybay owns derivation, method envelopes,
+record integrity and atomic storage. Keypass owns provider/device interaction
+and transfers successful temporary results to Keybay, which disposes them. Platform code cannot feed a runtime identity, arbitrary
+path or alternate provider selector into the public API.
 
 ## Stored file
 
@@ -83,14 +88,28 @@ Platform protection is mandatory. With no configured unlock method it is
 sufficient to recover the store key. When methods exist, opening requires:
 
 ```text
-platform protection AND (passphrase OR future hardware method A OR ...)
+platform protection AND (passphrase OR system passkey A OR hardware passkey B OR ...)
 ```
 
-V2 implements zero or one passphrase. Methods are alternatives, not implicit
-multi-factor authentication. Adding, updating, or removing a method is an
+A vault supports zero or one passphrase and multiple passkeys, at most eight
+methods total. They are alternative credentials. Auth management is `add`,
+`list` and `remove(method)`, with no update or replace. Each add/remove is an
 authenticated transaction that generates a new store key and epoch, rewrites
 the key package, and re-encrypts every record while preserving the record set.
-It does not invalidate complete historical snapshots under their old protection.
+Survivor envelopes use their authenticated public recipient keys; their secrets
+are not retained or requested again. Old complete snapshots keep their old protection.
+
+`open(credential:)` only authenticates an enrolled method. It never enrolls,
+including when no store exists. Credential-free `open()` may initialize fully
+absent platform-only state; enrollment then occurs through `session.auth.add`.
+Removing the last method returns to platform-only protection. Changing a
+passphrase requires separate remove/add commits, with that interim state if no
+other method remains. A failed add does not roll back the preceding removal.
+
+Passkey records retain nonsecret identity, PRF input and verifier state. The
+manifest authenticates the entire method package; provisional recovered keys
+are not released before verification. Successful passkey open persists advanced
+state before returning a session and rejects conflicting authentication changes.
 
 Provider calls carry an internal interaction policy fixed by the operation.
 Open, authentication changes, and reset may invoke trusted OS/provider UI;
@@ -109,8 +128,8 @@ The public API has no interaction option.
 | ordinary Linux | owning pubspec/build declaration | restrictive XDG data directory | Secret Service item plus private runtime creation lock |
 
 The last two profiles are `namespaceOnly`: a same-user process can claim the
-same declaration and may reach the platform item/file. A passphrase prevents
-those artifacts alone from yielding the store key, but cannot prevent deletion
+same declaration and may reach the platform item/file. A passphrase or passkey
+prevents those artifacts alone from yielding the store key, but cannot prevent deletion
 or modification by an actor with filesystem/keyring authority.
 
 The Flatpak candidate binds the application identity from `/.flatpak-info` to

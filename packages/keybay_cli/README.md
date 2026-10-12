@@ -24,6 +24,11 @@ The launched process receives ordinary environment variables and needs no
 Keybay library. Keybay replaces itself with the child via `execve`; it never
 invokes a shell or stays resident as a wrapper.
 
+For external review, the [review guide](../../doc/external-review.md) maps CLI
+security boundaries and tests to the exact source/release baseline. Source
+cleanup after 0.2.0 is not part of the published binaries; see the
+[SDK changelog](../keybay/CHANGELOG.md#unreleased) for format compatibility changes.
+
 ## Install
 
 Install the native release with Homebrew:

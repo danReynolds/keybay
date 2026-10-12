@@ -10,8 +10,10 @@
   the singleton-only authentication package, suite-1-only reader, and
   protected-open behavior below. Other platform and record invariants remain.
 
-> This RFC defines the accepted Keybay V2 target. It does not describe the API,
-> file format, or security guarantees of any currently shipped Keybay release.
+> This is the original accepted V2 architecture, implemented in the 0.2.0 line.
+> RFC 0003 supersedes the authentication sections noted above. Milestone notes
+> below are historical; use the [SDK guide](../sdk.md) for current APIs and the
+> [external review guide](../external-review.md) for exact source/release scope.
 
 ## Summary
 
