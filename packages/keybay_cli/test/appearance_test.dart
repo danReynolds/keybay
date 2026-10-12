@@ -202,6 +202,17 @@ void main() {
           const AnsiColor(6),
         );
         expect(reopened.appearance.contrast, TuiContrast.high);
+        final field = tester.semantics().single(
+          role: SemanticRole.textField,
+          label: 'Passphrase',
+        );
+        // Underlining box glyphs draws a second line below each border row.
+        for (final row in [field.bounds!.top - 1, field.bounds!.bottom]) {
+          final border = tester.render().atColRow(field.bounds!.left, row);
+          expect(border.style.foreground, const AnsiColor(6));
+          expect(border.style.bold, isTrue);
+          expect(border.style.underline, isFalse);
+        }
         expect(
           tester
               .semantics()
