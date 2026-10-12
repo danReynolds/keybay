@@ -28,7 +28,8 @@ DOCUMENTS = [
   {source: "doc/architecture.md", route: "docs/architecture/", label: "Architecture", summary: "One per-application framed store, fixed platform protection, and no fallback providers."},
   {source: "doc/design.md", route: "docs/design/", label: "Security design", summary: "The V2 threat model, cryptographic construction, platform boundaries, and evidence-linked guarantees."},
   {source: "SECURITY.md", route: "docs/security/", label: "Security", summary: "Where secrets live on each platform, how releases are verified, current evidence limits, and the private vulnerability-reporting route."},
-  {source: "doc/release-readiness.md", route: "docs/releases/", label: "Release readiness", summary: "The 0.2.0 release scope, remaining publication gates, and evidence required from the final packages."},
+  {source: "doc/release-readiness.md", route: "docs/releases/", label: "Release readiness", summary: "Published 0.2.0 artifacts, unreleased source changes, and retained qualification evidence."},
+  {source: "doc/external-review.md", route: "docs/review/", label: "External review", summary: "Exact source and release baselines, security boundaries, code and test maps, and outstanding qualification."},
   {source: "doc/ecosystem-comparison.md", route: "docs/comparison/", label: "Choosing Keybay", summary: "Choose the smallest tool that matches whether you need local storage, provider portability, team sharing, or encrypted files."},
 ].freeze
 
@@ -48,6 +49,7 @@ PRIMARY_NAVIGATION = [
       {label: "Storage by platform", route: "docs/", fragment: "platforms"},
       {label: "Architecture", route: "docs/architecture/"},
       {label: "Security design", route: "docs/design/"},
+      {label: "External review", route: "docs/review/"},
     ],
   },
 ].freeze
@@ -375,7 +377,7 @@ def documentation_index(metadata)
 
             <section class="doc-index-group">
               <h2>Reference</h2>
-              <ul>#{list.call(%w[docs/architecture/ docs/comparison/ docs/security/])}</ul>
+              <ul>#{list.call(%w[docs/architecture/ docs/comparison/ docs/security/ docs/review/])}</ul>
             </section>
 
             <p class="doc-index-provenance">Every page is generated from its repository source and links to the exact deployed commit.</p>

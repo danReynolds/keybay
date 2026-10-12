@@ -27,18 +27,34 @@ store key.
 | unentitled macOS / CLI | one explicit login-Keychain item | declared namespace and restrictive files; not a portable app sandbox |
 | ordinary Linux desktop | one Secret Service item | declared namespace and restrictive files; not an OS-enforced app boundary |
 
-Platform protection is mandatory. Applications may add one passphrase, making
-opening require platform access and the passphrase. Passphrases are especially
-important for high-value records on ordinary Linux and unentitled macOS, where
-another same-user process may claim the same declared namespace and reach
-login-bound storage.
+Platform protection is mandatory. Applications may enroll zero or one passphrase
+and multiple passkeys, with at most eight methods in total. When methods exist,
+opening requires `platform AND (passphrase OR passkey A OR passkey B ...)`.
+With no methods the store is platform-only. Configuring multiple methods does
+not require presenting them together.
 
-For the CLI this is concrete: without a passphrase, any program running as you
-can read every value through `keybay list` and `keybay run`, with no terminal or
-prompt. On macOS those requests do not meet the Keychain prompt that an
-unrelated program reading the item directly would. A terminal check would not
-change this, because a program can supply its own pseudo-terminal; only a
-passphrase separates you from other programs running as you.
+Passphrases use Argon2id; passkeys use verified repeatable PRF material from
+Keypass. Both derive a method-specific X25519 recipient key through HKDF.
+An HPKE envelope wraps the random store key, and the platform protector seals
+the method package. The authenticated manifest binds the complete package.
+The saved Keypass record is recovery/verification metadata, not its secret.
+See [RFC 0003](doc/rfcs/0003-passkey-methods.md) for the precise construction.
+
+This additional protection matters on ordinary Linux and unentitled macOS,
+where another same-user program may claim the declared namespace and reach
+login-bound storage. For a platform-only CLI vault, a program running as you
+can use `keybay list` and secret-referencing `keybay run` without a credential
+prompt. A terminal check would not change that: a program can supply its own
+pseudo-terminal. Enroll a passphrase or hardware passkey to make platform/file
+access alone insufficient. This does not protect an already compromised or
+unlocked process.
+
+System passkeys require a supported native app host and its domain associations.
+Direct hardware access uses an RP namespace without authenticating the requesting
+executable. Keypass requires compatible PRF/verification capabilities; a biometric
+success boolean or ordinary passkey login is insufficient. Neither route silently
+falls back to another credential. Synced passkeys do not bypass Keybay's required
+platform root or make its encrypted file portable.
 
 The Flatpak candidate uses authenticated sandbox identity and XDG Secret Portal
 protection. Two installed application IDs passed isolation checks in the
@@ -64,8 +80,8 @@ Keybay is designed so that:
 
 - its managed persistent files contain no plaintext record values;
 - an encrypted file is insufficient without its platform-protected root;
-- configured passphrase protection remains necessary even with access to the
-  root item and file;
+- when additional methods are configured, one enrolled credential remains
+  necessary even with access to the root item and file;
 - corruption, wrong keys, unsupported formats, and missing provider state fail
   before plaintext is returned;
 - concurrent writers produce one authenticated complete generation; and
@@ -85,8 +101,17 @@ removes the encrypted store and staging but retains nonsecret coordination
 locks and the portal-owned application secret.
 The next successful open creates a fresh store key; restoring an old complete
 encrypted store can nevertheless restore access under its old protection.
-Changing a passphrase rotates the current store key and re-encrypts every
+Adding or removing a method rotates the current store key and re-encrypts every
 record; it does not revoke older snapshots or credentials at their issuer.
+Removing a passkey method does not delete the credential from its provider/key.
+
+Auth management is `add`, `list` and `remove(method)`, with no update or replace.
+Removing the last method deliberately returns to platform-only protection.
+Changing a passphrase requires removal then a separate add; if it was the last
+method, protection remains platform-only between those calls and if adding fails.
+An authenticated session can change policy. This is not protection against an
+attacker who already controls that session. Credential-based `open` authenticates
+only; it never enrolls or repairs missing state.
 
 The CLI disables its own core files, and on Linux makes itself non-dumpable,
 because an open session's store key would otherwise persist in a crash dump. It
@@ -94,8 +119,8 @@ exits before opening the store if it cannot.
 SDK applications hold the same key while a session is open; whether to disable
 crash dumps is a process-wide choice left to the host application.
 
-A passphrase does not prevent denial of service by an actor that can delete or
-replace both provider state and application files. Best-effort clearing narrows
+An additional credential does not prevent denial of service by an actor that
+can delete or replace both provider state and application files. Best-effort clearing narrows
 the lifetime of Keybay-owned mutable buffers but cannot prove erasure of every
 Dart VM, cryptographic dependency, or operating-system copy. In particular,
 the pinned HKDF implementation returns an immutable key wrapper whose destruction
@@ -108,6 +133,11 @@ For the CLI, `get` is a disclosure guard rather than an authorization boundary:
 it refuses redirected/captured output before decrypting, but a foreground
 terminal can display the selected value. `run` necessarily supplies referenced
 values to its child process. Neither operation reveals unrelated records.
+Copying a secret deliberately releases it to the OS clipboard. macOS uses
+current-host-only and sensitive/transient markers, which clipboard managers
+may choose to honor. Linux currently uses `wl-copy`/`xclip` without a sensitivity
+hint; clipboard history can retain copied secrets. Clearing the active clipboard
+does not erase another application's history.
 
 ## Engineering and evidence
 
@@ -128,8 +158,8 @@ The [September 21 engineering audit](doc/security-review.md#engineering-audit-20
 found no new confirmed vulnerability in the reviewed SDK/CLI source and passed
 fresh core, terminal and deterministic tamper checks. That result does not
 replace ongoing advisory triage or qualify a signed native release. The
-[release-readiness record](doc/release-readiness.md) separates the remaining
-distribution gates from completed source checks and retained platform evidence.
+[release-readiness record](doc/release-readiness.md) separates published SDK/CLI
+artifacts from unreleased source cleanup and retained platform evidence.
 
 The [September 22 pre-release assessment](doc/security-review.md#pre-release-assessment-2026-09-22)
 was the first review of the CLI/TUI and the Fleury paths it reaches. It found
@@ -144,6 +174,20 @@ These are unqualified properties, not release claims; the
 names the observed configurations. The release adds no performance guarantee
 or broader device/provider coverage through those deferrals.
 
+## External review and open work
+
+The [review guide](doc/external-review.md) gives an exact implementation baseline,
+the separately published versions, a source/test map and the outstanding work.
+It includes Go reference-tool advisory maintenance, Apple patched-device
+requalification, Linux clipboard hardening and deferred physical lifecycle tests.
+The earlier reviews predate the complete passkey integration; their conclusions
+must not be extended to that construction without reviewing it.
+
+Current source rejects V1 and retired V2 singleton-passphrase packages. It
+contains no automatic conversion. Published 0.2.0 predates the latter cleanup;
+reviewers must identify which source/artifact they tested. Current methods-based
+passphrase/passkey and platform-only encodings are unchanged by that cleanup.
+
 ## Reporting
 
 Use GitHub [private vulnerability reporting](https://github.com/danReynolds/keybay/security/advisories/new)
@@ -153,5 +197,6 @@ security bug. Critical and High findings block the next release.
 Releases are signed with the maintainer-controlled SSH key. Verify a tag with:
 
 ```sh
-git verify-tag v<version>
+git verify-tag v0.2.0             # SDK release
+git verify-tag keybay_cli-v0.2.0  # CLI release
 ```

@@ -5,8 +5,8 @@
 Keep local secrets out of your repository and in one encrypted store belonging
 to the host application.
 
-Keybay is local-only: no account, hosted service, daemon, network path, or shell
-hook. The Dart SDK supports iOS, Android 12+, macOS, and ordinary Linux desktop.
+Keybay operates locally without a Keybay account, hosted service, daemon or shell
+hook. A chosen OS passkey provider may have its own network/sync requirements. The Dart SDK supports iOS, Android 12+, macOS, and ordinary Linux desktop.
 The CLI supports macOS and ordinary Linux desktop.
 
 The [Dart SDK 0.2.0](https://pub.dev/packages/keybay/versions/0.2.0) is published
@@ -19,6 +19,12 @@ See the [installation guide](packages/keybay_cli/README.md#install) and
 
 **Upgrading from 0.1.x:** V1 vaults are not read or automatically migrated.
 Keep access to the old installation and transfer required secrets before switching.
+
+For external assessment, start with the [review guide](doc/external-review.md).
+It distinguishes published versions from the current source, maps the security
+boundaries to code/tests, and lists open work. Current source additionally
+rejects retired V2 singleton-passphrase packages without migration; that cleanup
+is unreleased and does not change current methods-based or platform-only formats.
 
 ## CLI
 
@@ -81,7 +87,8 @@ each still requires the platform-protected root.
 Keybay fails closed when identity, platform protection, or authenticated store
 state cannot be established. It never falls back to plaintext, process memory,
 another provider, or pre-V2 storage. See [SECURITY.md](SECURITY.md) and the
-accepted [V2 architecture RFC](doc/rfcs/0001-per-application-stores.md).
+accepted [V2 architecture RFC](doc/rfcs/0001-per-application-stores.md), amended
+by [RFC 0003 for passkey methods](doc/rfcs/0003-passkey-methods.md).
 
 The Flatpak candidate uses authenticated sandbox identity, private ciphertext,
 and XDG Secret Portal protection. The repeatable Linux regression exercises two

@@ -10,7 +10,8 @@ Keybay uses Android's application sandbox and a non-exportable Keystore key.
 - **File isolation:** the application's private `noBackupFilesDir`.
 - **Hardware assurance:** StrongBox, TEE or software, depending on the device;
   a non-exportable key does not by itself establish hardware backing.
-- **Passphrase:** optional; required in addition to the Keystore operation when set.
+- **Additional methods:** optional passphrase/passkeys; any one enrolled method
+  plus the Keystore operation is required when methods exist.
 - **Main limitation:** Keybay does not require biometric or user-presence
   authentication for each key use. A compromised app can still use its key.
 
@@ -50,9 +51,11 @@ physical hardware mediation.
 See [Android's Keystore protection and hardware guidance](https://developer.android.com/privacy-and-security/keystore).
 
 The package/UID sandbox normally keeps peer applications away from both the
-file and the Keystore key. A Keybay passphrase is optional defense in depth. It
-is still additive: opening then needs both the application-bound Keystore
-operation and the passphrase.
+file and the Keystore key. A Keybay passphrase or passkey adds encryption
+protection: opening requires the application-bound Keystore operation and any
+one enrolled method. These methods are alternatives; the platform key remains
+mandatory. See [passkey setup](../sdk.md#cancellation-and-native-setup) and its
+separate Keypass provider/device qualification limits.
 
 Keybay sets user authentication for Keystore operations to not required. Device
 lock does not establish a Keybay per-use authentication barrier. The shared
@@ -71,4 +74,4 @@ explicit destructive recovery when the data is intentionally abandoned.
 API 31 and current emulator lanes exercise initialization, persistence,
 passphrase protection, tamper failure, and reset. Physical/OEM and lifecycle
 evidence is tracked separately in the
-[device security suite](../device-security-suite.md#android).
+[device security suite](../device-security-suite.md#kb-and-001).

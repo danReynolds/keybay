@@ -10,7 +10,8 @@ Keybay uses the application's private storage and the Data Protection Keychain.
 - **File isolation:** the application's private container, with backup exclusion
   set and verified by Keybay.
 - **Hardware assurance:** no Secure Enclave claim for the generic Keychain root.
-- **Passphrase:** optional; adds a requirement alongside the platform root.
+- **Additional methods:** optional passphrase/passkeys; any one enrolled method
+  is required alongside the platform root when methods exist.
 - **Main limitation:** deliberately authorized apps can share the access group.
   An unlocked session can return plaintext; there is no per-read biometric check.
 
@@ -57,10 +58,12 @@ isolation—not absolute privacy and not Secure Enclave backing.
 See [Apple's access-group model](https://developer.apple.com/documentation/security/sharing-access-to-keychain-items-among-a-collection-of-apps).
 
 With no additional method, an app can open after the device is currently
-unlocked and the Keychain permits access. Adding a Keybay passphrase makes both
-the Data Protection Keychain root and that passphrase necessary to recover the
-store key. Keybay does not add biometric or per-operation presence gating in
-V2.
+unlocked and the Keychain permits access. With additional methods configured,
+the Data Protection Keychain root and any one enrolled passphrase/passkey are
+necessary to recover the store key. The platform root itself has no additional per-operation biometric
+requirement. An enrolled passkey separately requires verification through
+Keypass when opening or enrolling; record reads never prompt. See
+[passkey setup](../sdk.md#cancellation-and-native-setup).
 
 The shared [threat model](../design.md#threat-model) still applies, including
 compromised processes, plaintext after a read, deletion and rollback.

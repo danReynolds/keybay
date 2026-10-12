@@ -12,8 +12,8 @@ separate [Flatpak candidate](#flatpak-candidate) adds a sandbox-bound portal pat
 - **File isolation:** private directories and files restrict other users,
   but do not isolate programs running under the same user account.
 - **Hardware assurance:** no hardware-backed key guarantee from Secret Service.
-- **Passphrase:** recommended for high-value records; adds a requirement alongside
-  the platform root.
+- **Additional methods:** a passphrase or hardware passkey is recommended for
+  high-value records; any one enrolled method plus the platform root is required.
 - **Main limitation:** another authorized same-user program may reach the root
   and encrypted file. It may also delete or replace them.
 
@@ -67,7 +67,8 @@ The [Secret Service specification](https://specifications.freedesktop.org/secret
 leaves additional access-control policy to the provider; lookup attributes
 are not authenticated application identities.
 
-Add a Keybay passphrase for passwords and high-value credentials. It prevents
+Add a Keybay passphrase or hardware passkey for passwords and high-value
+credentials. Either method prevents
 the Secret Service root item and encrypted file alone from yielding the store
 key. It cannot defend plaintext already returned to a compromised process or
 prevent same-user denial of service.
@@ -99,7 +100,9 @@ Current source applicability is recorded in the
 - **File isolation:** the Flatpak's private data directory under the documented
   confinement and filesystem-grant constraints.
 - **Hardware assurance:** provider-managed secret; no hardware-backing claim.
-- **Passphrase:** optional, in addition to the portal-derived root.
+- **Additional methods:** the same alternative-method policy applies alongside
+  the portal-derived root; hardware access also needs sandbox device permissions
+  and separate qualification.
 - **Main limitation:** broad host grants can weaken confinement. The portal
   secret survives Keybay reset, so restoring an old store can restore access.
 
@@ -150,7 +153,7 @@ Unlinking a held lock could let processes lock different inodes. The next
 successful open generates a fresh store key. The portal exposes no secret
 deletion API, so reset retains the application secret. Restoring an old complete encrypted
 store can restore access under the same identity and file domain, with its old
-passphrase if one was configured. Rollback resistance and root rotation remain
+credential policy if methods were configured. Rollback resistance and root rotation remain
 deferred. Changing the Flatpak application ID is a new identity, not migration.
 
 ## Flatpak qualification

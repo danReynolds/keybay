@@ -23,6 +23,15 @@ no website requirement. Keypass remains an explicitly pinned prerelease;
 publication does not turn deferred device/lifecycle work into passing evidence.
 Dated qualification records retain their original scope and limitations.
 
+## Source after publication
+
+Merged cleanup after these releases is not yet published. Keypass removed
+prototype-only verifier exceptions and native-loading overrides. Keybay removed
+retired V2 singleton-passphrase reading/migration and duplicate release tooling.
+The version fields have not yet advanced; they do not identify a checkout's exact
+contents. Use the [review guide](external-review.md) for commit/archive baselines.
+Keybay still resolves the published Keypass 0.1.0-dev.2, not its newer main branch.
+
 ## Release status
 
 | Status | Work | Completion evidence |
@@ -39,8 +48,8 @@ must not be replaced or republished.
 ## Native macOS packaging change
 
 The original September builder used a single executable. Release-kit now
-supports a signed Dart runtime/module bundle, and Keybay's local archive helper
-includes its hardware libraries. The October 9 candidate carried those companions through RK staging, signing,
+owns production bundling and archives for the signed Dart runtime/module and
+Keypass-built hardware libraries. The former Keybay archive helper was removed. The October 9 candidate carried those companions through RK staging, signing,
 notarization and archive creation. The October 10 installed candidate passed
 isolated Homebrew installation and upgrade using that generated formula, plus
 post-signing launch and native loading. Public-channel verification subsequently passed; see the publication record.
