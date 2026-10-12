@@ -1,37 +1,24 @@
-# keybay CLI
+# Keybay CLI
 
-Keybay CLI 0.2.0 provides run-scoped secret injection and an interactive vault
-with `keybay open` on macOS ARM64 and ordinary Linux ARM64/x64 desktop.
-It is available through [GitHub releases](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.2.0) and Homebrew.
-No account, Keybay server, resident Keybay process, network access, or shell
-hook is required. Keybay writes no plaintext secret file.
+An encrypted local vault and run-scoped secret injection for macOS ARM64 and
+ordinary Linux ARM64/x64 desktop. No account, Keybay server, daemon or shell hook.
 
-Keybay keeps non-secret configuration literal in a committed manifest and
-stores secret values behind explicit `kb://` references:
+Commit references in `.env`, not secret values:
 
 ```dotenv
 API_URL=https://staging.example.com
-LOG_LEVEL=debug
-OPENAI_API_KEY=kb://acme-api/openai-api-key
+API_KEY=kb://my-app/api-key
 ```
 
 ```sh
-keybay set acme-api/openai-api-key
-keybay run -- npm start
+keybay set my-app/api-key
+keybay run -- ./app
 ```
 
-The launched process receives ordinary environment variables and needs no
-Keybay library. Keybay replaces itself with the child via `execve`; it never
-invokes a shell or stays resident as a wrapper.
-
-For external review, the [review guide](../../doc/external-review.md) maps CLI
-security boundaries and tests to the exact source/release baseline. Source
-cleanup after 0.2.0 is not part of the published binaries; see the
-[SDK changelog](../keybay/CHANGELOG.md#unreleased) for format compatibility changes.
+The child receives ordinary environment variables and needs no Keybay library.
+Keybay replaces itself with that process; it does not invoke a shell.
 
 ## Install
-
-Install the native release with Homebrew:
 
 ```sh
 brew install danReynolds/tap/keybay
@@ -39,31 +26,24 @@ keybay --version
 keybay open
 ```
 
-To update an existing Homebrew installation, run `brew update` followed by
-`brew upgrade keybay`.
+Update with `brew update` and `brew upgrade keybay`.
+[Release 0.2.0 archives](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.2.0)
+need no Dart SDK. Keep the entire extracted directory: launch `./keybay` on
+macOS or `./bin/keybay` on Linux. Companion files are required.
 
-**Before upgrading from 0.1.x:** V2 does not read or automatically migrate V1
-stores. Retain access to the old installation and transfer required secrets
-before switching. Your old vault is preserved; it does not appear in the new
-V2 vault automatically.
+Linux needs glibc 2.35+ and a reachable, unlocked Secret Service provider on the
+user D-Bus session. Provider UI may appear; headless availability is not guaranteed.
+The macOS bundle is Developer ID signed and notarized. Exact hashes and observed
+installation checks are in the [publication record](../../doc/reviews/2026-10-11-cli-publication.md).
 
-[Direct archives](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.2.0) are available for
-macOS ARM64, Linux ARM64, and Linux x64. Preserve the entire extracted directory:
-macOS starts with `./keybay`, and Linux starts with `./bin/keybay`. The companion
-files are required. No Dart SDK is needed; the CLI is not published to pub.dev.
-Linux requires glibc 2.35 or newer and an available Secret Service provider.
-
-The macOS release contains a Developer ID signed and notarized dedicated runtime,
-application module, and hardware libraries. See the
-[publication and qualification record](../../doc/reviews/2026-10-11-cli-publication.md)
-for the exact hashes, identity, and observed installation checks.
+**Upgrading:** V1 stores are not migrated. Current source also rejects retired
+V2 singleton-passphrase packages, unlike published 0.2.0. Preserve the old
+installation and transfer needed secrets before switching; see the
+[SDK changelog](../keybay/CHANGELOG.md#unreleased).
 
 ### Development builds
 
-Installing from source with `dart install` or Pub activation produces a
-local development build, not the signed distribution above.
-
-Contributors can build the in-tree executable from the repository root:
+From the repository root:
 
 ```sh
 dart pub get
@@ -71,29 +51,21 @@ dart run keybay:keybay_compile packages/keybay_cli/bin/keybay.dart -o build/keyb
 ./build/keybay --version
 ```
 
-The compiler wrapper validates the CLI package declaration and embeds
-`keybay-cli` in the executable.
-
-For a global command backed by this local checkout, run from the repository root:
+The wrapper embeds the CLI's `keybay-cli` application namespace. Desktop builds
+need [Keypass's native prerequisites](https://github.com/danReynolds/keypass/blob/main/doc/build-hooks.md).
+For a global command following this checkout:
 
 ```sh
 dart pub global activate --source path packages/keybay_cli
-keybay --version
-keybay open
 ```
 
-Put `$HOME/.pub-cache/bin` before an older Keybay installation in `PATH`.
-Path activation follows this checkout, so keep it in place. It runs through the
-shared Dart VM and resolves identity from the CLI package's own pubspec, including
-inside this workspace. This is a local development installation; the signed
-release distribution remains a separate qualification. On macOS, the Keychain
-item it creates trusts the Dart VM rather than Keybay, so any program run with
-`dart` can read the platform root without a prompt. Keep real secrets behind a
-strong passphrase.
+Keep the checkout and put `$HOME/.pub-cache/bin` before older installations in
+`PATH`. With RK, use `rk use local -p keybay_cli` from the repo.
 
-With Dart 3.12.2, local path activation prints Pub's dependency-resolution
-messages before Keybay starts. Use the native executable for scripts or
-dogfood checks that require exact CLI output.
+Source/Pub activation is a development installation. On macOS it trusts the
+shared Dart VM for Keychain access, so another Dart program can read the platform
+root. Use an additional credential for real secrets. Activation may also print
+Pub resolution messages; use the native build when exact CLI output matters.
 
 ### Verify a release download
 
@@ -107,9 +79,7 @@ git verify-tag "keybay_cli-v$VERSION"
 
 Verifying the tag needs the maintainer's public signing key in an
 allowed-signers file; it is published at
-[github.com/danReynolds.keys](https://github.com/danReynolds.keys). Verification
-establishes that the tag was signed by that maintainer-controlled key; no claim
-about the private key's storage is required to perform the check.
+[github.com/danReynolds.keys](https://github.com/danReynolds.keys). Verify against a signing key you trust.
 
 Download `release-manifest.json` and the archive for your platform from the
 same release. The signed tag's annotation binds the SHA-256 of that manifest;
@@ -129,390 +99,176 @@ The runtime identity is `io.github.danreynolds.keybay.cli`, signed by
 Developer ID Application: Pollyn Inc (`5AHFA9FUZG`). All code companions must
 remain present; the release verification checks their signatures as well.
 
-On ordinary Linux desktop, Keybay requires a reachable, unlocked Secret
-Service provider over the user D-Bus session. It does not shell out to
-`secret-tool`. The SDK implements Flatpak through the Secret Portal, but Flatpak
-CLI packaging and child-launch policy are not qualified or advertised here.
-A missing provider never causes fallback to another store. Opening may invoke
-trusted provider UI; there is no universal headless availability guarantee.
-
-Under `dart run`, the shared Dart VM—not Keybay alone—is the macOS keychain
-trust unit. Use a compiled, signed release when a stable Keychain trust unit is
-required.
-
 ## Interactive vault
 
-```sh
-keybay open
-```
-
-Authenticate once, then browse a searchable list with key names on the left and
-fixed-length masks on the right. Values stay
-hidden until you choose Reveal, Copy or Edit. Search filters names only.
+Run `keybay open`. Authenticate once, then browse masked values and search names.
 
 | Action | Key |
-|---|---|
-| Select a name | ↑ / ↓ |
-| Search names | `/`, or ↑ from the first result |
+| --- | --- |
+| Select / search | ↑ / ↓; `/` |
 | Reveal / hide | Space |
-| Edit the selected key | Enter or `e` |
-| Scroll a revealed value | → from the list, then ↑ / ↓ |
-| Return to keys without hiding | ← from the value |
-| Copy the selected value | `c` |
-| New / edit / delete | `n` / `e` / `d` |
-| Protection, clear and reset | `s` |
-| Move focus / activate an action | Tab / Shift+Tab; Enter or Space |
-| Hide or dismiss the current view | Esc |
-| Exit | `q` from the vault, Ctrl+C or Ctrl+Z anywhere |
+| New / edit / delete | `n` / `e` or Enter / `d` |
+| Copy selected value | `c` |
+| Scroll revealed value / return to names | → then ↑ / ↓; ← |
+| Settings | `s` |
+| Move focus / activate | Tab / Shift+Tab; Enter or Space |
+| Hide / dismiss | Esc |
+| Exit | `q` from vault; Ctrl+C or Ctrl+Z anywhere |
 
-New and Edit use a compact, labeled Key/Value form. New has an editable Key;
-Edit uses the existing key name as its title and focuses Value.
-Enter validates New's Key before moving to Value; Enter in Value saves. Alt+Enter adds a line,
-and multiline paste stays in the field until you save. A hint appears while
-Value has focus to explain these keys. Tab and Shift+Tab move
-between editable fields and the form actions; Escape cancels. **Ctrl+S saves**
-from anywhere in the form;
-**Ctrl+R reveals/hides** the value. Save, Reveal/Hide and Cancel use aligned
-action cells with bracketed key hints, including Esc for Cancel. The same
-layout aligns the vault's actions in four columns, or two in narrow terminals.
-These shortcuts appear on the buttons and
-also work when setting a passphrase; confirmation is still required. Unlock
-uses Enter and Ctrl+R. Reset keeps its explicit typed confirmation.
-Invalid or duplicate names keep the value masked for correction and focus Key.
-Key renaming is outside the current scope. Cancel returns to the invoking screen;
-Cancel at Unlock exits.
-Plain letters typed into a field edit that field. Down or Enter from search, or a
-click on a result, returns to the key list and its shortcuts. Values and
-passphrases are masked. Reveal/Hide applies to both passphrase inputs together,
-including confirmation. A field containing unsafe control or formatting
-characters uses an escaped preview; ordinary printable Unicode stays readable.
-Hide returns to editing without changing the draft.
-Existing text and pasted bytes, including CRLF, are preserved in secret fields.
-Values must be UTF-8
-without NUL, up to 1 MiB; passphrases contain 1–1024 UTF-8 bytes and require an
-exact confirmation when configured. An oversized draft is discarded.
-Escape first hides a revealed value without changing the selected key or
-search. With no reveal, Escape clears the search and returns to the selected
-result, or to New key in an empty vault. Edit-save and cancellation keep the
-filter; New clears it only when necessary to show the new key. An idle Escape
-dismisses the latest notification. Footer instructions follow the focused
-control. Disabled actions also disable their shortcuts.
+In forms, Enter advances from Key to Value, then saves. Alt+Enter adds a line;
+Ctrl+S saves, Ctrl+R reveals/hides and Esc cancels. Multiline paste, including
+CRLF, is preserved until submission. Values must be UTF-8 without NUL, up to
+1 MiB; passphrases are 1–1024 UTF-8 bytes with exact confirmation. Oversized
+drafts are discarded. Key renaming is not supported.
 
-Short terminals reserve more space for records and show a scrollbar when the
-list can overflow. A 35-key store displays seven ordinary rows at 80×20 and nine
-at 40×24. Larger terminals center the app within a 104-column, 32-row area;
-compact forms and prompts are centered within that area. Smaller windows use
-their available space, keeping actions visible.
+Settings has three sections:
 
-Green marks primary actions and success; amber marks disclosure; red marks
-destructive actions and errors. The focused field has a cyan border. Button
-focus also uses inverse highlighting, and revealed fields are labeled, so
-color is never the only cue. Field placeholders use muted grey; headings are
-bold, and field labels and warning text use ordinary weight.
+- **Security:** add/remove passphrases and hardware keys.
+- **Data:** Clear deletes records but keeps protection. Reset requires typing
+  `RESET`, deletes the managed store and exits. There is no passphrase recovery.
+- **Appearance:** Green/Cyan/Blue/Magenta accent and Normal/High contrast.
+  `NO_COLOR=1 keybay` removes color while retaining focus and validation cues.
 
-Reveal changes only the selected row, aligned to the right like its mask.
-The value uses the space left beside its name and wraps only when needed;
-Escape hides the value and returns focus to names.
+Appearance and the last successful unlock-method ID are nonsecret local
+preferences, separate from the vault. Missing preferences use defaults.
 
-Supporting terminals show hand pointers on actions and text pointers on fields.
-Fleury negotiates this capability and restores the previous pointer on exit;
-other terminals keep their normal pointer. macOS Terminal 2.15 does not
-advertise this capability; hover underlining remains available.
+The UI requires foreground controlling-terminal stdin/stdout and at least
+80×20 cells or 40×24 for the narrow layout. Resize and reported focus loss hide
+values. Drafts remain only in memory and are cleared on cancellation, accepted
+submission, invalidation or exit. Five minutes without input exits; this is not
+configurable. Orderly exit settles submitted work, which may already have
+committed. SIGSTOP/SIGKILL and terminal captures cannot guarantee cleanup.
 
-Successful actions show a compact green, bordered toast at the bottom right for three seconds,
-such as “Copied!” or “Saved!”. Repeated actions replace the same toast.
-Errors remain until dismissed, left behind by navigation, or resolved by a
-successful retry. An idle Esc dismisses feedback; hiding a revealed value and
-clearing search take precedence. The Copy confirmation appears only after the
-clipboard write completes.
-
-Delete, Clear and Remove passphrase use compact centered confirmations.
-Cancel has initial focus; Tab or arrow keys move to the confirming action.
-An empty vault focuses New key. Clicking an action also gives it keyboard focus.
-
-The centered frame carries a plain `keybay` title in its top border. It sizes
-around forms and gives lists and settings the available room. The terminal's
-font, default text color and background remain in control.
-
-Settings keeps **Security**, **Data** and **Appearance** in a left sidebar, with the selected
-category’s content beside it. The filled highlight marks keyboard focus;
-each list’s current row keeps its `›` marker when focus moves elsewhere.
-Security shows passphrase
-protection, passkey count and the five-minute native idle-exit policy. It offers
-Add passphrase when absent, Add hardware key, and removal of enrolled methods. A mismatched confirmation keeps both entries masked,
-marks the confirmation field red, and lets you correct it in place.
-The idle timeout is not currently user-configurable. The browser UX preview
-disables it and shows `Idle exit: Off`.
-↑/↓ changes category in the sidebar. Enter or → moves into its actions;
-← returns to the sidebar. Tab moves between panes and Back. Esc exits Settings. Shortcuts appear beside actions, with their effects explained below.
-Data contains Clear and Reset. Clear deletes records while
-keeping protection. Reset requires typing `RESET`, deletes the
-managed store, and exits without creating a replacement. There is no passphrase
-recovery. Unlock offers a neutral “Forgot passphrase?” link; reset is available
-from that explanation, followed by the typed confirmation. Record changes from other processes follow the SDK's normal concurrent
-write rules; reopen to refresh external changes.
-
-Appearance offers **Accent** (Green, Cyan, Blue or Magenta) and **Contrast**
-(Normal or High). Changes apply immediately; Enter or a click selects a choice.
-High contrast removes dim text and strengthens focus cues. Accent changes the
-frame, title and primary actions; warning and error colors retain their meaning.
-`NO_COLOR=1 keybay` disables colors while preserving focus, selection and
-validation cues.
-
-Appearance is saved locally outside the encrypted store, so it also applies
-before unlocking. macOS uses `~/Library/Application Support/keybay/appearance.json`;
-Linux uses `$XDG_CONFIG_HOME/keybay/appearance.json`, defaulting to
-`~/.config/keybay/appearance.json`. Missing or malformed preferences use the
-defaults. A save failure keeps the choice for the current session and reports it.
-
-The UI needs the foreground controlling terminal on both stdin and stdout.
-Use at least 80×20 cells, or 40×24 for the narrow layout. Resizing or reported
-terminal-window focus loss conceals values and retains masked form drafts.
-If the terminal becomes too small, a resize prompt replaces the inputs until
-they fit again. Returning never reveals a draft automatically. Drafts stay in
-the active form's memory and are cleared on cancellation, accepted submission,
-session invalidation or exit; there is no saved draft cache.
-While the vault owns the terminal, SIGTSTP, SIGTTIN, SIGTTOU and SIGQUIT are
-ignored, so it is never stopped or core-dumped with a value on screen; Ctrl+Z
-and Ctrl+\ arrive as input in the vault's raw mode.
-Five minutes without input exits the session. Submitted SDK operations are
-settled before orderly exit; they may complete after dismissal. External
-SIGSTOP/SIGKILL cannot guarantee immediate cleanup. Terminal captures and
-immutable Dart strings cannot be reliably erased.
-
-Copy is an explicit disclosure separate from Reveal. macOS uses a typed
-pasteboard write restricted to this Mac, so Universal Clipboard does not send it
-to your other devices, and marks it concealed and transient
-([nspasteboard.org](http://nspasteboard.org) conventions that most clipboard
-managers honor by not recording the item). Linux selects a fixed
-`/usr/bin/wl-copy` (Wayland) or `/usr/bin/xclip` (X11) when available. Keybay
-does not mark Linux copies sensitive (`xclip` cannot; `wl-copy` 2.3 and later
-could, with `--sensitive`), so clipboard managers may record them. There is no PATH lookup or transport fallback. Clipboard
-services, clipboard managers and other apps may retain copied values after exit;
-Keybay does not promise clipboard erasure. Generic
-field copy/cut never exports a secret. Native transport qualification is scoped
-in the [qualification report](../../doc/cli-qualification-status.md).
-
-The UI disables Fleury debug/hot reload and refuses `FLEURY_*` runtime settings
-or an active Dart VM service before opening the SDK. Fleury uses the exact
-hosted `0.1.1` release, including its integrated widget catalog.
-Source and native archive builds remain supported.
+Copy deliberately releases a value to the clipboard. macOS restricts it to the
+current host and marks it sensitive/transient. Linux uses fixed `wl-copy` or
+`xclip` paths without a sensitivity hint. Clipboard managers may retain values;
+Keybay cannot erase their history. Generic field copy/cut never exports secrets.
 
 ### Hardware keys in the TUI
 
-A build with the Keypass native adapter can add a hardware passkey from
-Settings → Security → **Add hardware key**. Connect one compatible FIDO2 key,
-optionally name it, and choose Add. Touch the key when it flashes. If the key
-requires a PIN, enter its existing PIN in the masked field and submit; rejected
-PINs are never retried automatically. Cancel waits for the operation to finish.
+1. Open Settings → Security → **Add hardware key**.
+2. Connect one compatible FIDO2 key, optionally label it, and choose Add.
+3. Touch when prompted. If requested, enter the key's existing PIN.
 
-On reopening, the TUI goes directly to the last successfully used method. If
-there is no remembered choice, a single usable method starts directly; several
-offer a chooser. A hardware selection starts immediately: connect the key, then
-touch it when it flashes. **Other methods** cancels pending work before returning
-to the chooser. With only one usable method, Escape quits. Connection checks
-wait up to two minutes; failures require an explicit retry.
+Rejected PINs are never retried automatically. Cancel waits for cleanup.
+On reopening, the last successful method starts directly. Without a preference,
+a sole usable method starts; several methods show a choice. Hardware unlock
+starts immediately, with explicit Retry after failure and **Other methods** to
+cancel and switch. Connection attempts can take up to two minutes.
 
-The TUI remembers only a nonsecret method ID in local app state. Missing,
-removed or unavailable choices are ignored, and preference errors cannot block
-unlock. Multiple enrollments are allowed; the TUI uses the selected method's
-exact saved ID and RP. Security
-→ **Unlock methods** removes a selected enrollment after confirmation. Remaining
-methods are alternatives; removing the last one returns to platform-only
-protection. Removal does not delete the passkey from the physical key.
+A store supports one passphrase and multiple passkeys, eight methods total.
+They are alternatives on top of mandatory platform protection. Removing the
+last method leaves platform-only protection; removal does not delete the key's
+credential or revoke older vault snapshots. Passphrase changes use separate
+remove/add operations, leaving platform-only protection if it was the last
+method and adding fails.
 
-This hardware route needs no website. The CLI owns a stable hardware RP;
-ordinary CLI processes do not use system passkeys. `run`, `get`, `set`, `list`
-and `rm` can unlock with an enrolled hardware key or passphrase. One supported
-method is used directly; several produce a numbered choice. PIN input and
-hardware instructions use the controlling terminal, leaving piped stdin and
-redirected stdout alone. Commands do not enroll new methods.
+The CLI uses a stable hardware RP namespace and needs no website. System
+passkeys are reserved for supported native app hosts. Standalone commands can
+unlock with enrolled methods; enrollment/removal lives in the TUI.
 
-Source runs now use Keypass's Dart build hook to compile and load the desktop
-hardware adapter automatically. Build hosts need the prerequisites installed by
-`bash tool/install_cli_hardware_build_deps.sh`; end users of a native release do
-not. A hook-aware `rk use local -p keybay_cli` keeps the normal `keybay` command
-on this checkout and prepares assets in the owning project before launching it.
-Older rk local launchers can skip hooks when called outside the project; reselect
-Local after updating rk to its hook-aware launcher.
-
-For a disposable attended macOS test from a source checkout, run:
+For disposable attended testing from source:
 
 ```sh
 ./tool/build_cli_hardware_test.sh
 open 'build/hardware-tui-test/Start hardware test.command'
 ```
 
-This requires Dart, CMake, libfido2 and OpenSSL development dependencies. The
-script builds the pinned native adapter beside the test executable and uses a
-disposable vault and test RP. Build and operation receipts stay in that output
-directory. After enrolling, quit and reopen to verify fresh-process unlock,
-then run `Test command unlock.command` from the same directory. Both launchers
-use the same disposable vault. The build bundles its native dependencies;
-physical-device and published distribution qualification remain separate. See the
-[integration plan](../../doc/reviews/2026-10-04-tui-passkeys-plan.md).
+Reopen to verify recovery in a fresh process. The companion
+`Test command unlock.command` checks standalone command authentication.
 
 ### Local browser UX preview
 
-The [website demo](https://danreynolds.github.io/keybay/#tui) runs the same TUI
-screens entirely in the browser with temporary fake data. Reset or reload to
-restore the samples. It does not connect to your Keybay store or demonstrate
-native storage protection. See the [site build guide](../../site/README.md)
-to run it from a checkout.
-
-Run the same TUI widgets and model in Fleury's browser surface from the workspace
-root:
+The [website demo](../../site/README.md) and local preview use fake records;
+they cannot access or protect a real vault. From the repo root:
 
 ```sh
 dart run fleury:fleury serve --host=127.0.0.1 --port=5777 \
   --spawn dart run packages/keybay_cli/tool/tui_preview.dart
 ```
 
-Open `http://127.0.0.1:5777` in the browser, including Codex's in-app browser for
-visual feedback. Each connection gets an isolated in-memory store seeded with
-synthetic records; refresh to reset it. Copy simulates successful delivery and
-never changes the system clipboard. The preview stays open for review instead
-of applying the native runner's idle timeout. The production CLI's foreground
-and remote-output restrictions are unchanged.
-
-Append `--empty`, `--locked` (passphrase: `preview`), or `--copy-fails` to the
-preview command to inspect those states. This development-only entrypoint is
-not included in release artifacts.
+Preview flags include `--empty`, `--locked` and `--copy-fails`. Each connection
+gets fresh fake state and a simulated clipboard; idle exit is disabled.
+Production disables Fleury debug/hot reload and rejects `FLEURY_*` runtime
+settings or an active Dart VM service before opening the store.
 
 ## Quickstart
 
-The source checkout and native release archives include the same
-language-neutral executable example. Use
-`packages/keybay_cli/example/quickstart` in a source checkout or
-`example/quickstart` in an extracted native archive. The
-[repository examples guide](https://github.com/danReynolds/keybay/tree/main/packages/keybay_cli/example)
-distinguishes an installed `keybay` from the current source checkout; choose
-one before running these commands:
+Run the included example from `packages/keybay_cli/example/quickstart` in the
+checkout or `example/quickstart` in a release archive:
 
 ```sh
 keybay run -- ./app.sh
 keybay set acme-example/openai-api-key
 keybay run -- ./app.sh
-```
-
-If the demo key is not set, the first `run` prints the required `set` command
-without launching the app. Enter any disposable value at the hidden prompt.
-The second `run` safely shows the literal URL and reports the secret as available without
-printing its value. The included `.env` contains only a public literal
-and a reference; projects can commit manifests like this so every developer
-shares the contract but supplies their own value.
-
-After this disposable example:
-
-```sh
 keybay rm acme-example/openai-api-key
 ```
 
+The first run reports the missing key without launching. Set a disposable value;
+the second run confirms availability without printing it. See the
+[examples guide](example/README.md) to select installed versus source execution.
+
 ## Commands
 
-```text
-keybay open
-keybay run [-f FILE] -- COMMAND [ARGS...]
-keybay set [--stdin] KEY
-keybay get KEY
-keybay rm KEY
-keybay list
-```
+| Command | Purpose |
+| --- | --- |
+| `keybay open` | Interactive vault and protection settings. |
+| `keybay run [-f FILE] -- COMMAND [ARGS...]` | Resolve the manifest and replace Keybay with the child. |
+| `keybay set [--stdin] KEY` | Store a value from hidden input or a pipe. No value argument. |
+| `keybay get KEY` | Explicit reveal to the controlling foreground terminal. |
+| `keybay rm KEY` | Delete; idempotent and silent. |
+| `keybay list` | Sorted names, one per line. |
 
-Keys are at most 120 ASCII characters. Simple names such as `x` or `api-token`
-work everywhere, including `kb://x` manifest references. Namespacing is optional:
-use `organization-project/name` to organize project values or
-`organization-shared/name` for deliberate reuse. Each slash-separated segment
-starts with a letter or digit and may also contain `.`, `_`, and `-`.
-Identical full keys share a value across repositories; namespaces are not an
-access control boundary.
+Keys are 1–120 ASCII characters. Each slash-separated segment starts with a
+letter/digit and may contain `.`, `_` and `-`. Names such as `my-app/api-key`
+organize one shared CLI store; they do not isolate repositories.
 
-`set` never accepts a value argument. Interactive input requires a TTY and is
-hidden. Enter submits, Backspace edits, and Ctrl+U clears the draft. Bracketed
-paste preserves the exact UTF-8 bytes, including CRLF and a trailing newline;
-press Enter after pasting to submit. Hidden prompts support the full 1 MiB
-record limit and 1024-byte passphrase limit, and restore the caller's terminal
-modes on completion, EOF, or a handled interrupt.
+Interactive `set` hides input. Enter submits, Backspace edits and Ctrl+U clears.
+Bracketed paste preserves exact UTF-8 bytes, including CRLF and trailing newline;
+press Enter to submit. Terminal modes are restored on completion or handled exit.
 
-`--stdin` reads strict UTF-8 through a pipe or redirection. The two modes never cross: `--stdin` at
-a terminal is refused (typing there would echo the secret into scrollback), and
-empty input is rejected rather than stored, so a silently failed producer in a
-pipeline cannot replace a real credential with the empty string. Internal
-newlines in piped input are preserved; at most one final LF or CRLF is removed. Partial producer
-output is not detectable, so use `pipefail` or check producer status:
+`--stdin` requires a pipe/redirection, refuses empty input and accepts strict
+UTF-8. It preserves internal newlines and removes at most one final LF/CRLF.
+Partial producer output cannot be detected; use `pipefail` or check its status:
 
 ```sh
 op read 'op://Engineering/OpenAI/credential' |
-  keybay set --stdin acme-api/openai-api-key
+  keybay set --stdin my-app/api-key
 ```
 
-`rm` is idempotent and silent. `list` prints sorted key names only,
-one per line. A failed `run` lists every missing key and launches nothing.
+`get` checks stdout before opening and again before reveal. Captured/redirected
+output, another terminal and background jobs are refused; stdin is untouched.
+It prints the value and a newline, which may remain in scrollback. Values with
+control/line-break or unsafe Unicode formatting characters are refused; view
+them escaped in the TUI or deliver them with `run`.
 
-`get` is the explicit human reveal path. Stdout must be the process's own
-controlling foreground terminal. Keybay checks before opening the store and
-again immediately before reveal; redirected/captured stdout, another terminal,
-and background jobs are refused. Stdin is untouched and may be redirected.
-Use `run` to provide a value to another program.
-On success, `get` prints exactly the requested text value followed by a newline.
-That value may remain in terminal scrollback, so reveal it only when needed:
-
-```sh
-keybay get acme-api/openai-api-key
-```
-
-Values containing anything `keybay open` would show escaped (control,
-line-break, bidirectional, invisible or prepended characters, and selectors or
-marks that would draw nothing) are refused rather than rendered, because the
-terminal would not show them faithfully; view them escaped in `keybay open`, or
-pass them to their consumer with `run`.
-
-The TTY check prevents casual disclosure; it is not an access-control boundary.
-A program launched with `run` necessarily receives its selected secrets and can
-print or transmit them.
+The terminal guard prevents accidental disclosure, not access by another program.
+A child launched with `run` can print or transmit its selected secrets.
 
 ## Authentication and lifetime
 
-Platform protection is always present. `set`, `get`, `rm`, `list`, and a
-secret-referencing `run` authenticate an additional method when configured.
-The selected passphrase is read once with input hidden. A hardware operation
-asks for the key's existing PIN only after the provider requires it; a rejected
-PIN exits without retry. Ctrl+C cancels and waits for provider cleanup before
-restoring the terminal. No credential is cached between commands.
-A value pipe remains separate from authentication, and `run` leaves stdin for
-the child. Help, version, and literal-only `run` never open Keybay.
+Platform protection is mandatory. With additional methods enrolled, commands
+select and authenticate one method per invocation; no credential is cached.
+PINs are requested only when required, with no automatic retry. Ctrl+C cancels
+and waits for provider cleanup. Authentication uses the controlling terminal,
+leaving value pipes and child stdin separate. Help, version and literal-only
+`run` do not open the store.
 
-Use a passphrase for high-value credentials on ordinary desktop hosts. Their
-declared application namespace does not isolate the store from every other
-program running as the same user. The passphrase adds protection even when
-that program can obtain the platform root and encrypted file.
+**Ordinary desktop namespaces do not isolate same-user programs.** Without an
+additional method, a program running as you can use `list` and `run` to read
+values without a terminal or prompt. Add a passphrase or hardware key when
+platform/file access alone should be insufficient.
 
-Before `run` reads any referenced value, the terminal shows the canonical
-executable, arguments, and every manifest environment name. For a protected
-store this precedes the method choice or authentication prompt. Without an
-additional method the summary is shown whenever a terminal is attached, but nothing is
-asked: it makes a launch visible, not approved. References show their key names;
-literal values and secret values are omitted. Paths and arguments are quoted
-with terminal controls escaped. Assignments that can make the program run other
-code, such as `PATH`, `LD_*`, `DYLD_*`, `NODE_OPTIONS`, `BASH_ENV`, `PYTHON*`
-and `GIT_*`, are marked; the marking is a review aid, not a complete list.
+Before a secret-referencing `run`, the terminal shows the canonical executable,
+arguments, manifest variable names and referenced keys; it omits literal/secret
+values. Code-affecting assignments such as `PATH`, `LD_*`, `DYLD_*` and
+`NODE_OPTIONS` are marked as a review aid. For protected stores this precedes
+authentication. For platform-only stores it is informational, not an approval.
+All missing references are reported together and nothing launches.
 
-Without an additional unlock method, any program running as you can use `keybay list` and
-`keybay run` to read every value, without a terminal or prompt. On macOS that
-also bypasses the Keychain prompt an unrelated program would otherwise meet.
-Add a passphrase or hardware key in `keybay open` → Settings → Security when that matters.
-
-Unlock-method enrollment/removal is available in `keybay open` → Settings → Security;
-these standalone commands do not add a second management interface. Opening the
-SDK can also invoke trusted OS/provider UI, including without a terminal.
-Record operations never invoke it.
-
-A handled interrupt stops subsequent actions. Already-submitted SDK work is
-allowed to settle, late results are cleared, and sessions close before exit or
-launch. A submitted write may have committed even when interrupted or failed;
-reopen to inspect its result before retrying. Keybay never automatically resets
-a store. V2 does not read, migrate, or remove V1 stores; preserve old data when
-upgrading from 0.1.x.
+Handled interrupts stop subsequent actions and settle submitted work. A write
+may have committed even when interrupted or failed; reopen and inspect before
+retrying. Keybay never automatically resets a store.
 
 ## Manifest
 
@@ -549,56 +305,40 @@ replacing the executable later.
 
 ## Security boundary
 
-Keybay keeps referenced values out of repositories, argv, routine output, and
-interactive shell state. Explicit `get` and TUI reveal actions show the
-selected value; Copy sends it to the system clipboard. It preserves the parent
-environment **byte-exact** —
-variables the manifest does not name pass through from the raw process
-`environ`, including values that are not valid UTF-8 — overlays only variables
-named by the selected manifest, resolves all references before launch, and has
-no network code. The launched command starts with shell-default signal state
-(the Dart VM's ignored SIGPIPE and blocked job-control signals are reset at the
-exec boundary), so pipelines behave as they would from a shell.
+Secrets stay out of repositories, argv, routine output and interactive shell
+state. Explicit Reveal, Copy and `get` disclose selected values. `run` preserves
+unmentioned parent environment bytes, overlays manifest entries and resolves
+all references before launch. It restores shell-default signal behavior for
+the child.
 
-Every Keybay command disables its own core files, and on Linux makes its process
-non-dumpable, so a crash cannot persist an open session's store key or a
-revealed value. A command that cannot do so exits before opening the store. The
-launched command gets the caller's original core-file limit back.
+Keybay disables its core files and becomes non-dumpable on Linux before opening
+the store; failure stops the command. The child receives the caller's original
+core-file limit. Injected values are ordinary child environment variables:
+child code, descendants, process inspection and dumps may expose them. Trust
+the manifest and launched code. Prefer the Dart SDK when you can avoid injection.
 
-After injection, values are normal child environment variables. They can be
-inherited by descendants and may be visible to same-user process inspection,
-crash dumps, or the child itself. Running a manifest trusts both its references
-and the launched code. Direct use of the `keybay` Dart library is preferable
-when an application can avoid environment injection entirely.
-
-The initial target profiles are ordinary macOS and Linux desktop. Signed
-packaging and architecture-specific release evidence are separate
-remaining gates. SDK mobile and sandboxed-platform receipts do not qualify
-those CLI distributions.
+See the [security policy](../../SECURITY.md) and
+[external review guide](../../doc/external-review.md) for guarantees and open work.
+Flatpak CLI packaging, Windows, Snap and mobile CLI distribution are outside the
+published release scope.
 
 ## Regression checks
 
-From the repository root:
+From the repo root:
 
 ```sh
-./tool/test_cli.sh core         # unit, disposable SDK, native PTY/exec checks
-./tool/test_cli.sh macos        # real Keychain, disposable application identity
-./tool/test_cli.sh linux        # private Secret Service; Docker when on macOS
-./tool/test_cli.sh all          # all three; requires a macOS host and Docker
+./tool/test_cli.sh core   # unit, disposable SDK, native PTY/exec checks
+./tool/test_cli.sh macos  # real Keychain, disposable application identity
+./tool/test_cli.sh linux  # private Secret Service; Docker on macOS
+./tool/test_cli.sh all    # requires macOS and Docker
 ```
 
-No arguments selects `core`. Reports under `build/regression` record
-`kind: cli-regression`, source digest, platform, ABI, and per-selection result.
-A missing prerequisite is blocked (69), never a pass. Core regression includes
-hardware enrollment/unlock terminal scenarios using a fake passkey provider:
-PIN masking, deliberate retry, cancellation, interruption, idle exit and
-foreground loss. These do not access a physical key and do not replace attended
-hardware qualification. Core also builds and relocates the hardware adapter,
-loads only its ABI metadata, and checks archive integrity. See
-[native packaging](../../doc/cli-hardware-packaging.md) for signed builds;
- final signed distribution and upgrade evidence
-remain a separate release gate. Generic Dart installation is not qualified by
-these checks.
+No argument selects `core`. Reports in `build/regression` identify source,
+platform, ABI and results; missing prerequisites block rather than pass.
+Fake-provider terminal tests and native bundle relocation checks do not replace
+attended hardware or installed-release qualification. See
+[native packaging](../../doc/cli-hardware-packaging.md) and
+[qualification](../../doc/cli-qualification-status.md).
 
 ## License
 
