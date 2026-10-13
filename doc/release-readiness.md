@@ -81,5 +81,8 @@ Use the signed distribution for production.
 Run full manual CI on the final main commit; weekly fuzz alone is insufficient.
 Keep source, dependency resolution, package bytes, signatures and hashes together.
 [SDK release audit](../.github/workflows/audit-release.yml) verifies the signed
-tag, exact-commit CI and served Pub archive. CLI archives, Homebrew and RK need
-separate public-download and installed-product checks, as in the records above.
+tag, exact-commit CI and served Pub archive. The
+[CLI release audit](../.github/workflows/audit-cli-release.yml) verifies the
+signed tag, release manifest, archives and published Homebrew formula, and
+repeats this daily for the newest release. Installed-product checks remain
+separate, as in the records above.

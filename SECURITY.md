@@ -109,9 +109,30 @@ Use [private vulnerability reporting](https://github.com/danReynolds/keybay/secu
 or **me@danreynolds.ca**. Do not disclose security bugs in public issues.
 Critical and High findings block the next release.
 
-Release tags are signed with the maintainer's SSH key:
+## Verifying releases
+
+SDK (`v*`) and CLI (`keybay_cli-v*`) tags are signed with the maintainer's
+release SSH key:
+
+```text
+me@danreynolds.ca ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDtnuwBbMwdKZu2YlUnDdhW7t0bp7JlCjUZR8/JOQae6
+SHA256:4ozSnfVaMzZ/qrzo51I8FPKawmZSIojAB5Ll+qhguFM
+```
+
+Cross-check it against GitHub's list of the maintainer's
+[signing keys](https://api.github.com/users/danReynolds/ssh_signing_keys).
+It is not one of the authentication keys at `github.com/danReynolds.keys`.
+In a clone of this repository, save the first line above as
+`keybay-allowed-signers`, then verify a tag (`v0.2.0` for the SDK):
 
 ```sh
-git verify-tag v0.2.0             # SDK
-git verify-tag keybay_cli-v0.2.0  # CLI
+git -c gpg.ssh.allowedSignersFile=keybay-allowed-signers verify-tag keybay_cli-v0.2.0
 ```
+
+A CLI tag's annotation records the SHA-256 of that release's
+`release-manifest.json`, which lists every archive's SHA-256 and the Homebrew
+formula's. The [SDK](.github/workflows/audit-release.yml) and
+[CLI](.github/workflows/audit-cli-release.yml) release audits check these
+chains; the CLI audit re-checks the newest release and the published formula
+daily. The [CLI guide](packages/keybay_cli/README.md#verify-a-release-download)
+covers downloads.

@@ -69,24 +69,30 @@ Pub resolution messages; use the native build when exact CLI output matters.
 
 ### Verify a release download
 
-Releases are produced locally by rk from maintainer-signed tags. Verify the tag
-before trusting a download; do not infer GitHub-hosted build provenance or a
-separate Keybay attestation unless that specific release actually provides it.
+Releases are produced locally by rk from maintainer-signed tags. GitHub
+releases are immutable, so a quick check confirms that a download is exactly
+the file attached to the release:
+
 ```sh
-VERSION=0.2.0
-git verify-tag "keybay_cli-v$VERSION"
+gh release verify-asset keybay_cli-v0.2.0 keybay-0.2.0-macos-arm64.tar.gz --repo danReynolds/keybay
 ```
 
-Verifying the tag needs the maintainer's public signing key in an
-allowed-signers file; it is published at
-[github.com/danReynolds.keys](https://github.com/danReynolds.keys). Verify against a signing key you trust.
+That trusts GitHub's release record; it is not build provenance. To verify
+independently of GitHub, check the tag with the maintainer's release key from
+[SECURITY.md](../../SECURITY.md#verifying-releases), saved as an allowed-signers
+file, in a clone of this repository:
 
-Download `release-manifest.json` and the archive for your platform from the
-same release. The signed tag's annotation binds the SHA-256 of that manifest;
-check that binding before trusting the archive hashes inside it. Compare the
-manifest and archive with `shasum -a 256` (macOS) or `sha256sum` (Linux).
+```sh
+git -c gpg.ssh.allowedSignersFile=keybay-allowed-signers verify-tag keybay_cli-v0.2.0
+```
+
+The tag's `release-manifest-sha256` line binds the release's
+`release-manifest.json`, which lists each archive's SHA-256 and the Homebrew
+formula's. Compare them with `shasum -a 256` (macOS) or `sha256sum` (Linux).
 The [publication record](../../doc/reviews/2026-10-11-cli-publication.md)
-records the exact manifest and archive digests.
+records the exact digests. The [CLI release audit](../../.github/workflows/audit-cli-release.yml) repeats
+this chain for each release and daily for the newest release and its published
+Homebrew formula.
 
 On macOS, after extracting the archive, verify the signed runtime:
 
