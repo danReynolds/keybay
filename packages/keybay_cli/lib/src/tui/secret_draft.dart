@@ -88,11 +88,14 @@ mixin FormFields<T extends StatefulWidget> on State<T> {
     onFocusChange: (_) => setState(() {}),
     child: Container(
       border: BoxBorder(
-        cellStyle: invalid
-            ? context.theme.errorStyle
-            : focus.hasFocus
-            ? context.theme.focusedStyle
-            : context.theme.mutedStyle,
+        // Underlining box glyphs adds stray rules below the actual frame.
+        cellStyle:
+            (invalid
+                    ? context.theme.errorStyle
+                    : focus.hasFocus
+                    ? context.theme.focusedStyle
+                    : context.theme.mutedStyle)
+                .copyWith(underline: false),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 1),
       child: child,

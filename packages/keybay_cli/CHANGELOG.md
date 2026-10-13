@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Keep focused and invalid input borders clean: high-contrast and error text
+  underlines no longer draw extra lines through field outlines.
+
 ## 0.2.0
 
 Keybay 0.2.0 adds an interactive terminal vault, passphrase protection, and

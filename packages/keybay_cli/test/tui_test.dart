@@ -3111,6 +3111,10 @@ void main() {
         );
         expect(confirm.focused, isTrue);
         expect(confirm.validationError, "Passphrases don't match.");
+        for (final row in [confirm.bounds!.top - 1, confirm.bounds!.bottom]) {
+          final border = tester.render().atColRow(confirm.bounds!.left, row);
+          expect(border.style.underline, isFalse);
+        }
         expect(
           tester
               .render()
