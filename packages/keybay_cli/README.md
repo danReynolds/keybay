@@ -39,7 +39,7 @@ installation checks are in the [publication record](../../doc/reviews/2026-10-11
 **Upgrading:** V1 stores are not migrated. Current source also rejects retired
 V2 singleton-passphrase packages, unlike published 0.2.0. Preserve the old
 installation and transfer needed secrets before switching; see the
-[SDK changelog](../keybay/CHANGELOG.md#unreleased).
+[SDK changelog](../keybay/CHANGELOG.md#030).
 
 ### Development builds
 

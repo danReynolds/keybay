@@ -1,6 +1,6 @@
 name: keybay_cli
 description: Austere, local secret injection backed by Keybay.
-version: 0.2.0
+version: 0.3.0
 # Ships only as native binaries (GitHub Release, Homebrew), never to pub.dev.
 publish_to: none
 repository: https://github.com/danReynolds/keybay/tree/main/packages/keybay_cli
@@ -15,7 +15,7 @@ dependencies:
   characters: 1.4.1
   ffi: 2.2.0
   fleury: 0.1.1
-  keybay: 0.2.0
+  keybay: 0.3.0
   # Read-only hardware discovery for the TUI's connection-wait state. Keep the
   # same reviewed version as Keybay; authentication remains owned by Keybay.
   keypass: 0.1.0-dev.2

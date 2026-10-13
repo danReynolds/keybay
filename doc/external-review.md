@@ -19,7 +19,7 @@ audit. Review the vault construction together with the resolved Keypass dependen
 [CLI publication](reviews/2026-10-11-cli-publication.md) record source, CI,
 artifact hashes and installation evidence. Current source additionally removes
 retired V2 singleton-passphrase reading/migration and duplicate release tooling.
-Those changes are [unreleased](../packages/keybay/CHANGELOG.md#unreleased).
+Those changes are [unreleased](../packages/keybay/CHANGELOG.md#030).
 Version fields alone do not identify a checkout's contents. Current method-based
 and platform-only encodings are unchanged; old singleton packages now fail
 without mutation. There is no automatic conversion.

@@ -7,13 +7,13 @@ account, service, daemon or shell hook.
 
 The [Dart SDK](https://pub.dev/packages/keybay) supports iOS, Android 12+, macOS
 and ordinary Linux desktop. The [CLI](packages/keybay_cli/README.md) ships for
-macOS ARM64 and Linux ARM64/x64. Both are at 0.2.0; APIs and formats may change
+macOS ARM64 and Linux ARM64/x64. The published versions are 0.2.0; APIs and formats may change
 before 1.0. Provider/device coverage is recorded in [release readiness](doc/release-readiness.md).
 
 **Upgrading:** V1 vaults are not migrated. Current source also rejects retired
 V2 singleton-passphrase packages, unlike published 0.2.0. Keep access to the old
 installation and transfer needed secrets before switching; see the
-[changelog](packages/keybay/CHANGELOG.md#unreleased).
+[changelog](packages/keybay/CHANGELOG.md#030).
 
 ## CLI
 

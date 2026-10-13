@@ -13,7 +13,7 @@ do not need build tools.
 **Upgrading:** V1 stores are not migrated. Current source also rejects retired
 V2 singleton-passphrase packages, unlike published 0.2.0. Transfer needed secrets
 using the old installation before upgrading; see the
-[changelog](https://github.com/danReynolds/keybay/blob/main/packages/keybay/CHANGELOG.md#unreleased).
+[changelog](https://github.com/danReynolds/keybay/blob/main/packages/keybay/CHANGELOG.md#030).
 
 ## Open, use, close
 

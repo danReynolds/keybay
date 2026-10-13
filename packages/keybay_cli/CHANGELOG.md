@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
+- Reject retired V2 singleton-passphrase stores without changing them. Keep the
+  old installation to transfer needed secrets. Current methods-based passphrase/
+  passkey stores and platform-only stores are unchanged.
 - Keep focused and invalid input borders clean: high-contrast and error text
   underlines no longer draw extra lines through field outlines.
 

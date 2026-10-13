@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - Remove the obsolete V2 singleton-passphrase format and its automatic migration.
   Such stores now fail with `unsupportedStoreVersion` without changing vault or
