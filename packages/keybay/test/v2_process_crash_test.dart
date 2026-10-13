@@ -64,16 +64,17 @@ void main() {
           final errors = worker.stderr.transform(utf8.decoder).join();
           try {
             expect(
-              await output.first.timeout(const Duration(seconds: 20)),
+              // Includes a cold Dart worker and production Argon2 under CI load.
+              await output.first.timeout(const Duration(minutes: 1)),
               'ready:$point',
             );
-          } on Object {
+          } on Object catch (error) {
             worker.kill(ProcessSignal.sigkill);
             final code = await worker.exitCode.timeout(
               const Duration(seconds: 10),
             );
             fail(
-              'worker did not reach $point: exit=$code stderr=${await errors}',
+              'worker did not reach $point: $error; exit=$code stderr=${await errors}',
             );
           }
           expect(worker.kill(ProcessSignal.sigkill), isTrue);
@@ -129,6 +130,7 @@ void main() {
           await recovered.close();
           await recoveredEngine.reset();
         },
+        timeout: const Timeout(Duration(minutes: 2)),
       );
     }
   }

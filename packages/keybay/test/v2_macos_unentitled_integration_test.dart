@@ -186,7 +186,8 @@ keybay:
       expect(result.stdout, 'public-v2-ok');
     },
     skip: skip,
-    timeout: const Timeout(Duration(minutes: 2)),
+    // Includes cold subprocess startup and production Argon2 on Intel CI.
+    timeout: const Timeout(Duration(minutes: 4)),
   );
 }
 
