@@ -376,6 +376,7 @@ Future<_UnlockedMethod> _unlockMethod({
     // The credential matched and the envelope opened, but anyone holding the
     // public key could have sealed that store key. Only the credential holder
     // can confirm the vault secret this store key reveals.
+    Uint8List? expected;
     try {
       vaultSecret = await openVaultSecret(
         storeKey: storeKey,
@@ -383,7 +384,7 @@ Future<_UnlockedMethod> _unlockMethod({
         epoch: package.epoch,
         sealedVaultSecret: package.sealedVaultSecret,
       );
-      final expected = await deriveMethodConfirmation(
+      expected = await deriveMethodConfirmation(
         material: material,
         salt: method.salt,
         context: stable,
@@ -398,6 +399,9 @@ Future<_UnlockedMethod> _unlockMethod({
         KeybayErrorCode.storeAuthenticationFailed,
         'The store was not confirmed by the supplied credential.',
       );
+    } finally {
+      // On a forged vault this is the MAC its builder would need.
+      if (expected != null) _clear(expected);
     }
     _clear(material);
     material = null;

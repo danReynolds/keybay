@@ -573,6 +573,31 @@ void main() {
     }
   }
 
+  for (final credential in <KeybayCredential>[
+    _phrase(),
+    _passkey(PasskeyRoute.system),
+  ]) {
+    test('a platform-only session refuses a methods directory under its key '
+        'before adding $credential', () async {
+      final env = _Environment();
+      addTearDown(env.dispose);
+      final session = await env.open();
+      await session.set('service/token', 'retained');
+
+      // The root holder knows a platform-only store key, so it can rewrite
+      // the live file as a methods directory with a vault secret it chose.
+      await _injectMethodsPackageUnderPlatformKey(env);
+      final injected = await _copyLive(env.files);
+
+      await _failure(
+        session.auth.add(_credentialLike(credential)),
+        KeybayErrorCode.storeAuthenticationFailed,
+      );
+      expect(env.provider.operationCount, 0);
+      expect(await _copyLive(env.files), injected);
+    });
+  }
+
   test(
     'rotation keeps survivor confirmations without their credentials',
     () async {
@@ -1229,3 +1254,135 @@ KeybayCredential _credentialLike(KeybayCredential credential) =>
       PasskeyCredential(:final route) => _passkey(route),
       _ => _phrase(),
     };
+
+/// Rewrites a platform-only vault, as a holder of the platform root can, into a
+/// methods directory under the same store key and epoch: a vault secret of the
+/// writer's choosing, one placeholder passkey method, and the existing records
+/// under a resealed manifest. Passkey kind leaves room to add a passphrase.
+Future<void> _injectMethodsPackageUnderPlatformKey(_Environment env) async {
+  final random = Random.secure();
+  Uint8List fresh(int length) =>
+      Uint8List.fromList(List.generate(length, (_) => random.nextInt(256)));
+  final bytes = await _copyLive(env.files);
+  final bootstrap = _bootstrap(bytes);
+  final lease = (await env.protector.openExisting(
+    ProviderState(bootstrap.core.providerState),
+    interaction: PlatformInteraction.forbidden,
+  ))!;
+  try {
+    final domain = env.binding.domain.copyBytes();
+    final offset = encodeBootstrap(bootstrap).length;
+    final sealedOld = Uint8List.fromList(
+      Uint8List.sublistView(
+        bytes,
+        offset,
+        offset + bootstrap.sealedPackageLength,
+      ),
+    );
+    final current =
+        decodeKeyPackage(
+              await lease.openPackage(
+                sealedPackage: sealedOld,
+                aad: encodePlatformPackageAad(
+                  storageDomain: domain,
+                  bootstrapCore: bootstrap.core,
+                ),
+              ),
+            )
+            as V2PlatformOnlyPackage;
+    final storeId = current.storeId;
+    final epoch = current.epoch;
+    final storeKey = current.takeStoreKey();
+    final layout = deriveStoreLayout(
+      fileLength: bytes.length,
+      bootstrap: bootstrap,
+      sealedManifestLength: decodeManifestLength(
+        Uint8List.sublistView(bytes, bytes.length - v2ManifestLengthBytes),
+      ),
+    );
+    final records = await openManifest(
+      storeKey: storeKey,
+      storeId: storeId,
+      storageDomain: domain,
+      bootstrap: bootstrap,
+      sealedPackage: sealedOld,
+      sealedManifest: Uint8List.fromList(
+        Uint8List.sublistView(
+          bytes,
+          layout.manifestOffset,
+          layout.manifestOffset + layout.manifestLength,
+        ),
+      ),
+    );
+    final core = V2BootstrapCore(
+      bootstrap.core.providerState,
+      suite: v2MethodsSuite,
+    );
+    final placeholder = V2AuthMethodEnvelope(
+      methodId: fresh(16),
+      kind: V2AuthMethodKind.systemPasskey,
+      label: 'Recovery',
+      salt: fresh(16),
+      profileId: 0,
+      publicKey: await methodPublicKey(privateKey: fresh(32)),
+      keyEnvelope: fresh(80),
+      confirmation: fresh(32),
+      passkeyRecord: await _validPasskeyRecord(),
+    );
+    final injected = V2MethodsPackage(
+      storeId: storeId,
+      epoch: epoch,
+      sealedVaultSecret: await sealVaultSecret(
+        storeKey: storeKey,
+        storeId: storeId,
+        epoch: epoch,
+        vaultSecret: fresh(v2VaultSecretBytes),
+        nonce: fresh(V2StoreLimits.nonceBytes),
+      ),
+      methods: [placeholder],
+    );
+    final sealed = await lease.sealPackage(
+      plaintext: encodeKeyPackage(injected),
+      aad: encodePlatformPackageAad(storageDomain: domain, bootstrapCore: core),
+    );
+    final rebuilt = V2Bootstrap(core: core, sealedPackageLength: sealed.length);
+    final manifest = await sealManifest(
+      storeKey: storeKey,
+      storeId: storeId,
+      storageDomain: domain,
+      bootstrap: rebuilt,
+      sealedPackage: sealed,
+      manifest: records,
+      nonce: fresh(V2StoreLimits.nonceBytes),
+    );
+    env.files.replaceLiveBytes([
+      ...encodeBootstrap(rebuilt),
+      ...sealed,
+      ...Uint8List.sublistView(
+        bytes,
+        layout.frameRegionOffset,
+        layout.frameRegionOffset + layout.frameRegionLength,
+      ),
+      ...manifest,
+      ...encodeManifestLength(manifest.length),
+    ]);
+  } finally {
+    await lease.close();
+  }
+}
+
+/// A well-formed system passkey record from a separate test enrollment.
+Future<Uint8List> _validPasskeyRecord() async {
+  final donor = _Environment();
+  try {
+    final session = await donor.enroll(_passkey(PasskeyRoute.system));
+    await session.close();
+    return await _withPackage(
+      donor,
+      (bytes, bootstrap, lease, aad, package) async =>
+          package.methods.single.passkeyRecord,
+    );
+  } finally {
+    await donor.dispose();
+  }
+}

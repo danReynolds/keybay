@@ -188,6 +188,13 @@ valid and no surviving credential is requested. Removing the last method
 discards the vault secret with the methods package; a later enrollment creates
 a new one.
 
+A session opened platform-only holds a store key the platform-root holder also
+knows, so that holder could write a methods directory, with a vault secret of
+its choosing, under the same key and epoch. An auth change from such a session
+refuses any methods directory with `storeAuthenticationFailed` before enrollment
+UI. Legitimate auth changes always move to a fresh key and epoch, which makes
+other sessions stale instead.
+
 This permits rotating to a fresh `Kstore` and resealing every surviving method
 without requesting its credential. Possession of a removed credential, its
 old envelope, and the old `Kstore` does not reveal surviving private keys or

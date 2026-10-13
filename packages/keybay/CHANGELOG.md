@@ -7,7 +7,9 @@
   under the store key (methods policy 3). Previously a party holding only the
   platform root could build a store around a store key of its choosing that a
   genuine credential would open. A credential that matches but fails the
-  confirmation reports `storeAuthenticationFailed` and writes nothing.
+  confirmation reports `storeAuthenticationFailed` and writes nothing. An auth
+  change from a session opened platform-only refuses a methods directory that
+  appeared under that session's store key.
 - Policy 2 stores written by 0.2.0 fail with `unsupportedStoreVersion` without
   changing vault or platform state. To keep one, remove its methods with 0.2.0
   (it becomes platform-only), upgrade, then add them again.
