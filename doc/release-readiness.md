@@ -16,12 +16,14 @@ installation available to transfer required secrets before switching.
 
 Keypass removed prototype verifier/native-loading exceptions. Keybay removed
 retired V2 singleton-passphrase conversion and duplicate release tooling.
-Published 0.2.0 still has that V2 conversion; current methods-based and
-platform-only encodings are unchanged. Keybay still pins published Keypass
-0.1.0-dev.2, not its newer main branch.
+Published 0.2.0 still has that V2 conversion. Keybay still pins published
+Keypass 0.1.0-dev.2, not its newer main branch.
 
-Version 0.3.0 includes this cleanup and fixes underlined input borders in the CLI.
-The minor version marks the retired-format compatibility change. Use the
+Version 0.3.0 includes this cleanup, confirms the vault on every method unlock
+(methods policy 3), and fixes underlined input borders in the CLI. The minor
+version marks both format changes: 0.2.0 vaults with a passphrase or passkey
+fail closed and need their methods removed before upgrading and added back
+after; platform-only vaults are unaffected. Use the
 [review guide](external-review.md) for published commit/archive baselines.
 
 ## Release status

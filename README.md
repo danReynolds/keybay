@@ -10,9 +10,10 @@ and ordinary Linux desktop. The [CLI](packages/keybay_cli/README.md) ships for
 macOS ARM64 and Linux ARM64/x64. The published versions are 0.2.0; APIs and
 formats may change before 1.0. Provider/device coverage is recorded in [release readiness](doc/release-readiness.md).
 
-**Upgrading:** V1 vaults are not migrated. Current source also rejects retired
-V2 singleton-passphrase packages, unlike published 0.2.0. Keep access to the old
-installation and transfer needed secrets before switching; see the
+**Upgrading:** V1 vaults are not migrated, and 0.3.0 rejects retired V2
+singleton-passphrase packages. A 0.2.0 vault with a passphrase or passkey must
+have its methods removed with 0.2.0 before upgrading, then added back;
+platform-only vaults upgrade as is. See the
 [changelog](packages/keybay/CHANGELOG.md#030).
 
 ## CLI

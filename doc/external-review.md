@@ -20,9 +20,10 @@ audit. Review the vault construction together with the resolved Keypass dependen
 artifact hashes and installation evidence. Current source additionally removes
 retired V2 singleton-passphrase reading/migration and duplicate release tooling.
 Those changes are [unreleased](../packages/keybay/CHANGELOG.md#030).
-Version fields alone do not identify a checkout's contents. Current method-based
-and platform-only encodings are unchanged; old singleton packages now fail
-without mutation. There is no automatic conversion.
+Version fields alone do not identify a checkout's contents. Current source
+also writes methods policy 3, which adds a credential confirmation; 0.2.0
+policy-2 and old singleton packages now fail without mutation. The platform-only
+encoding is unchanged. There is no automatic conversion.
 
 Capture `git rev-parse HEAD`, `git status --short`, toolchain versions,
 `pubspec.lock`, native library versions/hashes and the precise tested artifact.

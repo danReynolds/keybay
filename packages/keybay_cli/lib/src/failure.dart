@@ -68,8 +68,11 @@ CliFailure failureForKeybay(KeybayException error) {
       'error: a previous Keybay reset did not complete.',
       'Preserve the store; completing reset requires another deliberate confirmation.',
     ],
+    KeybayErrorCode.unsupportedStoreVersion => <String>[
+      'error: this vault uses a store format this Keybay version cannot open; nothing was changed.',
+      'If Keybay 0.2.0 protected it, remove its passphrase and keys there (keybay open > Settings > Security), upgrade, then add them back.',
+    ],
     KeybayErrorCode.storeAuthenticationFailed ||
-    KeybayErrorCode.unsupportedStoreVersion ||
     KeybayErrorCode.storeStateConflict => <String>[
       'error: Keybay could not authenticate a single supported store state.',
       'Preserve the existing state and follow the documented recovery procedure.',

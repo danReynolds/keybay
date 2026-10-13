@@ -67,6 +67,28 @@ void main() {
     }
   });
 
+  test('unsupported store formats explain the 0.2.0 upgrade path', () async {
+    final store = V2TestKeybay(applicationId: 'dev.keybay.cli-failure-format');
+    addTearDown(store.dispose);
+    final session = await store.open();
+    await session.set('service/token', 'secret-sentinel');
+    await session.close();
+    final pin = (await store.files.openPinnedLive())!;
+    final bytes = await pin.readExact(offset: 0, length: pin.length);
+    await pin.close();
+    // An unknown bootstrap suite is a format this version cannot open.
+    ByteData.sublistView(bytes).setUint16(4, 0x7fff);
+    store.files.replaceLiveBytes(bytes);
+
+    final error = await _capture(store.open);
+    expect(error.code, KeybayErrorCode.unsupportedStoreVersion);
+    final failure = failureForKeybay(error);
+    expect(failure.exitCode, 1);
+    expect(failure.lines.first, contains('nothing was changed'));
+    expect(failure.lines.last, contains('Settings > Security'));
+    expect(failure.lines.join('\n'), isNot(contains('secret-sentinel')));
+  });
+
   test('closed sessions receive non-sensitive recovery guidance', () async {
     final store = V2TestKeybay(applicationId: 'dev.keybay.cli-failure-close');
     addTearDown(store.dispose);

@@ -6,10 +6,12 @@ Keybay gives each host application one encrypted local store. Requires Dart
 [Security](../SECURITY.md) · [Architecture](architecture.md) ·
 [Passkey construction](rfcs/0003-passkey-methods.md) · [External review](external-review.md)
 
-**Format compatibility:** V1 stores are not read, migrated or deleted. Current
-source also rejects retired V2 singleton-passphrase packages; published 0.2.0
-retains that conversion. Current methods-based and platform-only encodings are
-unchanged. See [release readiness](release-readiness.md) before upgrading.
+**Format compatibility:** V1 stores are not read, migrated or deleted. 0.3.0
+also rejects retired V2 singleton-passphrase packages and 0.2.0 vaults with a
+passphrase or passkey (methods policy 2), without changing them. To keep such a
+vault, remove its methods with 0.2.0, upgrade, then add them again.
+Platform-only vaults are unaffected. See the
+[changelog](../packages/keybay/CHANGELOG.md#030) before upgrading.
 
 <a id="sdk-quickstart"></a>
 

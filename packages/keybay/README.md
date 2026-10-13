@@ -10,9 +10,10 @@ Desktop builds need [Keypass's native build prerequisites](https://github.com/da
 even for passphrase-only use. Distribute the complete native bundle; end users
 do not need build tools.
 
-**Upgrading:** V1 stores are not migrated. Current source also rejects retired
-V2 singleton-passphrase packages, unlike published 0.2.0. Transfer needed secrets
-using the old installation before upgrading; see the
+**Upgrading:** V1 stores are not migrated, and 0.3.0 rejects retired V2
+singleton-passphrase packages. A 0.2.0 vault with a passphrase or passkey must
+have its methods removed with 0.2.0 before upgrading, then added back;
+platform-only vaults upgrade as is. See the
 [changelog](https://github.com/danReynolds/keybay/blob/main/packages/keybay/CHANGELOG.md#030).
 
 ## Open, use, close

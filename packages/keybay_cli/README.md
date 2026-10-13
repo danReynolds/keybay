@@ -36,10 +36,11 @@ user D-Bus session. Provider UI may appear; headless availability is not guarant
 The macOS bundle is Developer ID signed and notarized. Exact hashes and observed
 installation checks are in the [publication record](../../doc/reviews/2026-10-11-cli-publication.md).
 
-**Upgrading:** V1 stores are not migrated. Current source also rejects retired
-V2 singleton-passphrase packages, unlike published 0.2.0. Preserve the old
-installation and transfer needed secrets before switching; see the
-[SDK changelog](../keybay/CHANGELOG.md#030).
+**Upgrading:** V1 stores are not migrated, and 0.3.0 rejects retired V2
+singleton-passphrase stores. If your 0.2.0 vault has a passphrase or hardware
+key, open `keybay open` → Settings → Security with 0.2.0 and remove every
+method before upgrading, then add them back. Vaults without one upgrade as is.
+See the [CLI changelog](CHANGELOG.md#030).
 
 ### Development builds
 
