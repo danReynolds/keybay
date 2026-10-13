@@ -1,0 +1,183 @@
+name: audit-cli-release
+
+# The CLI is published locally by rk: signed tag, then GitHub release, then the
+# Homebrew tap. This credential-free workflow independently witnesses that
+# chain. The maintainer-signed tag binds release-manifest.json; the manifest
+# binds every release archive and the exact formula bytes rk published. The
+# daily run catches a release asset or tap formula changed after publication,
+# including a formula rolled back to an older release. GitHub disables
+# scheduled workflows after 60 days without repository activity.
+on:
+  release:
+    types: [published]
+  schedule:
+    - cron: '23 7 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing CLI tag to audit, 0.1.1 or later (default newest)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  attestations: read
+
+concurrency:
+  group: keybay-cli-audit-${{ github.event.release.tag_name || inputs.tag || 'newest' }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'keybay_cli-v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EVENT_NAME: ${{ github.event_name }}
+      REQUESTED_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - name: check out tags and main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          path: source
+          persist-credentials: false
+
+      - name: verify the signed tag
+        run: |
+          set -euo pipefail
+          tag_pattern='^keybay_cli-v([0-9]+)\.([0-9]+)\.([0-9]+)$'
+          # Highest published version, not list order, so a backport release
+          # cannot make the formula check stand down.
+          newest="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '[.[] | select(.draft == false and .prerelease == false) | .tag_name
+              | select(test("^keybay_cli-v[0-9]+\\.[0-9]+\\.[0-9]+$"))]
+              | max_by(ltrimstr("keybay_cli-v") | split(".") | map(tonumber)) // ""')"
+          [[ "$newest" =~ $tag_pattern ]] || {
+            echo "::error::no published keybay_cli release was found"
+            exit 1
+          }
+          tag="${REQUESTED_TAG:-$newest}"
+          [[ "$tag" =~ $tag_pattern ]] || {
+            echo "::error::CLI release tag must be keybay_cli-vMAJOR.MINOR.PATCH"
+            exit 1
+          }
+          version="${tag#keybay_cli-v}"
+          [ "$(git -C source cat-file -t "refs/tags/$tag" 2> /dev/null)" = tag ] || {
+            echo "::error::$tag is not an annotated tag in this repository"
+            exit 1
+          }
+
+          signers="$RUNNER_TEMP/keybay-allowed-signers"
+          cat > "$signers" <<'EOF'
+          me@danreynolds.ca ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDtnuwBbMwdKZu2YlUnDdhW7t0bp7JlCjUZR8/JOQae6
+          EOF
+          chmod 0600 "$signers"
+          git -C source config gpg.ssh.allowedSignersFile "$signers"
+          git -C source verify-tag "$tag" || {
+            echo "::error::$tag is not signed by the release key"
+            exit 1
+          }
+
+          commit="$(git -C source rev-parse "$tag^{commit}")"
+          git -C source merge-base --is-ancestor "$commit" origin/main || {
+            echo "::error::$tag does not point at a commit on main"
+            exit 1
+          }
+
+          # The signature covers the annotation, so this digest is authentic.
+          manifest_sha256="$(git -C source cat-file tag "$tag" |
+            sed -n 's/^release-manifest-sha256: \([0-9a-f]\{64\}\)$/\1/p')"
+          [[ "$manifest_sha256" =~ ^[0-9a-f]{64}$ ]] || {
+            echo "::error::$tag must bind exactly one release-manifest-sha256"
+            exit 1
+          }
+          {
+            echo "AUDIT_TAG=$tag"
+            echo "AUDIT_VERSION=$version"
+            echo "AUDIT_COMMIT=$commit"
+            echo "NEWEST_TAG=$newest"
+            echo "MANIFEST_SHA256=$manifest_sha256"
+          } >> "$GITHUB_ENV"
+
+      - name: verify the release manifest and archives
+        run: |
+          set -euo pipefail
+          assets="$RUNNER_TEMP/release"
+          mkdir "$assets"
+          gh release download "$AUDIT_TAG" --repo "$GITHUB_REPOSITORY" --dir "$assets"
+          manifest="$assets/release-manifest.json"
+          echo "$MANIFEST_SHA256  $manifest" | sha256sum --check --strict
+
+          jq -e --arg tag "$AUDIT_TAG" --arg version "$AUDIT_VERSION" \
+            --arg commit "$AUDIT_COMMIT" '
+              .unit == "keybay_cli" and .tag == $tag and .version == $version
+              and .source.commit == $commit
+              and (.artifacts | length) > 0
+              and all(.artifacts[]; .name | test("^[A-Za-z0-9._-]+$"))
+            ' "$manifest" > /dev/null || {
+            echo "::error::release-manifest.json does not describe $AUDIT_TAG"
+            exit 1
+          }
+
+          # The release holds exactly the manifest and the archives it names.
+          expected="$(jq -r '.artifacts[].name, "release-manifest.json"' "$manifest" |
+            LC_ALL=C sort)"
+          actual="$(find "$assets" -mindepth 1 -maxdepth 1 -printf '%f\n' |
+            LC_ALL=C sort)"
+          test "$expected" = "$actual" || {
+            echo "::error::release assets differ from the signed manifest"
+            exit 1
+          }
+          jq -r '.artifacts[] | "\(.sha256)  \(.name)"' "$manifest" |
+            (cd "$assets" && sha256sum --check --strict)
+
+          # GitHub's immutable-release attestation must also cover each file:
+          # the same check the CLI guide gives users.
+          for file in "$assets"/*; do
+            gh release verify-asset "$AUDIT_TAG" "$file" --repo "$GITHUB_REPOSITORY"
+          done
+
+      - name: verify the published Homebrew formula
+        run: |
+          set -euo pipefail
+          if [ "$AUDIT_TAG" != "$NEWEST_TAG" ]; then
+            echo "::notice::$AUDIT_TAG is not the newest CLI release; the formula names $NEWEST_TAG"
+            exit 0
+          fi
+          manifest="$RUNNER_TEMP/release/release-manifest.json"
+          tap="$(jq -r .homebrew.tap "$manifest")"
+          path="$(jq -r .homebrew.path "$manifest")"
+          expected="$(jq -r .homebrew.sha256 "$manifest")"
+          if [ "$tap" != danReynolds/homebrew-tap ] || [ "$path" != Formula/keybay.rb ] ||
+            ! [[ "$expected" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::the manifest does not name the expected Homebrew formula"
+            exit 1
+          fi
+
+          # rk updates the tap after publishing the release, so a release event
+          # waits for it. Scheduled and manual audits require it immediately.
+          attempts=1
+          if [ "$EVENT_NAME" = release ]; then
+            attempts=30
+          fi
+          formula="$RUNNER_TEMP/keybay.rb"
+          actual=unreadable
+          for attempt in $(seq 1 "$attempts"); do
+            if gh api "repos/$tap/contents/$path" \
+              -H 'Accept: application/vnd.github.raw' > "$formula"; then
+              actual="$(sha256sum "$formula" | awk '{ print $1 }')"
+            else
+              actual=unreadable
+            fi
+            if [ "$actual" = "$expected" ]; then
+              echo "Formula matches the signed manifest for $AUDIT_TAG."
+              exit 0
+            fi
+            if [ "$attempt" -lt "$attempts" ]; then
+              sleep 20
+            fi
+          done
+          echo "::error::$tap/$path ($actual) is not the formula published with $AUDIT_TAG ($expected)"
+          exit 1
