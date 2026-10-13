@@ -69,18 +69,18 @@ Pub resolution messages; use the native build when exact CLI output matters.
 
 ### Verify a release download
 
-Releases are produced locally by rk from maintainer-signed tags. GitHub
-releases are immutable, so a quick check confirms that a download is exactly
-the file attached to the release:
+Releases are produced locally by rk from maintainer-signed tags. CLI releases
+since 0.1.1 are immutable GitHub releases, so a quick check confirms that a
+download is exactly the file attached to the release:
 
 ```sh
 gh release verify-asset keybay_cli-v0.2.0 keybay-0.2.0-macos-arm64.tar.gz --repo danReynolds/keybay
 ```
 
 That trusts GitHub's release record; it is not build provenance. To verify
-independently of GitHub, check the tag with the maintainer's release key from
-[SECURITY.md](../../SECURITY.md#verifying-releases), saved as an allowed-signers
-file, in a clone of this repository:
+independently of that record, check the tag with the maintainer's release key
+from [SECURITY.md](../../SECURITY.md#verifying-releases), saved as an
+allowed-signers file, in a clone of this repository:
 
 ```sh
 git -c gpg.ssh.allowedSignersFile=keybay-allowed-signers verify-tag keybay_cli-v0.2.0
@@ -88,10 +88,17 @@ git -c gpg.ssh.allowedSignersFile=keybay-allowed-signers verify-tag keybay_cli-v
 
 The tag's `release-manifest-sha256` line binds the release's
 `release-manifest.json`, which lists each archive's SHA-256 and the Homebrew
-formula's. Compare them with `shasum -a 256` (macOS) or `sha256sum` (Linux).
+formula's. Compare them (on Linux, use `sha256sum` for `shasum -a 256`):
+
+```sh
+git cat-file tag keybay_cli-v0.2.0 | grep '^release-manifest-sha256:'
+shasum -a 256 release-manifest.json keybay-0.2.0-macos-arm64.tar.gz
+```
+
 The [publication record](../../doc/reviews/2026-10-11-cli-publication.md)
-records the exact digests. The [CLI release audit](../../.github/workflows/audit-cli-release.yml) repeats
-this chain for each release and daily for the newest release and its published
+records the exact digests. The
+[CLI release audit](../../.github/workflows/audit-cli-release.yml) repeats this
+chain for each release and daily for the newest release and its published
 Homebrew formula.
 
 On macOS, after extracting the archive, verify the signed runtime:

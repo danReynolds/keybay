@@ -129,10 +129,11 @@ In a clone of this repository, save the first line above as
 git -c gpg.ssh.allowedSignersFile=keybay-allowed-signers verify-tag keybay_cli-v0.2.0
 ```
 
-A CLI tag's annotation records the SHA-256 of that release's
+Since 0.1.1, a CLI tag's annotation records the SHA-256 of that release's
 `release-manifest.json`, which lists every archive's SHA-256 and the Homebrew
 formula's. The [SDK](.github/workflows/audit-release.yml) and
-[CLI](.github/workflows/audit-cli-release.yml) release audits check these
-chains; the CLI audit re-checks the newest release and the published formula
-daily. The [CLI guide](packages/keybay_cli/README.md#verify-a-release-download)
-covers downloads.
+[CLI](.github/workflows/audit-cli-release.yml) release audits re-verify these
+tags; the CLI audit also checks the manifest chain and re-checks the newest
+release and published formula daily. The
+[CLI guide](packages/keybay_cli/README.md#verify-a-release-download) covers
+downloads.
