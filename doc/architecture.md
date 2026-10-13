@@ -1,17 +1,48 @@
-# Keybay V2 architecture
+# Keybay architecture
 
-This page explains how a Keybay vault works: where each piece lives, how keys
-nest, and what happens when you open, write, and change protection. [Security
-levels](security-levels.md) states what that means per platform. The normative
-design is [RFC 0001](rfcs/0001-per-application-stores.md), amended by
-[RFC 0003](rfcs/0003-passkey-methods.md); the [review guide](external-review.md)
-distinguishes current source from published artifacts.
+Keybay keeps an application's secrets, such as API tokens and passwords, in an
+encrypted file on the device, protected by the operating system's key store and
+optionally by a passphrase or passkeys. This page walks through how that works:
+what is stored where, how the keys fit together, and what happens when an
+application opens its secrets, reads or writes them, or changes how they are
+protected. [Security levels](security-levels.md) explains what this means for
+your exposure on each platform.
 
-## One vault per application
+## In brief
 
-Every supported application has exactly one vault: one platform-protected root
-key and one encrypted file. There are no named stores, runtime application IDs,
-backend selectors, plaintext modes, migrations, or fallback providers.
+- Each application gets one **vault**: a single encrypted file holding all of
+  its secrets. The Keybay CLI is one such application.
+- Everything in the vault is encrypted with a random **store key**.
+- The store key is locked by the **platform root**, a key the operating system
+  keeps in its key store (Keychain, Android Keystore or Secret Service). Without
+  it the file is unreadable.
+- Optionally, the store key is also locked behind **methods**: a passphrase or
+  passkeys. Then opening needs the platform root and any one method.
+- Opening the vault recovers the store key. Reads decrypt only the requested
+  secrets; writes produce a complete new file and swap it in atomically.
+- Adding or removing a method generates a new store key and re-encrypts
+  everything under it.
+
+## Terms
+
+| Term | Meaning |
+| --- | --- |
+| Vault | One application's encrypted file of secrets (also called the store). |
+| Record | One named secret in the vault, such as `my-app/openai-api-key`. |
+| Application identity | The fixed name that selects an application's vault and platform root. The OS supplies it on iOS, Android and entitled macOS; elsewhere it comes from the app's `pubspec.yaml`. |
+| Platform root | The key the operating system's key store holds for this application. It unlocks the key package. |
+| Key package | The part of the vault file sealed by the platform root. It holds the protection policy and the routes to the store key. |
+| Store key | The random key that encrypts the vault's records. A new one, with the next **epoch** number, is generated on every protection change. |
+| Method | A passphrase, system passkey or hardware passkey enrolled to protect the vault, at most eight per vault. |
+| Envelope | The store key encrypted to one method, so that method alone can recover it. |
+| Vault secret and confirmation | A random secret kept under the store key, and a per-method tag over it that only that method's credential can produce. Together they prove a vault was built by someone holding one of your methods. |
+| Session | An open vault. It holds the store key in memory until closed. |
+
+## The big picture
+
+Every supported application has exactly one vault: one platform root and one
+encrypted file. There are no named stores, runtime application IDs, backend
+selectors, plaintext modes, migrations, or fallback providers.
 
 ```text
 Keybay.open()
@@ -30,15 +61,15 @@ application identity + host profile   (fixed by the OS or the owning pubspec)
 | Piece | Location | Contents |
 | --- | --- | --- |
 | Platform root | The platform's key store, at a location derived from the application identity | A random 32-byte key (Keychain, Secret Service), a key derived from the portal's per-app secret (Flatpak), or a non-exportable Keystore key (Android). Nothing else. |
-| Bootstrap | Start of the vault file, unencrypted | Format version, suite and lengths. It cannot select a path, provider or application. |
+| Bootstrap | Start of the vault file, unencrypted | The format version and the lengths needed to parse the rest. It cannot select a path, provider or application. |
 | Key package | Vault file, sealed by the platform root | The vault's protection policy and the routes to its store key. |
-| Record frames | Vault file | Each value encrypted separately. |
+| Record frames | Vault file | Each record's value, encrypted separately with XChaCha20-Poly1305. |
 | Manifest | End of the vault file, encrypted | Record names, frame lengths and digests. It also authenticates the bootstrap and the whole key package. |
 
-The [platform guides](security-levels.md#platform-guides) give each profile's
-exact provider and file paths.
+[Security levels](security-levels.md#per-platform) lists where each platform
+keeps the platform root and the file.
 
-## Key hierarchy
+## How the keys fit together
 
 ```text
 platform root
@@ -103,8 +134,9 @@ open never creates or enrolls a vault.
 
 ## Reading and writing
 
-A read pins one immutable file generation, authenticates its manifest, and
-decrypts only the requested frames. Each frame's authenticated data binds the
+A read pins one version of the file (a **generation**, which never changes
+once written), authenticates its manifest, and decrypts only the requested
+frames. Each frame's authenticated data binds the
 store ID, key epoch, frame type and exact record name, so frames cannot be
 swapped between records, epochs or vaults.
 
@@ -177,6 +209,9 @@ by the operation; the public API has no interaction option.
 
 ## Platform profiles
 
+Each platform has one fixed profile; Keybay never switches profile or provider
+after a failure.
+
 | Profile | Identity | File isolation | Root protection |
 |---|---|---|---|
 | iOS | signed application identifier | app-private container | exact Data Protection Keychain group |
@@ -185,8 +220,10 @@ by the operation; the public API has no interaction option.
 | unentitled macOS | owning pubspec/build declaration | restrictive Application Support directory | explicit login-Keychain item |
 | ordinary Linux | owning pubspec/build declaration | restrictive XDG data directory | Secret Service item plus private runtime creation lock |
 
-The last two profiles are `namespaceOnly`: a same-user process can claim the
-same declaration and reach the platform item and file. The Flatpak candidate
+On the last two profiles the application identity is only a declared name:
+another program running as the same user can claim it and reach the platform
+item and file. That is what makes them account-level in
+[Security levels](security-levels.md#security-classes). The Flatpak candidate
 binds identity from `/.flatpak-info` to `<instance-path>/data/keybay-v2` and a
 domain-separated XDG Secret Portal root, and never falls back to Secret Service.
 Snap, Windows, and unsupported provider configurations fail closed.
@@ -213,3 +250,11 @@ V2 does not provide rollback detection, sync, export, recovery, multiple
 stores, background unlock agents, a capability/inspection API, or protection
 against root, process injection, keyloggers, or a malicious Keybay binary.
 Plaintext explicitly returned to the application is ordinary process data.
+
+## Design references
+
+The normative design is [RFC 0001](rfcs/0001-per-application-stores.md),
+amended for methods by [RFC 0003](rfcs/0003-passkey-methods.md). The
+[security design](design.md) states the threat model and invariants, and the
+[review guide](external-review.md) distinguishes current source from published
+artifacts.
