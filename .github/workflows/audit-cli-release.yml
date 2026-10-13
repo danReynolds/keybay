@@ -150,11 +150,11 @@ jobs:
           tap="$(jq -r .homebrew.tap "$manifest")"
           path="$(jq -r .homebrew.path "$manifest")"
           expected="$(jq -r .homebrew.sha256 "$manifest")"
-          [ "$tap" = danReynolds/homebrew-tap ] && [ "$path" = Formula/keybay.rb ] &&
-            [[ "$expected" =~ ^[0-9a-f]{64}$ ]] || {
+          if [ "$tap" != danReynolds/homebrew-tap ] || [ "$path" != Formula/keybay.rb ] ||
+            ! [[ "$expected" =~ ^[0-9a-f]{64}$ ]]; then
             echo "::error::the manifest does not name the expected Homebrew formula"
             exit 1
-          }
+          fi
 
           # rk updates the tap after publishing the release, so a release event
           # waits for it. Scheduled and manual audits require it immediately.
