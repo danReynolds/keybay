@@ -16,7 +16,8 @@ Keybay uses Android's application sandbox and a non-exportable Keystore key.
   authentication for each key use. A compromised app can still use its key.
 
 This is a [key-access level](../design.md#platform-protection-levels), not a
-hardware rating or protection against a compromised host process.
+hardware rating or protection against a compromised host process. See
+[security levels](../security-levels.md) for the exposure per attacker.
 
 ## Requirements
 

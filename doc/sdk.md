@@ -138,7 +138,10 @@ await session.auth.add(PassphraseCredential(phrase: newPhraseBytes));
 These are separate commits. **Removing the last method returns to platform-only
 protection**, which persists if adding fails. There is no update/replace.
 Auth changes rotate the store key and re-encrypt records; they do not revoke
-older snapshots, issuer tokens or external backups.
+older snapshots, issuer tokens or external backups. To fully revoke a
+compromised credential on Linux or unentitled macOS, remove every method and
+add back the trusted ones; see
+[security levels](security-levels.md#after-a-credential-is-compromised).
 
 ## Add passkey protection
 

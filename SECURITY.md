@@ -14,13 +14,18 @@ authenticated manifest holds record names; values are separate
 XChaCha20-Poly1305 frames. A random store key derives separate manifest/frame
 keys and is wrapped by the platform-protected key package.
 
-| Host | Platform protection | Application boundary |
-| --- | --- | --- |
-| iOS | Data Protection Keychain, exact signed group | Signed group and app-private files |
-| Android 12+ | Non-exportable Android Keystore key | Package/UID sandbox and no-backup files |
-| Entitled macOS | Data Protection Keychain, exact signed group | Root isolated by entitlement; file isolation depends on App Sandbox |
-| Unentitled macOS / CLI | Explicit login-Keychain item | Declared namespace and restrictive files, not an app sandbox |
-| Ordinary Linux desktop | Secret Service item | Declared namespace and restrictive files, not an app sandbox |
+| Host | Platform protection | Level | Without a passphrase or passkey |
+| --- | --- | --- | --- |
+| iOS | Data Protection Keychain, exact signed group | App-bound | Other apps cannot read values |
+| Android 12+ | Non-exportable Android Keystore key | App-bound | Other apps cannot read values |
+| Entitled macOS | Data Protection Keychain, exact signed group | App-bound key | Other apps cannot read values; file isolation needs App Sandbox |
+| Unentitled macOS / CLI | Explicit login-Keychain item | Account-level | Programs running as you can use the CLI to read every value |
+| Ordinary Linux desktop | Secret Service item | Account-level | Programs running as you can read every value |
+
+[Security levels by platform](doc/security-levels.md) gives the full exposure
+matrix, including backups and the Flatpak candidate, and what a passphrase or
+passkey changes. [Architecture](doc/architecture.md) walks through how the vault
+works.
 
 The [Flatpak candidate](doc/platforms/linux.md) uses sandbox identity and XDG
 Secret Portal, never raw Secret Service. Snap, Windows and unsupported providers

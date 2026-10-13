@@ -66,6 +66,10 @@ Desktop namespaces are not same-user authorization boundaries. Enroll an
 additional method to make access to the platform root and file insufficient.
 A synced passkey alone does not make the vault portable.
 
+- [Security levels by platform](doc/security-levels.md): who can read your
+  secrets on each platform, with and without a passphrase or passkey.
+- [Architecture](doc/architecture.md): how the vault, its keys and its
+  protection changes work.
 - [Security policy](SECURITY.md): guarantees, trust boundaries and reporting.
 - [External review guide](doc/external-review.md): source map, evidence and open work.
 - [Platform regressions](doc/platform-regression.md): run `./tool/test_e2e.sh all`.

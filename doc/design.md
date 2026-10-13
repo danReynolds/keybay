@@ -197,7 +197,7 @@ uses the same authenticated file encryption.
 
 | Level | Meaning | Profiles |
 | --- | --- | --- |
-| <span class="protection-badge protection-app">App-bound key</span> | The OS or sandbox authenticates the application or signed group before granting key access. | iOS, Android, entitled macOS; the separately qualified Flatpak candidate under its documented confinement. |
+| <span class="protection-badge protection-app">App-bound key</span> | The OS or sandbox authenticates the application or signed group before granting key access. | iOS, Android, entitled macOS; the separately qualified Flatpak candidate against other sandboxed apps under its documented confinement. Unsandboxed host programs running as the same user can reach a Flatpak's portal secret through GNOME Keyring. |
 | <span class="protection-badge protection-account">Account-level</span> | The application namespace organizes the store but does not provide a portable OS-enforced application boundary. Another authorized same-user process may reach the platform root. | Unentitled macOS and ordinary Linux desktop. |
 
 App-bound key access does not imply identical file isolation. iOS and Android
@@ -212,6 +212,9 @@ file alone from yielding the store key. It does not authenticate the calling
 application, change its platform level, prevent deletion, or protect values
 already returned to a compromised process. The [threat model](#threat-model)
 applies to both levels.
+
+[Security levels by platform](security-levels.md) turns these levels into a
+concrete exposure matrix per platform and attacker.
 
 The platform guides use the same protection summary: key access, file isolation,
 hardware assurance, passphrase policy and main limitation, followed by setup,

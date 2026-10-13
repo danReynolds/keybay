@@ -1,41 +1,149 @@
 # Keybay V2 architecture
 
-The accepted design is [RFC 0001](rfcs/0001-per-application-stores.md), amended
-by [RFC 0003](rfcs/0003-passkey-methods.md) for passkey methods. This is the
-current-source implementation map; the [review guide](external-review.md)
-distinguishes it from published artifacts.
+This page explains how a Keybay vault works: where each piece lives, how keys
+nest, and what happens when you open, write, and change protection. [Security
+levels](security-levels.md) states what that means per platform. The normative
+design is [RFC 0001](rfcs/0001-per-application-stores.md), amended by
+[RFC 0003](rfcs/0003-passkey-methods.md); the [review guide](external-review.md)
+distinguishes current source from published artifacts.
 
-## One shape
+## One vault per application
 
-Every supported host application has exactly one store:
+Every supported application has exactly one vault: one platform-protected root
+key and one encrypted file. There are no named stores, runtime application IDs,
+backend selectors, plaintext modes, migrations, or fallback providers.
 
 ```text
 Keybay.open()
     |
     v
-resolved application identity + qualified host profile
+application identity + host profile   (fixed by the OS or the owning pubspec)
     |
-    +-- one platform-protected wrapping root
+    +-- platform root                  (Keychain, Keystore, Secret Service or portal)
     |
-    `-- one atomically replaced encrypted file
-          bootstrap | key package | record frames | sealed manifest
+    `-- vault file                     (one file, replaced atomically)
+          bootstrap | key package | record frames | manifest
 ```
 
-There are no named stores, runtime application IDs, backend selectors,
-plaintext modes, V1 probes, migrations, or fallback providers.
+## Where things live
 
-The random 256-bit store key derives independent keys for the manifest and
-record frames. The platform root seals the small changing key package, which
-contains the authoritative unlock policy and routes to the store key.
+| Piece | Location | Contents |
+| --- | --- | --- |
+| Platform root | The platform's key store, at a location derived from the application identity | A random 32-byte key (Keychain, Secret Service), a key derived from the portal's per-app secret (Flatpak), or a non-exportable Keystore key (Android). Nothing else. |
+| Bootstrap | Start of the vault file, unencrypted | Format version, suite and lengths. It cannot select a path, provider or application. |
+| Key package | Vault file, sealed by the platform root | The vault's protection policy and the routes to its store key. |
+| Record frames | Vault file | Each value encrypted separately. |
+| Manifest | End of the vault file, encrypted | Record names, frame lengths and digests. It also authenticates the bootstrap and the whole key package. |
 
-`Keybay.open()` recovers the store key into an explicitly closable session. It
-does not preload record names or values. Reads authenticate the manifest and
-decrypt only requested frames. Writes authenticate the source snapshot, copy
-unchanged frames as ciphertext, seal changed frames with fresh nonces, and
-atomically replace the complete file. This keeps the format transactional
-without adding an encrypted database, journal, free list, or compaction logic.
+The [platform guides](security-levels.md#platform-guides) give each profile's
+exact provider and file paths.
 
-## Layers
+## Key hierarchy
+
+```text
+platform root
+  `-- seals the key package
+        |
+        |-- platform-only:  store key
+        |
+        `-- with methods:   sealed vault secret S      (under the store key)
+                            method 1: public key, envelope, confirmation
+                            method 2: public key, envelope, confirmation
+                            ...                        (at most eight)
+
+store key  (random, 32 bytes, replaced on every protection change)
+  |-- manifest key   (HKDF)
+  `-- frame key      (HKDF)  --> each record frame
+```
+
+- **Platform-only vault:** the key package holds the store key itself, so the
+  platform root alone opens the vault.
+- **Vault with methods:** each method's credential output (an Argon2id result
+  for a passphrase, a verified PRF output for a passkey) derives an X25519 key
+  pair. Only the public key is stored. The method's **envelope** is the store
+  key encrypted to that public key with HPKE, so any one method can recover it.
+- **Confirmation:** an HMAC over the vault secret `S`, keyed from the same
+  credential output. Anyone holding a public key can encrypt to it, so an
+  envelope opening proves only that it was addressed to you. The confirmation
+  proves that a holder of your credential vouched for this vault's `S`, which
+  only the store key reveals.
+
+No passphrase, PRF output, private key or other credential-equivalent secret is
+ever stored.
+
+## Opening a vault
+
+Without a credential (`Keybay.open()`):
+
+1. Read the bootstrap and acquire the platform root. This is the only step that
+   can show OS or provider UI.
+2. Unseal the key package. A platform-only package yields the store key; a
+   package with methods returns `authRequired` with the method list.
+3. Authenticate the manifest with the store key, then return a session.
+
+With a credential (`Keybay.open(credential: ...)`):
+
+1. Read the bootstrap, acquire the platform root, and unseal the key package.
+2. Select the method matching the credential. An ambiguous passkey match fails
+   here, before any prompt.
+3. Obtain the credential output: Argon2id over the passphrase, or a passkey
+   ceremony. Derive the method's private key and check it against the stored
+   public key.
+4. Open the envelope to recover the store key.
+5. Decrypt `S` with the store key and recompute the method's confirmation.
+   A mismatch fails with `storeAuthenticationFailed`.
+6. Authenticate the manifest, which binds the bootstrap and the entire key
+   package, with the store key.
+7. For a passkey, persist the authenticator's updated counter, comparing the
+   exact on-disk prefix so a concurrent change cannot be overwritten.
+8. Return a session holding only the store key.
+
+Nothing is returned or written before steps 3 to 6 succeed. A credential-based
+open never creates or enrolls a vault.
+
+## Reading and writing
+
+A read pins one immutable file generation, authenticates its manifest, and
+decrypts only the requested frames. Each frame's authenticated data binds the
+store ID, key epoch, frame type and exact record name, so frames cannot be
+swapped between records, epochs or vaults.
+
+A write authenticates the current generation, copies unchanged frames as
+ciphertext, encrypts changed values under fresh random nonces, writes a complete
+staging file, fsyncs it, and atomically renames it over the live file. Record
+operations never acquire the platform root or prompt. V2 deliberately has no
+journal, append log, free list, compaction or in-place mutation.
+
+## Changing protection
+
+`auth.add` and `auth.remove` are the only protection changes; there is no
+update or replace. Each one:
+
+1. re-authenticates the current generation with the session's store key and
+   unseals its key package with the platform root;
+2. for `add`, runs the new method's enrollment (passphrase entry or passkey
+   creation) and computes its confirmation over `S`;
+3. generates a fresh store key and epoch;
+4. re-encrypts `S` and every record frame under the new store key, and wraps
+   the new store key to each remaining method's public key;
+5. commits the new file atomically, invalidating other open sessions.
+
+Remaining methods are never asked for their credentials: their envelopes are
+rebuilt from public keys, and their confirmations do not depend on the store key.
+
+- The first `add` on a platform-only vault creates `S`. Removing the last
+  method returns the vault to platform-only protection and discards `S`.
+- A session opened platform-only refuses to change protection if a methods
+  package has appeared under its own store key, since whoever holds the platform
+  root also knows that key.
+- Removing a method stops it from reading anything written afterwards, but it
+  keeps `S`. To fully revoke a compromised credential on an account-level
+  platform, remove every method and add back the trusted ones. See
+  [Security levels](security-levels.md#after-a-credential-is-compromised).
+- Changing a passphrase is a separate remove and add. Add a replacement passkey
+  before removing an old one when the method limit allows.
+
+## Code layers
 
 ```text
 public API
@@ -45,7 +153,7 @@ common engine
   framed reader + writer + protection rotation
   bounded binary format + XChaCha20-Poly1305 + HKDF-SHA256
   Argon2id passphrase derivation / verified Keypass PRF material
-  method-specific X25519 recipient keys + HPKE store-key envelopes
+  method X25519 keys + HPKE envelopes + confirmations
 
 host profile
   authenticated/declared application identity
@@ -59,63 +167,13 @@ platform boundaries
   Linux Secret Service and XDG Secret Portal through typed D-Bus
 ```
 
-The common engine acquires platform protection through `HostPlatform` and
-passkey material through Keypass. Keybay owns derivation, method envelopes,
-record integrity and atomic storage. Keypass owns provider/device interaction
-and transfers successful temporary results to Keybay, which disposes them. Platform code cannot feed a runtime identity, arbitrary
-path or alternate provider selector into the public API.
-
-## Stored file
-
-The public bootstrap is deliberately powerless: it identifies the format and
-bounds the sealed package/provider continuation lengths. It cannot select a
-path, provider, application, credential item, or deletion target.
-
-The authenticated manifest contains canonical record names, exact serialized
-frame lengths, and SHA-256 digests. Offsets are derived from physical order.
-Each record value is independently AEAD-sealed with context binding it to the
-store ID, key epoch, V2 frame context/type, and exact record key. The platform
-package and manifest bind the resolved storage domain and public prefix.
-
-The format is a framed snapshot, not an in-place database. Ordinary reads are
-selective; ordinary writes still stage and replace one whole file but do not
-decrypt unchanged record values. Complete store-key rotation re-encrypts every
-frame.
-
-## Protection policy
-
-Platform protection is mandatory. With no configured unlock method it is
-sufficient to recover the store key. When methods exist, opening requires:
-
-```text
-platform protection AND (passphrase OR system passkey A OR hardware passkey B OR ...)
-```
-
-A vault supports zero or one passphrase and multiple passkeys, at most eight
-methods total. They are alternative credentials. Auth management is `add`,
-`list` and `remove(method)`, with no update or replace. Each add/remove is an
-authenticated transaction that generates a new store key and epoch, rewrites
-the key package, and re-encrypts every record while preserving the record set.
-Survivor envelopes use their authenticated public recipient keys; their secrets
-are not retained or requested again. Old complete snapshots keep their old protection.
-
-`open(credential:)` only authenticates an enrolled method. It never enrolls,
-including when no store exists. Credential-free `open()` may initialize fully
-absent platform-only state; enrollment then occurs through `session.auth.add`.
-Removing the last method returns to platform-only protection. Changing a
-passphrase requires separate remove/add commits, with that interim state if no
-other method remains. A failed add does not roll back the preceding removal.
-
-Passkey records retain nonsecret identity, PRF input and verifier state. The
-manifest authenticates the entire method package; provisional recovered keys
-are not released before verification. Successful passkey open persists advanced
-state before returning a session and rejects conflicting authentication changes.
-
-Provider calls carry an internal interaction policy fixed by the operation.
-Open, authentication changes, and reset may invoke trusted OS/provider UI;
-record operations and authentication listing never acquire a provider. Their
-failure paths do not recheck provider state to diagnose cross-process rotation.
-The public API has no interaction option.
+The engine acquires platform protection through `HostPlatform` and passkey
+material through Keypass. Keybay owns derivation, envelopes, confirmations,
+record integrity and atomic storage. Keypass owns provider and device
+interaction and hands each temporary result to Keybay, which disposes of it.
+Platform code cannot feed a runtime identity, arbitrary path or alternate
+provider into the public API. Provider calls carry an interaction policy fixed
+by the operation; the public API has no interaction option.
 
 ## Platform profiles
 
@@ -123,20 +181,14 @@ The public API has no interaction option.
 |---|---|---|---|
 | iOS | signed application identifier | app-private container | exact Data Protection Keychain group |
 | Android 12+ | installed package/UID | app-private no-backup directory | one non-exportable Keystore key |
-| entitled macOS | signed application identifier | sandbox when present; otherwise same-user writable | exact Data Protection Keychain group |
+| entitled macOS | signed application identifier | sandbox when present; otherwise same-user readable | exact Data Protection Keychain group |
 | unentitled macOS | owning pubspec/build declaration | restrictive Application Support directory | explicit login-Keychain item |
 | ordinary Linux | owning pubspec/build declaration | restrictive XDG data directory | Secret Service item plus private runtime creation lock |
 
 The last two profiles are `namespaceOnly`: a same-user process can claim the
-same declaration and may reach the platform item/file. A passphrase or passkey
-prevents those artifacts alone from yielding the store key, but cannot prevent deletion
-or modification by an actor with filesystem/keyring authority.
-
-The Flatpak candidate binds the application identity from `/.flatpak-info` to
-`<instance-path>/data/keybay-v2` and a domain-separated XDG Secret Portal root.
-The portal owns the reusable application secret; Keybay owns no deletable
-provider item in this profile. Qualification requires native Linux evidence
-with two installed application IDs. Flatpak never falls back to Secret Service.
+same declaration and reach the platform item and file. The Flatpak candidate
+binds identity from `/.flatpak-info` to `<instance-path>/data/keybay-v2` and a
+domain-separated XDG Secret Portal root, and never falls back to Secret Service.
 Snap, Windows, and unsupported provider configurations fail closed.
 
 ## Concurrency and reset

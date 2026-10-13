@@ -25,7 +25,8 @@ DOCUMENTS = [
   {source: "doc/platforms/android.md", route: "docs/platforms/android/", label: "Android", summary: "App-bound Keystore protection on Android 12 and newer, with hardware assurance and user-presence limits explained separately."},
   {source: "doc/platforms/macos.md", route: "docs/platforms/macos/", label: "macOS", summary: "App-bound keys for entitled apps and account-level protection for the CLI, with file isolation and release requirements for each."},
   {source: "doc/platforms/linux.md", route: "docs/platforms/linux/", label: "Linux", summary: "Account-level Secret Service protection, passphrase guidance and the separate sandbox-bound Flatpak candidate."},
-  {source: "doc/architecture.md", route: "docs/architecture/", label: "Architecture", summary: "One per-application framed store, fixed platform protection, and no fallback providers."},
+  {source: "doc/security-levels.md", route: "docs/security-levels/", label: "Security levels", summary: "Who can read your secrets on each platform, with and without a passphrase or passkey, and what is never protected."},
+  {source: "doc/architecture.md", route: "docs/architecture/", label: "Architecture", summary: "How the vault, its key hierarchy, opening, writing and protection changes work."},
   {source: "doc/design.md", route: "docs/design/", label: "Security design", summary: "The V2 threat model, cryptographic construction, platform boundaries, and evidence-linked guarantees."},
   {source: "SECURITY.md", route: "docs/security/", label: "Security", summary: "Where secrets live on each platform, how releases are verified, current evidence limits, and the private vulnerability-reporting route."},
   {source: "doc/release-readiness.md", route: "docs/releases/", label: "Release readiness", summary: "Published 0.2.0 artifacts, unreleased source changes, and retained qualification evidence."},
@@ -46,6 +47,7 @@ PRIMARY_NAVIGATION = [
   {
     group: "Understand",
     links: [
+      {label: "Security levels", route: "docs/security-levels/"},
       {label: "Storage by platform", route: "docs/", fragment: "platforms"},
       {label: "Architecture", route: "docs/architecture/"},
       {label: "Security design", route: "docs/design/"},
@@ -372,7 +374,7 @@ def documentation_index(metadata)
 
             <section class="doc-index-group" id="platforms">
               <h2>Storage by platform</h2>
-              <ul>#{list.call(%w[docs/platforms/ios/ docs/platforms/android/ docs/platforms/macos/ docs/platforms/linux/])}</ul>
+              <ul>#{list.call(%w[docs/security-levels/ docs/platforms/ios/ docs/platforms/android/ docs/platforms/macos/ docs/platforms/linux/])}</ul>
             </section>
 
             <section class="doc-index-group">

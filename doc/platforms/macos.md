@@ -23,7 +23,8 @@ does not retry the other profile after an operation fails.
   Login-Keychain ACLs are not a portable application-isolation guarantee.
 
 These are [key-access levels](../design.md#platform-protection-levels), not
-hardware ratings or protection against a compromised host process.
+hardware ratings or protection against a compromised host process. See
+[security levels](../security-levels.md) for the exposure per attacker.
 
 ## Requirements
 

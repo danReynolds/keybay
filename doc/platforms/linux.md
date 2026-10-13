@@ -18,7 +18,8 @@ separate [Flatpak candidate](#flatpak-candidate) adds a sandbox-bound portal pat
   and encrypted file. It may also delete or replace them.
 
 This is a [key-access level](../design.md#platform-protection-levels), not a
-hardware rating or protection against a compromised host process.
+hardware rating or protection against a compromised host process. See
+[security levels](../security-levels.md) for the exposure per attacker.
 
 ## Requirements
 
@@ -103,8 +104,12 @@ Current source applicability is recorded in the
 - **Additional methods:** the same alternative-method policy applies alongside
   the portal-derived root; hardware access also needs sandbox device permissions
   and separate qualification.
-- **Main limitation:** broad host grants can weaken confinement. The portal
-  secret survives Keybay reset, so restoring an old store can restore access.
+- **Main limitation:** the key is app-bound only against other sandboxed apps.
+  With GNOME Keyring, the portal keeps each app's secret as an ordinary keyring
+  item, so unsandboxed programs running as you can reach it and the app's data
+  directory; enroll a passphrase or passkey against them. Broad host grants can
+  weaken confinement, and the portal secret survives Keybay reset, so restoring
+  an old store can restore access.
 
 This level is conditional on the confinement below. Candidate status and
 qualification are separate from the key-access label; Flatpak CLI packaging
