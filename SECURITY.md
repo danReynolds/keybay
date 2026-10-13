@@ -31,7 +31,10 @@ With enrolled methods, opening requires
 A store supports one passphrase at most and eight methods total. Argon2id
 passphrase output or verified Keypass PRF material derives a method-specific
 X25519 recipient through HKDF. HPKE wraps the store key; the platform seals
-the method package, which the manifest authenticates. See
+the method package, which the manifest authenticates. Each method also stores
+a credential-keyed confirmation over a vault secret sealed under the store key,
+so holding the platform root is not enough to build a store that a genuine
+credential accepts. See
 [RFC 0003](doc/rfcs/0003-passkey-methods.md) for the construction.
 
 On ordinary Linux and unentitled macOS, another same-user program may claim
@@ -65,7 +68,9 @@ Keybay does not defend against root/kernel compromise, injected or malicious
 host code, keyloggers, terminal/screen capture, denial of service by actors able
 to delete state, or rollback to an older authentic snapshot. Returned plaintext
 is ordinary application data. An attacker controlling an unlocked session can
-change its protection policy.
+change its protection policy. Removing a method does not change the vault
+secret, so its former holder, with the platform root and file, could still
+substitute a store that the remaining methods accept.
 
 Auth changes rotate the current store key and re-encrypt records. They do not
 revoke old snapshots, issuer tokens or provider credentials. Removing the last

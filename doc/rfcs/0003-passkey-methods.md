@@ -84,27 +84,28 @@ the suite. Suite 1 retains its 4096-byte sealed-package cap; suite 2 allows
 16 MiB plus 128 KiB. Every reader and record writer enforces the suite's bound;
 records cannot consume the space reserved for authentication metadata. This
 lets a full passkey vault persist growing verifier state. The aggregate plaintext read
-cap remains 16 MiB. Policy 2 requires suite 2. Older suite-1-only readers reject
+cap remains 16 MiB. Policy 3 requires suite 2. Older suite-1-only readers reject
 the new suite before using its package. No implicit downgrade occurs after
 removal.
 
 Policy 0 (platform-only) remains readable. Policy 1 (the retired singleton
-passphrase format) is unsupported; opening it never migrates, resets, or rewrites
-state. Current passphrase and passkey methods use policy 2, encoded with unsigned
-big-endian integers:
+passphrase format) and policy 2 (0.2.0 methods without confirmations) are
+unsupported; opening them never migrates, resets, or rewrites state. Current
+passphrase and passkey methods use policy 3, encoded with unsigned big-endian
+integers:
 
 ```text
-storeId:16 | epoch:u64 | policy:u8=2 | count:u32
+storeId:16 | epoch:u64 | policy:u8=3 | sealedVaultSecret:72 | count:u32
 repeat count times, in strictly increasing method-ID byte order:
   methodId:16 | kind:u8 | labelLength:u32 | label:UTF8
-  salt:16 | profile:u8 | publicKey:32 | envelope:80
+  salt:16 | profile:u8 | publicKey:32 | envelope:80 | confirmation:32
   recordLength:u32 | record:UTF8
 ```
 
 Kinds are 1 passphrase, 2 system passkey, and 3 hardware passkey. Passphrases use
 allowlisted Argon profile 1 and an empty record; passkeys use profile 0 and a
 nonempty serialized opaque `PasskeyRecord`. The label is at most 256 UTF-8
-bytes and the record at most 12 KiB. The maximum plaintext package is 101,613
+bytes and the record at most 12 KiB. The maximum plaintext package is 101,941
 bytes. Empty directories, duplicate/unsorted IDs, extra bytes, unknown kinds
 or profiles, non-byte inputs, malformed UTF-8 and multiple passphrases fail
 closed. The engine additionally validates every Keypass record, its route,
@@ -131,6 +132,10 @@ private = HKDF-SHA256(M, salt,
 public  = X25519(private)
 context = stable || LP(epoch:u64, public)
 info    = "keybay:v2:methods1:hpke:store-key" || 0x00 || context
+confirmKey   = HKDF-SHA256(M, salt,
+                     "keybay:v2:methods2:key:confirm" || 0x00 || stable, 32)
+confirmation = HMAC-SHA256(confirmKey, "keybay:v2:methods2:confirm" || 0x00 ||
+                           LP(stable, public, vaultSecret))
 ```
 
 `stableRecordId` is empty for passphrases. It is Keypass's stable record ID for
@@ -148,20 +153,50 @@ envelope = enc:32 | ciphertext:32 | tag:16
 ```
 
 All-zero DH results are rejected. Only the public recipient key and envelope
-are stored; there is no credential-encrypted private-key field and no method
-secret encrypted under `Kstore`. HPKE base mode authenticates no sender.
-The existing manifest's AAD authenticates the exact bootstrap and complete
-platform-sealed package, including the whole method directory. A recovered
-`Kstore` is provisional until this check succeeds. No redundant directory MAC
-is introduced. Rotation trusts recipient public keys only from a directory
-already authenticated with the current session key.
+are stored; there is no credential-encrypted private-key field. The existing
+manifest's AAD authenticates the exact bootstrap and complete platform-sealed
+package, including the whole method directory. A recovered `Kstore` is
+provisional until both the method's confirmation and this check succeed.
+Rotation trusts recipient public keys only from a directory already
+authenticated with the current session key.
+
+### Vault secret and confirmations
+
+HPKE base mode authenticates no sender, and the manifest check is keyed by the
+recovered `Kstore` itself. Together they do not show that a credential holder
+built the vault: whoever holds the platform root can read every method's
+public key, seal a `Kstore` of their choosing to it, and write a matching
+manifest. Each confirmation closes that gap.
+
+The first method enrollment generates a random 32-byte `vaultSecret`. The
+package stores it as `nonce:24 | ciphertext:32 | tag:16`, XChaCha20-Poly1305
+under `HKDF-SHA256(Kstore, storeId, "keybay:v2:methods2:key:vault-secret")`
+with AAD `"keybay:v2:methods2:aad:vault-secret" || 0x00 || LP(storeId,
+epoch:u64)`. Each enrollment stores that method's `confirmation`.
+
+Unlock derives `private` and `confirmKey` from the same `M`, checks `public`,
+opens the envelope, opens `vaultSecret` with the recovered `Kstore`, and
+compares the recomputed confirmation in constant time. A mismatch, or a
+vault secret that does not open, reports `storeAuthenticationFailed` before
+manifest authentication or any metadata commit. A vault rebuilt around another
+`Kstore` cannot carry the genuine `vaultSecret`, and no confirmation over a
+substitute can be computed without `M`.
+
+Confirmations exclude `Kstore` and the epoch. Rotation reseals the same
+`vaultSecret` under the next `Kstore` and epoch, so surviving confirmations stay
+valid and no surviving credential is requested. Removing the last method
+discards the vault secret with the methods package; a later enrollment creates
+a new one.
 
 This permits rotating to a fresh `Kstore` and resealing every surviving method
 without requesting its credential. Possession of a removed credential, its
 old envelope, and the old `Kstore` does not reveal surviving private keys or
-decrypt future rotated records. Possession of an old complete snapshot still
-permits opening that snapshot. An actor controlling an authenticated process
-can change policy; this design does not claim to defeat that attacker.
+decrypt future rotated records. It does reveal the unchanged `vaultSecret`, so
+that holder, with the platform root and file, can still build a vault that
+surviving methods confirm; rotating the vault secret would require every
+surviving credential. Possession of an old complete snapshot still permits
+opening that snapshot. An actor controlling an authenticated process can change
+policy; this design does not claim to defeat that attacker.
 
 ## Transactions
 
@@ -206,6 +241,10 @@ released and the new generation is already committed.
 The HPKE implementation is tested against the published RFC 9180 vector and
 independently generated Python fixtures, including every-byte tampering,
 context separation, low-order inputs, cleanup, and survivor rotation.
+Confirmations and the sealed vault secret are checked against an independent
+stdlib-only reference. Engine tests rebuild a consistent vault with only the
+platform root, for passphrase, system and hardware methods, and require the
+genuine credential to reject it without writing.
 Format rejection, mixed-credential engine, transactional failure,
 counter persistence, callback reentrancy, and cross-engine concurrency tests
 exercise the production Keypass facade with a test backend.

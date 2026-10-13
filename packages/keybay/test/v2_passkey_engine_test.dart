@@ -3,16 +3,19 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:keybay/keybay.dart';
 import 'package:keybay/src/v2/application_identity.dart';
+import 'package:keybay/src/v2/format/method_crypto.dart';
 import 'package:keybay/src/v2/format/store_crypto.dart';
 import 'package:keybay/src/v2/format/store_format.dart';
 import 'package:keybay/src/v2/host_platform.dart';
 import 'package:keybay/src/v2/keybay_v2.dart'
     show V2StoreEngine, V2StoreSession, debugStoreSessionKeyIsCleared;
 import 'package:keybay/src/v2/platform_protector.dart';
+import 'package:keypass/keypass.dart' show PasskeyRecord;
 import 'package:test/test.dart';
 
 import 'support/v2_passkey_backend.dart';
@@ -531,6 +534,74 @@ void main() {
     },
   );
 
+  for (final credential in <KeybayCredential>[
+    _phrase(),
+    _passkey(PasskeyRoute.system),
+    _passkey(PasskeyRoute.hardware),
+  ]) {
+    for (final copySealedSecret in [false, true]) {
+      test('a platform-root holder cannot rebuild a vault that $credential '
+          'confirms (copied sealed secret: $copySealedSecret)', () async {
+        final env = _Environment();
+        addTearDown(env.dispose);
+        final owner = await env.enroll(credential);
+        await owner.set('service/token', 'genuine');
+        final method = (await owner.auth.list()).single;
+        await owner.close();
+
+        // Everything a platform-root holder can build without the
+        // credential: the victim's own method entry and public key, an
+        // envelope sealed to it, and a consistent manifest under a store
+        // key of the attacker's choosing.
+        await _rebuildVaultWithPlatformRoot(
+          env,
+          copySealedSecret: copySealedSecret,
+        );
+        final forged = await _copyLive(env.files);
+
+        await _failure(
+          env.open(
+            credential: _credentialLike(credential),
+            methodId: method.id,
+            freshEngine: true,
+          ),
+          KeybayErrorCode.storeAuthenticationFailed,
+        );
+        env.provider.expectReleased();
+        expect(await _copyLive(env.files), forged);
+      });
+    }
+  }
+
+  test(
+    'rotation keeps survivor confirmations without their credentials',
+    () async {
+      final env = _Environment();
+      addTearDown(env.dispose);
+      final owner = await env.enroll(_phrase());
+      await owner.set('service/token', 'retained');
+      final phrase = (await owner.auth.list()).single;
+      final before = await _confirmations(env);
+
+      final system = await owner.auth.add(_passkey(PasskeyRoute.system));
+      final afterAdd = await _confirmations(env);
+      expect(afterAdd[phrase.id], before[phrase.id]);
+      await owner.auth.remove(phrase);
+      final afterRemove = await _confirmations(env);
+      expect(afterRemove.keys, [system.id]);
+      expect(afterRemove[system.id], afterAdd[system.id]);
+      await owner.close();
+
+      final reopened = await env.open(
+        credential: _passkey(PasskeyRoute.system),
+        methodId: system.id,
+        freshEngine: true,
+      );
+      expect(await reopened.get('service/token'), 'retained');
+      await reopened.close();
+    },
+  );
+
   for (final freshEngine in [false, true]) {
     test(
       'counterless unlock rejects concurrent revocation (fresh engine: $freshEngine)',
@@ -1023,6 +1094,7 @@ Future<void> _forgeLabelWithPlatformRoot(_Environment env, String label) =>
       final forged = V2MethodsPackage(
         storeId: package.storeId,
         epoch: package.epoch,
+        sealedVaultSecret: package.sealedVaultSecret,
         methods: [
           V2AuthMethodEnvelope(
             methodId: method.methodId,
@@ -1032,6 +1104,7 @@ Future<void> _forgeLabelWithPlatformRoot(_Environment env, String label) =>
             profileId: method.profileId,
             publicKey: method.publicKey,
             keyEnvelope: method.keyEnvelope,
+            confirmation: method.confirmation,
             passkeyRecord: method.passkeyRecord,
           ),
         ],
@@ -1048,3 +1121,111 @@ Future<void> _forgeLabelWithPlatformRoot(_Environment env, String label) =>
         forged.clear();
       }
     });
+
+/// Rebuilds the live vault as a holder of only the platform root would: every
+/// method entry is kept, each envelope is resealed to that method's public key
+/// around an attacker-chosen store key, and a consistent manifest follows.
+Future<void> _rebuildVaultWithPlatformRoot(
+  _Environment env, {
+  required bool copySealedSecret,
+}) => _withPackage(env, (bytes, bootstrap, lease, aad, package) async {
+  final random = Random.secure();
+  Uint8List fresh(int length) =>
+      Uint8List.fromList(List.generate(length, (_) => random.nextInt(256)));
+  final attackerKey = fresh(V2StoreLimits.storeKeyBytes);
+  final storeId = package.storeId;
+  final methods = <V2AuthMethodEnvelope>[];
+  for (final method in package.methods) {
+    final recordId = method.kind == V2AuthMethodKind.passphrase
+        ? ''
+        : PasskeyRecord.fromJson(
+            jsonDecode(utf8.decode(method.passkeyRecord))
+                as Map<String, dynamic>,
+          ).id;
+    final context = _lengthPrefixed([
+      ascii.encode('keybay:v2:methods:1'),
+      storeId,
+      method.methodId,
+      [method.kind.index + 1],
+      method.salt,
+      ascii.encode(recordId),
+      (ByteData(8)..setUint64(0, package.epoch)).buffer.asUint8List(),
+      method.publicKey,
+    ]);
+    methods.add(
+      method.withKeyEnvelope(
+        await sealMethodStoreKey(
+          publicKey: method.publicKey,
+          storeKey: attackerKey,
+          context: context,
+          ephemeralSeed: fresh(32),
+        ),
+      ),
+    );
+  }
+  final forged = V2MethodsPackage(
+    storeId: storeId,
+    epoch: package.epoch,
+    sealedVaultSecret: copySealedSecret
+        ? package.sealedVaultSecret
+        : await sealVaultSecret(
+            storeKey: attackerKey,
+            storeId: storeId,
+            epoch: package.epoch,
+            vaultSecret: fresh(v2VaultSecretBytes),
+            nonce: fresh(V2StoreLimits.nonceBytes),
+          ),
+    methods: methods,
+  );
+  final plaintext = encodeKeyPackage(forged);
+  try {
+    final sealed = await lease.sealPackage(plaintext: plaintext, aad: aad);
+    final rebuilt = V2Bootstrap(
+      core: bootstrap.core,
+      sealedPackageLength: sealed.length,
+    );
+    final manifest = await sealManifest(
+      storeKey: attackerKey,
+      storeId: storeId,
+      storageDomain: env.binding.domain.copyBytes(),
+      bootstrap: rebuilt,
+      sealedPackage: sealed,
+      manifest: V2Manifest(const []),
+      nonce: fresh(V2StoreLimits.nonceBytes),
+    );
+    env.files.replaceLiveBytes([
+      ...encodeBootstrap(rebuilt),
+      ...sealed,
+      ...manifest,
+      ...encodeManifestLength(manifest.length),
+    ]);
+  } finally {
+    plaintext.fillRange(0, plaintext.length, 0);
+    forged.clear();
+  }
+});
+
+Future<Map<String, Uint8List>> _confirmations(_Environment env) => _withPackage(
+  env,
+  (bytes, bootstrap, lease, aad, package) async => {
+    for (final method in package.methods)
+      encodeMethodId(method.methodId): method.confirmation,
+  },
+);
+
+Uint8List _lengthPrefixed(List<List<int>> fields) {
+  final out = BytesBuilder(copy: false);
+  for (final field in fields) {
+    out
+      ..add((ByteData(4)..setUint32(0, field.length)).buffer.asUint8List())
+      ..add(field);
+  }
+  return out.takeBytes();
+}
+
+/// A fresh credential of the same kind; operations consume their input.
+KeybayCredential _credentialLike(KeybayCredential credential) =>
+    switch (credential) {
+      PasskeyCredential(:final route) => _passkey(route),
+      _ => _phrase(),
+    };

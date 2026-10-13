@@ -138,16 +138,27 @@ credential-equivalent secret is persisted. The complete package is bound to
 the authenticated manifest. A provisional key recovered through a method is
 not returned until that manifest and the current package revision are checked.
 
-An authenticated session can rotate `Kstore` and encrypt it to surviving
-public keys without prompting their credentials. Removal rotates all records;
-the removed credential plus an old snapshot cannot derive another method's
-private key and open later generations. Old snapshots themselves remain
-recoverable with their old credentials; this is not rollback protection.
+HPKE lets anyone holding a public key seal a key to it, and the manifest is
+keyed by whatever key the envelope yields. So each method also stores a
+confirmation: an HMAC, keyed from the same credential output, over a random
+vault secret that the package seals under `Kstore`. Unlock recomputes it after
+opening the envelope. A party holding only the platform root cannot carry the
+genuine vault secret into a store keyed by a `Kstore` it chose, nor confirm a
+substitute without the credential.
 
-Protected stores use bootstrap suite 2 and policy 2 for both passphrases and
-passkeys. The retired singleton-passphrase policy 1 is rejected with
-`unsupportedStoreVersion`; open never migrates, resets, or rewrites it. Current
-methods and platform-only encodings are unchanged. Suite 2 permits a 128 KiB
+An authenticated session can rotate `Kstore` and encrypt it to surviving
+public keys without prompting their credentials; confirmations exclude `Kstore`
+and the epoch, so they stay valid. Removal rotates all records; the removed
+credential plus an old snapshot cannot derive another method's private key and
+open later generations. It does retain the unchanged vault secret, so its holder,
+with the platform root and file, could still substitute a store that surviving
+methods confirm. Old snapshots themselves remain recoverable with their old
+credentials; this is not rollback protection.
+
+Protected stores use bootstrap suite 2 and policy 3 for both passphrases and
+passkeys. The retired singleton-passphrase policy 1 and the unconfirmed 0.2.0
+methods policy 2 are rejected with `unsupportedStoreVersion`; open never
+migrates, resets, or rewrites them. The platform-only encoding is unchanged. Suite 2 permits a 128 KiB
 sealed package while suite 1 retains its 4 KiB cap. Older suite-1-only clients
 fail closed on suite 2.
 

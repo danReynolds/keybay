@@ -18,6 +18,16 @@ python3 test/vectors/method_crypto_reference.py > test/vectors/method_crypto.jso
 dart test test/v2_method_crypto_test.dart
 ```
 
+Policy-3 confirmations and the vault-secret subkey and AAD are fixed by
+`method_confirmation_reference.py`, which uses only Python's stdlib HMAC and
+SHA-256. `v2_method_confirmation_test.dart` applies the store's
+XChaCha20-Poly1305 primitive to that subkey and AAD:
+
+```
+python3 test/vectors/method_confirmation_reference.py > test/vectors/method_confirmation.json
+dart test test/v2_method_confirmation_test.dart
+```
+
 ## Frozen primitive profile
 
 The method private key is the 32-byte result of HKDF-SHA256 with credential
@@ -44,9 +54,12 @@ always zero; nonce is derived by HPKE. Every encryption requires an independent
 fresh random 32-byte ephemeral seed, expanded using HPKE DeriveKeyPair.
 
 HPKE base mode does not authenticate the sender. Recovering a candidate store
-key is insufficient: the engine must authenticate the existing manifest, whose
-AAD binds the entire sealed platform package and therefore every method and
-public key, before returning a session or encrypting to any stored public key.
+key is insufficient: the engine must verify the method's confirmation over the
+sealed vault secret, then authenticate the existing manifest, whose AAD binds
+the entire sealed platform package and therefore every method and public key,
+before returning a session or encrypting to any stored public key. The manifest
+alone is keyed by the candidate store key, so it cannot show that a credential
+holder chose that key.
 Mutable Keypass verifier updates belong in that authenticated directory and must
 commit before the corresponding unlock is published. The primitive does not
 replace the platform protector, storage transaction or verifier-state CAS.

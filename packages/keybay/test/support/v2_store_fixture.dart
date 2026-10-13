@@ -201,6 +201,7 @@ Future<V2StoreFixture> buildV2StoreFixture({
         ? V2MethodsPackage(
             storeId: ownedStoreId,
             epoch: epoch,
+            sealedVaultSecret: _sequence(0x90, v2SealedVaultSecretBytes),
             methods: [
               V2AuthMethodEnvelope(
                 methodId: _sequence(0x20, V2StoreLimits.methodIdBytes),
@@ -210,6 +211,7 @@ Future<V2StoreFixture> buildV2StoreFixture({
                 salt: _sequence(0x30, V2StoreLimits.argonSaltBytes),
                 publicKey: _sequence(0x40, 32),
                 keyEnvelope: _sequence(0x70, 80),
+                confirmation: _sequence(0x60, v2MethodConfirmationBytes),
               ),
             ],
           )

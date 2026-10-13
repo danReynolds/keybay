@@ -183,6 +183,7 @@ Future<V2AuthMethodEnvelope> _enrollMethod({
   required int epoch,
   required Uint8List storeKey,
   required Uint8List methodId,
+  required Uint8List vaultSecret,
 }) async {
   final request = credential.passkey;
   _checkPasskeyCancelled(credential);
@@ -225,16 +226,24 @@ Future<V2AuthMethodEnvelope> _enrollMethod({
       recordId = result.record.id;
       material = Uint8List.fromList(result.secret);
     }
+    final stable = _methodContext(storeId, methodId, kind, salt, recordId);
     privateKey = await deriveMethodPrivateKey(
       material: material,
       salt: salt,
-      context: _methodContext(storeId, methodId, kind, salt, recordId),
+      context: stable,
+    );
+    final publicKey = await methodPublicKey(privateKey: privateKey);
+    final confirmation = await deriveMethodConfirmation(
+      material: material,
+      salt: salt,
+      context: stable,
+      publicKey: publicKey,
+      vaultSecret: vaultSecret,
     );
     _clear(material);
     material = null;
     result?.dispose();
     result = null;
-    final publicKey = await methodPublicKey(privateKey: privateKey);
     final context = _methodContext(
       storeId,
       methodId,
@@ -277,6 +286,7 @@ Future<V2AuthMethodEnvelope> _enrollMethod({
       profileId: request == null ? v2FirstPassphraseProfile : 0,
       publicKey: publicKey,
       keyEnvelope: envelope,
+      confirmation: confirmation,
       passkeyRecord: recordBytes,
     );
   } finally {
@@ -302,6 +312,7 @@ Future<_UnlockedMethod> _unlockMethod({
   Uint8List? material;
   Uint8List? privateKey;
   Uint8List? storeKey;
+  Uint8List? vaultSecret;
   PasskeyResult? result;
   var updated = method;
   var recordId = '';
@@ -331,19 +342,18 @@ Future<_UnlockedMethod> _unlockMethod({
         Uint8List.fromList(utf8.encode(jsonEncode(result.record.toJson()))),
       );
     }
+    final stable = _methodContext(
+      package.storeId,
+      method.methodId,
+      method.kind,
+      method.salt,
+      recordId,
+    );
     privateKey = await deriveMethodPrivateKey(
       material: material,
       salt: method.salt,
-      context: _methodContext(
-        package.storeId,
-        method.methodId,
-        method.kind,
-        method.salt,
-        recordId,
-      ),
+      context: stable,
     );
-    _clear(material);
-    material = null;
     result?.dispose();
     result = null;
     final publicKey = await methodPublicKey(privateKey: privateKey);
@@ -363,6 +373,34 @@ Future<_UnlockedMethod> _unlockMethod({
         publicKey: publicKey,
       ),
     );
+    // The credential matched and the envelope opened, but anyone holding the
+    // public key could have sealed that store key. Only the credential holder
+    // can confirm the vault secret this store key reveals.
+    try {
+      vaultSecret = await openVaultSecret(
+        storeKey: storeKey,
+        storeId: package.storeId,
+        epoch: package.epoch,
+        sealedVaultSecret: package.sealedVaultSecret,
+      );
+      final expected = await deriveMethodConfirmation(
+        material: material,
+        salt: method.salt,
+        context: stable,
+        publicKey: publicKey,
+        vaultSecret: vaultSecret,
+      );
+      if (!_constantTimeEquals(expected, method.confirmation)) {
+        throw const V2CryptoFailure(V2CryptoFailureCode.authenticationFailed);
+      }
+    } on V2CryptoFailure {
+      throw _error(
+        KeybayErrorCode.storeAuthenticationFailed,
+        'The store was not confirmed by the supplied credential.',
+      );
+    }
+    _clear(material);
+    material = null;
     _checkPasskeyCancelled(credential);
     final opened = _UnlockedMethod(storeKey, updated);
     storeKey = null;
@@ -377,6 +415,7 @@ Future<_UnlockedMethod> _unlockMethod({
     if (material != null) _clear(material);
     if (privateKey != null) _clear(privateKey);
     if (storeKey != null) _clear(storeKey);
+    if (vaultSecret != null) _clear(vaultSecret);
     result?.dispose();
   }
 }
@@ -461,6 +500,43 @@ Future<_PolicyReplacement> _buildAuthReplacement({
         );
       }
   }
+  // The vault secret persists across rotations so existing confirmations stay
+  // valid without their credentials. The first method creates it; removing the
+  // last method discards it with the methods package.
+  final vaultSecret = current is V2MethodsPackage
+      ? await openVaultSecret(
+          storeKey: session._storeKey,
+          storeId: session._storeId,
+          epoch: current.epoch,
+          sealedVaultSecret: current.sealedVaultSecret,
+        )
+      : session._entropy.randomBytes(v2VaultSecretBytes);
+  try {
+    return await _buildAuthReplacementWithSecret(
+      session: session,
+      methods: methods,
+      target: target,
+      change: change,
+      credential: credential,
+      epoch: epoch,
+      storeKey: storeKey,
+      vaultSecret: vaultSecret,
+    );
+  } finally {
+    _clear(vaultSecret);
+  }
+}
+
+Future<_PolicyReplacement> _buildAuthReplacementWithSecret({
+  required V2StoreSession session,
+  required List<V2AuthMethodEnvelope> methods,
+  required V2AuthMethodEnvelope? target,
+  required _AuthChange change,
+  required _CredentialSnapshot? credential,
+  required int epoch,
+  required Uint8List storeKey,
+  required Uint8List vaultSecret,
+}) async {
   final replacements = <V2AuthMethodEnvelope>[];
   AuthMethod? result;
   if (change != _AuthChange.remove) {
@@ -471,6 +547,7 @@ Future<_PolicyReplacement> _buildAuthReplacement({
       epoch: epoch,
       storeKey: storeKey,
       methodId: session._entropy.randomBytes(V2StoreLimits.methodIdBytes),
+      vaultSecret: vaultSecret,
     );
     if (added.kind != V2AuthMethodKind.passphrase) {
       final id = _methodRecord(added).id;
@@ -510,6 +587,13 @@ Future<_PolicyReplacement> _buildAuthReplacement({
       : V2MethodsPackage(
           storeId: session._storeId,
           epoch: epoch,
+          sealedVaultSecret: await sealVaultSecret(
+            storeKey: storeKey,
+            storeId: session._storeId,
+            epoch: epoch,
+            vaultSecret: vaultSecret,
+            nonce: session._entropy.randomBytes(V2StoreLimits.nonceBytes),
+          ),
           methods: replacements,
         );
   return _PolicyReplacement(package, result);

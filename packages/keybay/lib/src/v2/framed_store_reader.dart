@@ -184,6 +184,7 @@ final class V2StoreEngine {
                     replacement = V2MethodsPackage(
                       storeId: storeId!,
                       epoch: package.epoch,
+                      sealedVaultSecret: package.sealedVaultSecret,
                       methods: [
                         for (final method in package.methods)
                           identical(method, selected) ? opened.method : method,
