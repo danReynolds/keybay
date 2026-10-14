@@ -122,7 +122,9 @@ Critical and High findings block the next release.
 ## Verifying releases
 
 SDK (`v*`) and CLI (`keybay_cli-v*`) tags are signed with the maintainer's
-release SSH key:
+release SSH key. The exception is 0.3.0: `v0.3.0` and `keybay_cli-v0.3.0` were
+published unsigned, so the checks below fail for them and the release audits
+report it. Releases after 0.3.0 will be signed again.
 
 ```text
 me@danreynolds.ca ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDtnuwBbMwdKZu2YlUnDdhW7t0bp7JlCjUZR8/JOQae6
