@@ -27,7 +27,7 @@ keybay open
 ```
 
 Update with `brew update` and `brew upgrade keybay`.
-[Release 0.2.0 archives](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.2.0)
+[Release 0.3.0 archives](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.3.0)
 need no Dart SDK. Keep the entire extracted directory: launch `./keybay` on
 macOS or `./bin/keybay` on Linux. Companion files are required.
 
