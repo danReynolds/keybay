@@ -1,4 +1,5 @@
-/// Credential-derived method keys and fixed-suite, single-shot RFC 9180 HPKE.
+/// Credential-derived method keys and confirmations, and fixed-suite,
+/// single-shot RFC 9180 HPKE.
 ///
 /// The store authenticates the complete method directory before trusting any
 /// recipient public key. HPKE base mode alone does not authenticate a sender.

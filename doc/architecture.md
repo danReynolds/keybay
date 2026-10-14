@@ -61,7 +61,7 @@ application identity + host profile   (fixed by the OS or the owning pubspec)
 | Piece | Location | Contents |
 | --- | --- | --- |
 | Platform root | The platform's key store, at a location derived from the application identity | A random 32-byte key (Keychain, Secret Service), a key derived from the portal's per-app secret (Flatpak), or a non-exportable Keystore key (Android). Nothing else. |
-| Bootstrap | Start of the vault file, unencrypted | The format version and the lengths needed to parse the rest. It cannot select a path, provider or application. |
+| Bootstrap | Start of the vault file, unencrypted | The format version, the lengths needed to parse the rest, and opaque state for the already-selected platform protector. It cannot select a path, provider or application. |
 | Key package | Vault file, sealed by the platform root | The vault's protection policy and the routes to its store key. |
 | Record frames | Vault file | Each record's value, encrypted separately with XChaCha20-Poly1305. |
 | Manifest | End of the vault file, encrypted | Record names, frame lengths and digests. It also authenticates the bootstrap and the whole key package. |
@@ -110,7 +110,8 @@ Without a credential (`Keybay.open()`):
    can show OS or provider UI.
 2. Unseal the key package. A platform-only package yields the store key; a
    package with methods returns `authRequired` with the method list.
-3. Authenticate the manifest with the store key, then return a session.
+3. Return a session. Its first read or write authenticates the manifest; open
+   checks it only when it must clean up abandoned staging.
 
 With a credential (`Keybay.open(credential: ...)`):
 
@@ -158,7 +159,8 @@ update or replace. Each one:
 3. generates a fresh store key and epoch;
 4. re-encrypts `S` and every record frame under the new store key, and wraps
    the new store key to each remaining method's public key;
-5. commits the new file atomically, invalidating other open sessions.
+5. commits the new file atomically. This engine's other sessions become stale;
+   sessions in other processes fail authentication on their next operation.
 
 Remaining methods are never asked for their credentials: their envelopes are
 rebuilt from public keys, and their confirmations do not depend on the store key.

@@ -23,7 +23,8 @@ Version 0.3.0 includes this cleanup, confirms the vault on every method unlock
 (methods policy 3), and fixes underlined input borders in the CLI. The minor
 version marks both format changes: 0.2.0 vaults with a passphrase or passkey
 fail closed and need their methods removed before upgrading and added back
-after; platform-only vaults are unaffected. Use the
+after; platform-only vaults are unaffected. Policy 3 has unit, adversarial and
+vector coverage; it has no renewed device or hardware-key qualification. Use the
 [review guide](external-review.md) for published commit/archive baselines.
 
 ## Release status

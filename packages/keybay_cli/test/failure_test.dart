@@ -87,6 +87,11 @@ void main() {
     expect(failure.lines.first, contains('nothing was changed'));
     expect(failure.lines.last, contains('Settings > Security'));
     expect(failure.lines.join('\n'), isNot(contains('secret-sentinel')));
+
+    // The message promises nothing was changed.
+    final after = (await store.files.openPinnedLive())!;
+    expect(await after.readExact(offset: 0, length: after.length), bytes);
+    await after.close();
   });
 
   test('closed sessions receive non-sensitive recovery guidance', () async {

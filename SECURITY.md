@@ -18,8 +18,8 @@ keys and is wrapped by the platform-protected key package.
 | --- | --- | --- | --- |
 | iOS | Data Protection Keychain, exact signed group | App-bound | Other apps cannot read values |
 | Android 12+ | Non-exportable Android Keystore key | App-bound | Other apps cannot read values |
-| Entitled macOS | Data Protection Keychain, exact signed group | App-bound key | Other apps cannot read values; file isolation needs App Sandbox |
-| Unentitled macOS / CLI | Explicit login-Keychain item | Account-level | Programs running as you can use the CLI to read every value |
+| Entitled macOS | Data Protection Keychain, exact signed group | App-bound | Other apps cannot read values; file isolation needs App Sandbox |
+| Unentitled macOS / CLI | Explicit login-Keychain item | Account-level | Programs running as you can read every value by running the app or CLI |
 | Ordinary Linux desktop | Secret Service item | Account-level | Programs running as you can read every value |
 
 [Security levels by platform](doc/security-levels.md) gives the full exposure

@@ -312,7 +312,6 @@ Future<_UnlockedMethod> _unlockMethod({
   Uint8List? material;
   Uint8List? privateKey;
   Uint8List? storeKey;
-  Uint8List? vaultSecret;
   PasskeyResult? result;
   var updated = method;
   var recordId = '';
@@ -376,6 +375,7 @@ Future<_UnlockedMethod> _unlockMethod({
     // The credential matched and the envelope opened, but anyone holding the
     // public key could have sealed that store key. Only the credential holder
     // can confirm the vault secret this store key reveals.
+    Uint8List? vaultSecret;
     Uint8List? expected;
     try {
       vaultSecret = await openVaultSecret(
@@ -400,6 +400,7 @@ Future<_UnlockedMethod> _unlockMethod({
         'The store was not confirmed by the supplied credential.',
       );
     } finally {
+      if (vaultSecret != null) _clear(vaultSecret);
       // On a forged vault this is the MAC its builder would need.
       if (expected != null) _clear(expected);
     }
@@ -419,7 +420,6 @@ Future<_UnlockedMethod> _unlockMethod({
     if (material != null) _clear(material);
     if (privateKey != null) _clear(privateKey);
     if (storeKey != null) _clear(storeKey);
-    if (vaultSecret != null) _clear(vaultSecret);
     result?.dispose();
   }
 }

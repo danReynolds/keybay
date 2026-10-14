@@ -70,7 +70,7 @@ CliFailure failureForKeybay(KeybayException error) {
     ],
     KeybayErrorCode.unsupportedStoreVersion => <String>[
       'error: this vault uses a store format this Keybay version cannot open; nothing was changed.',
-      'If Keybay 0.2.0 protected it, remove its passphrase and keys there (keybay open > Settings > Security), upgrade, then add them back.',
+      'If Keybay 0.2.0 protected it, reinstall 0.2.0 (GitHub release keybay_cli-v0.2.0), remove its passphrase and keys in keybay open > Settings > Security, then upgrade again and add them back.',
     ],
     KeybayErrorCode.storeAuthenticationFailed ||
     KeybayErrorCode.storeStateConflict => <String>[
