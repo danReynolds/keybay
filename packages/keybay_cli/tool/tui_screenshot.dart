@@ -1,23 +1,26 @@
 // Documentation screenshots: renders the real TUI and model, with an in-memory
 // demo store, to SVG. Never used by the production CLI or release artifacts.
 //
-//   dart run tool/tui_screenshot.dart vault ../../assets/tui-vault.svg
-//   dart run tool/tui_screenshot.dart unlock ../../assets/tui-unlock.svg
-//   dart run tool/tui_screenshot.dart security ../../assets/tui-security.svg
+//   dart run tool/tui_screenshot.dart tour ../../assets/tui-tour.svg
+//   dart run tool/tui_screenshot.dart vault build/tui-vault.svg
+//
+// `tour` scripts keys through unlock, search, reveal and Settings, and emits an
+// SVG whose frames a CSS animation steps through. Viewers that prefer reduced
+// motion see the vault frame alone.
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:fleury/fleury_core.dart';
 import 'package:fleury/fleury_test_support.dart';
 import 'package:keybay/keybay.dart';
-import 'package:keybay_cli/src/tui/model.dart';
 import 'package:keybay_cli/src/tui/native_model.dart';
 import 'package:keybay_cli/src/tui/screen.dart';
 
 import '../../keybay/test/support/v2_test_keybay.dart';
 
-const _size = CellSize(88, 24);
-const _scenes = {'vault', 'unlock', 'security'};
+// The TUI's smallest wide layout keeps text as large as possible when scaled.
+const _size = CellSize(80, 22);
+const _scenes = {'vault', 'tour'};
 const _phrase = 'demo passphrase';
 
 const _records = {
@@ -37,6 +40,8 @@ const _records = {
   'webhook/signing-secret': 'whsec_demo_not_a_real_secret',
 };
 
+typedef _Frame = ({CellBuffer buffer, double seconds, bool poster});
+
 Future<void> main(List<String> arguments) async {
   if (arguments.length != 2 || !_scenes.contains(arguments[0])) {
     stderr.writeln(
@@ -51,23 +56,38 @@ Future<void> main(List<String> arguments) async {
   for (final entry in _records.entries) {
     await seed.set(entry.key, entry.value);
   }
-  if (scene != 'vault') {
+  if (scene == 'tour') {
     await seed.auth.add(PassphraseCredential(phrase: utf8.encode(_phrase)));
   }
   await seed.close();
 
+  // The production idle timeout, so Settings shows what users see.
   final model = createNativeTuiModel(
     openSession: store.open,
     resetStore: store.reset,
     authorize: () {},
     copyText: (_) async {},
     onExit: () {},
-    idleTimeout: null,
   );
   final tester = FleuryTester(
     viewportSize: _size,
     animationPolicy: AnimationPolicy.disabled,
   );
+  final frames = <_Frame>[];
+  Future<void> capture(double seconds, {bool poster = false}) async {
+    await tester.settle();
+    frames.add((
+      buffer: tester.render(size: _size),
+      seconds: seconds,
+      poster: poster,
+    ));
+  }
+
+  Future<void> press(KeyCode code) async {
+    tester.sendKey(KeyEvent(code));
+    await tester.settle();
+  }
+
   try {
     tester.pumpWidget(KeybayTui(model: model));
     await model.open();
@@ -75,17 +95,36 @@ Future<void> main(List<String> arguments) async {
     switch (scene) {
       case 'vault':
         // Move the selection off the first row so the highlight reads clearly.
-        tester.sendKey(const KeyEvent(KeyCode.arrowDown));
-      case 'security':
-        tester.type(_phrase);
-        tester.sendKey(const KeyEvent(KeyCode.enter));
-        await tester.settle();
-        tester.sendKey(const KeyEvent(KeyCode.s));
-        await tester.settle();
-        model.navigate(TuiView.security);
+        await press(KeyCode.arrowDown);
+        await capture(0);
+      case 'tour':
+        await capture(0.8);
+        for (final chunk in ['demo', ' pas', 'sphr', 'ase']) {
+          tester.type(chunk);
+          await capture(0.3);
+        }
+        await press(KeyCode.enter);
+        await press(KeyCode.arrowDown);
+        await capture(2.4, poster: true);
+        await press(KeyCode.char('/'));
+        await capture(0.4);
+        for (final letter in ['a', 'w', 's']) {
+          tester.type(letter);
+          await capture(letter == 's' ? 1.1 : 0.3);
+        }
+        await press(KeyCode.arrowDown);
+        await press(KeyCode.arrowDown);
+        await capture(0.6);
+        await press(KeyCode.char(' '));
+        await capture(2.6);
+        await press(KeyCode.s);
+        await capture(2.2);
     }
-    await tester.settle();
-    File(arguments[1]).writeAsStringSync(_svg(tester.render(size: _size)));
+    final out = File(arguments[1]);
+    out.writeAsStringSync(_svg(frames));
+    stdout.writeln(
+      'wrote ${out.path}: ${frames.length} frame(s), ${out.lengthSync()} bytes',
+    );
   } finally {
     tester.dispose();
     await model.close();
@@ -136,15 +175,49 @@ const _boxArms = {
   '┬': 'lrd', '┴': 'lru', '┼': 'lrud',
 };
 
-String _svg(CellBuffer buffer) {
-  final width = buffer.size.cols * _cellWidth + 2 * _padding;
-  final height = buffer.size.rows * _cellHeight + 2 * _padding + _titleBar;
+String _svg(List<_Frame> captured) {
+  // Start the loop on the poster, so viewers that show only the first frame,
+  // such as link previews, still get the vault.
+  final poster = captured.indexWhere((frame) => frame.poster);
+  final frames = poster <= 0
+      ? captured
+      : [...captured.skip(poster), ...captured.take(poster)];
+  final width = _size.cols * _cellWidth + 2 * _padding;
+  final height = _size.rows * _cellHeight + 2 * _padding + _titleBar;
+  final animated = frames.length > 1;
+  final total = frames.fold(0.0, (sum, frame) => sum + frame.seconds);
   final out = StringBuffer()
     ..writeln(
       '<svg xmlns="http://www.w3.org/2000/svg" width="${width.round()}" '
       'height="${height.round()}" viewBox="0 0 $width $height" '
       'role="img" aria-label="Keybay terminal interface">',
-    )
+    );
+  if (animated) {
+    // step-end holds each keyframe's opacity until the next, so exactly one
+    // frame is visible at a time. The poster shows wherever animation is off.
+    out
+      ..writeln('<style>')
+      ..writeln(
+        '.f{opacity:0;animation:${total.toStringAsFixed(1)}s step-end infinite}'
+        '.poster{opacity:1}',
+      );
+    var start = 0.0;
+    for (final (index, frame) in frames.indexed) {
+      final from = _percent(start / total);
+      final to = _percent((start + frame.seconds) / total);
+      final keyframes = start == 0
+          ? '0%{opacity:1}$to%{opacity:0}'
+          : '0%{opacity:0}$from%{opacity:1}$to%{opacity:0}';
+      out.writeln(
+        '@keyframes f$index{$keyframes}.f$index{animation-name:f$index}',
+      );
+      start += frame.seconds;
+    }
+    out
+      ..writeln('@media (prefers-reduced-motion:reduce){.f{animation:none}}')
+      ..writeln('</style>');
+  }
+  out
     ..writeln(
       '<rect width="$width" height="$height" rx="10" '
       'fill="$_defaultBackground"/>',
@@ -152,14 +225,63 @@ String _svg(CellBuffer buffer) {
     ..writeln(
       '<circle cx="20" cy="15" r="6" fill="#ff5f56"/>'
       '<circle cx="40" cy="15" r="6" fill="#ffbd2e"/>'
-      '<circle cx="60" cy="15" r="6" fill="#27c93f"/>',
-    )
-    ..writeln(
-      '<g font-family="SF Mono, Menlo, Consolas, DejaVu Sans Mono, monospace" '
-      'font-size="14" xml:space="preserve">',
+      '<circle cx="60" cy="15" r="6" fill="#27c93f"/>'
+      '<text x="${width / 2}" y="19" text-anchor="middle" fill="#8b949e" '
+      'font-family="SF Mono, Menlo, Consolas, DejaVu Sans Mono, monospace" '
+      'font-size="12">keybay open</text>',
     );
+  for (final (index, frame) in frames.indexed) {
+    final classes = [
+      if (animated) ...['f', 'f$index'],
+      if (animated && frame.poster) 'poster',
+    ];
+    out
+      ..write(
+        '<g font-family="SF Mono, Menlo, Consolas, DejaVu Sans Mono, '
+        'monospace" font-size="14" xml:space="preserve"',
+      )
+      ..write(classes.isEmpty ? '' : ' class="${classes.join(' ')}"')
+      ..writeln('>')
+      ..write(_cells(frame.buffer))
+      ..writeln('</g>');
+  }
+  out.writeln('</svg>');
+  return out.toString();
+}
+
+String _percent(double fraction) =>
+    (fraction * 100).toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
+
+typedef _Word = ({List<double> xs, StringBuffer text, String attributes});
+
+/// One frame's cells. Adjacent cells sharing a style become one element: a
+/// rect per background run, one path per border color, and a text element per
+/// word with an explicit x for every glyph, so alignment never depends on the
+/// viewer's font.
+String _cells(CellBuffer buffer) {
+  final out = StringBuffer();
+  final strokes = <String, StringBuffer>{};
   for (var row = 0; row < buffer.size.rows; row++) {
     final y = _padding + _titleBar + row * _cellHeight;
+    final textY = y + _cellHeight * 0.72;
+    ({double start, double end, String fill})? run;
+    _Word? word;
+    final words = <_Word>[];
+    void endRun() {
+      if (run case (:final start, :final end, :final fill)) {
+        out.writeln(
+          '<rect x="$start" y="$y" width="${end - start + 0.5}" '
+          'height="${_cellHeight + 0.5}" fill="$fill"/>',
+        );
+      }
+      run = null;
+    }
+
+    void endWord() {
+      if (word != null) words.add(word!);
+      word = null;
+    }
+
     for (var col = 0; col < buffer.size.cols; col++) {
       final cell = buffer.atColRow(col, row);
       if (cell.role == CellRole.continuation) continue;
@@ -172,51 +294,60 @@ String _svg(CellBuffer buffer) {
       final wide =
           col + 1 < buffer.size.cols &&
           buffer.atColRow(col + 1, row).role == CellRole.continuation;
-      final cellWidth = _cellWidth * (wide ? 2 : 1);
-      if (background != _defaultBackground) {
-        out.writeln(_rect(x, y, cellWidth, background));
-      }
+      final end = x + _cellWidth * (wide ? 2 : 1);
       final glyph = cell.role == CellRole.leading ? cell.grapheme : null;
-      if (glyph == null || glyph.trim().isEmpty) continue;
-      if (glyph == '█') {
-        out.writeln(_rect(x, y, cellWidth, foreground));
+
+      final fill = glyph == '█'
+          ? foreground
+          : background == _defaultBackground
+          ? null
+          : background;
+      if (fill != run?.fill) endRun();
+      if (fill != null) run = (start: run?.start ?? x, end: end, fill: fill);
+
+      if (glyph == null || glyph.trim().isEmpty || glyph == '█') {
+        endWord();
         continue;
       }
       if (_boxArms[glyph] case final arms?) {
-        final cx = x + cellWidth / 2;
+        endWord();
+        final cx = (x + end) / 2;
         final cy = y + _cellHeight / 2;
-        final path = [
-          if (arms.contains('l')) 'M$cx ${cy}H$x',
-          if (arms.contains('r')) 'M$cx ${cy}H${x + cellWidth}',
-          if (arms.contains('u')) 'M$cx ${cy}V$y',
-          if (arms.contains('d')) 'M$cx ${cy}V${y + _cellHeight}',
-        ].join();
-        out.writeln(
-          '<path d="$path" stroke="$foreground" stroke-width="1.5" '
-          'stroke-linecap="square" fill="none"/>',
-        );
+        final path = strokes.putIfAbsent(foreground, StringBuffer.new);
+        if (arms.contains('l')) path.write('M$cx ${cy}H$x');
+        if (arms.contains('r')) path.write('M$cx ${cy}H$end');
+        if (arms.contains('u')) path.write('M$cx ${cy}V$y');
+        if (arms.contains('d')) path.write('M$cx ${cy}V${y + _cellHeight}');
         continue;
       }
       final attributes = [
-        'x="$x"',
-        'y="${y + _cellHeight * 0.72}"',
         'fill="$foreground"',
         if (style.bold) 'font-weight="bold"',
         if (style.italic) 'font-style="italic"',
         if (style.underline) 'text-decoration="underline"',
       ].join(' ');
-      out.writeln('<text $attributes>${_escape(glyph)}</text>');
+      if (attributes != word?.attributes) endWord();
+      word ??= (xs: [], text: StringBuffer(), attributes: attributes);
+      word!.xs.add(x);
+      word!.text.write(glyph);
+    }
+    endRun();
+    endWord();
+    for (final (:xs, :text, :attributes) in words) {
+      out.writeln(
+        '<text x="${xs.join(' ')}" y="$textY" $attributes>'
+        '${_escape(text.toString())}</text>',
+      );
     }
   }
-  out
-    ..writeln('</g>')
-    ..writeln('</svg>');
+  for (final MapEntry(key: color, value: path) in strokes.entries) {
+    out.writeln(
+      '<path d="$path" stroke="$color" stroke-width="1.5" '
+      'stroke-linecap="square" fill="none"/>',
+    );
+  }
   return out.toString();
 }
-
-String _rect(double x, double y, double width, String fill) =>
-    '<rect x="$x" y="$y" width="${width + 0.5}" height="${_cellHeight + 0.5}" '
-    'fill="$fill"/>';
 
 String _escape(String text) => text
     .replaceAll('&', '&amp;')

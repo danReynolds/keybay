@@ -6,18 +6,17 @@
 
 <p align="center">
   <strong>Keep secrets out of Git.</strong><br>
-  An encrypted local vault for the terminal and for Dart and Flutter apps,<br>
-  protected by your operating system's key store. No account, server or daemon.
+  Commit <code>kb://</code> references instead of API keys. <code>keybay run</code> injects the real values from an encrypted local vault on macOS and Linux.
 </p>
 
 <p align="center">
   <a href="https://pub.dev/packages/keybay"><img src="https://img.shields.io/pub/v/keybay?label=pub.dev" alt="Keybay on pub.dev"></a>
-  <a href="https://github.com/danReynolds/homebrew-tap"><img src="https://img.shields.io/badge/homebrew-danReynolds%2Ftap%2Fkeybay-fbb040" alt="Homebrew tap"></a>
+  <a href="https://github.com/danReynolds/keybay/actions/workflows/ci.yml"><img src="https://github.com/danReynolds/keybay/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 
 <p align="center">
-  <img src="assets/tui-vault.svg" alt="The Keybay terminal UI listing fourteen masked secrets" width="780">
+  <a href="https://danreynolds.github.io/keybay/demo/"><img src="assets/tui-tour.svg" alt="The Keybay terminal UI: searching fourteen masked secrets, revealing one, opening security settings, and unlocking with a passphrase" width="704"></a>
 </p>
 
 <p align="center">
@@ -27,110 +26,115 @@
   <a href="doc/security-levels.md">Security levels</a>
 </p>
 
-Keybay keeps API keys, tokens and passwords in one encrypted file per
-application. The operating system's key store holds the key, so the vault file
-reveals nothing on its own, and you can require a passphrase or hardware
-security key on top. Use the CLI to commit `kb://` references instead of
-secrets, or the Dart SDK as a secure key-value store in your app.
+```sh
+keybay set my-app/openai-api-key   # prompts for the value, stores it encrypted
+# In .env, replace the plaintext value with a reference that's safe to commit:
+#   OPENAI_API_KEY=kb://my-app/openai-api-key
+keybay run -- npm start            # npm sees the real value
+```
 
-- **Secrets out of your repository.** Commit references in `.env`.
-  `keybay run` resolves them and launches your command with ordinary
-  environment variables, so it works with any language.
-- **A terminal UI for your vault.** `keybay open` lets you search, reveal,
-  copy, edit and add protection from the keyboard.
-- **OS-backed encryption.** The vault key is sealed by the Keychain on Apple
-  platforms, Android Keystore, or the Secret Service keyring on Linux.
-- **Passphrases and hardware keys.** Add a passphrase, FIDO2 security keys such
-  as a YubiKey, or system passkeys. Any one unlocks the vault, and the platform
-  key is always required as well.
-- **One Dart API on four platforms.** iOS, Android, macOS and Linux, from Flutter
-  or plain Dart, with no Flutter dependency.
+A gitignored `.env` is still plaintext on disk, where backups, sync folders and
+every tool that reads your project directory can see each key. Keybay keeps the
+values encrypted under a key held by the Keychain on macOS or the Secret Service
+keyring on Linux. On its own, that protects copies of the vault file, but not
+your secrets from other programs running as you. Add a passphrase or a hardware
+key such as a YubiKey, and that key alone is no longer enough.
+
+- **Works with any stack.** Your app reads ordinary environment variables and
+  needs no Keybay library.
+- **A terminal UI for your vault.** Use `keybay open` to search, reveal, copy,
+  edit and add a passphrase or hardware key.
 - **Local only.** No account, sync, network access or background process.
-  Keybay fails closed rather than falling back to weaker storage.
+  Keybay refuses to run rather than fall back to weaker storage.
+- **Dart and Flutter SDK.** An encrypted vault for each app on iOS, Android,
+  macOS and Linux.
 
 ## Install
 
-| For | Install with |
-| --- | --- |
-| CLI on macOS (Apple silicon) or Linux (x64, ARM64) | `brew install danReynolds/tap/keybay` |
-| CLI without Homebrew | [Release archives](https://github.com/danReynolds/keybay/releases/latest), no Dart SDK needed |
-| Dart or Flutter app | `dart pub add keybay` or `flutter pub add keybay` |
-
-The Linux CLI needs glibc 2.35+ and an unlocked Secret Service provider, such
-as GNOME Keyring or KWallet. The SDK needs Dart 3.11+.
-
-## CLI quick start
-
-Save a secret. Input is hidden and never reaches your shell history:
-
 ```sh
-keybay set my-app/openai-api-key
+brew install danReynolds/tap/keybay
 ```
 
-Reference it from `.env`, which is now safe to commit:
+Homebrew works on macOS (Apple silicon) and Linux (x64, arm64). You can also
+download a [release archive](https://github.com/danReynolds/keybay/releases/latest)
+and follow the [install guide](packages/keybay_cli/README.md#install), or add
+the SDK to a Dart or Flutter app with `dart pub add keybay`.
 
-```dotenv
-API_URL=https://staging.example.com
-OPENAI_API_KEY=kb://my-app/openai-api-key
-```
+On Linux, the CLI needs glibc 2.35+ and an unlocked Secret Service provider,
+such as GNOME Keyring or KWallet.
 
-Run your app with the secret injected:
+> [!NOTE]
+> Keybay is pre-1.0, so APIs and the vault format may change between minor
+> versions. Upgrading a 0.2.0 vault that has a passphrase or hardware key?
+> Follow the upgrade steps for the [CLI](packages/keybay_cli/README.md#install)
+> or the [SDK](packages/keybay/CHANGELOG.md#030) first.
 
-```sh
-keybay run -- npm start
-```
+## Using the CLI
 
-Keybay resolves every reference before anything launches, then replaces itself
-with your command. The child process sees plain environment variables and
-needs no Keybay library. If a reference is missing, nothing launches and Keybay
-says how to fix it:
+Before launching, `keybay run` shows what it will run and which key each
+variable reads, never the values. Then it replaces itself with your command:
 
-```console
-$ keybay run -- npm start
+```text
+$ keybay run -- ./app.sh
 warning: platform protection only; no additional credential is configured.
-error: 1 of 1 reference in "./.env" is not set on this machine:
-
-  keybay set my-app/openai-api-key
-
-Nothing was launched.
+Run: "/Users/you/my-app/app.sh"
+Manifest: "./.env"
+Environment:
+  API_URL (literal)
+  OPENAI_API_KEY <- my-app/openai-api-key
 ```
+
+The warning means no passphrase or hardware key is set, so any program running
+as you could read these values too. Add one in `keybay open` → Settings.
+
+If a reference has no value, nothing launches and Keybay prints the
+`keybay set` command that fixes it.
+
+The command and anything it starts receive the secrets as ordinary environment
+variables, so run only commands and `.env` files you trust.
 
 | Command | What it does |
 | --- | --- |
 | `keybay open` | Open the interactive vault. |
-| `keybay set KEY` | Save a value from hidden input, or from a pipe with `--stdin`. |
-| `keybay run [-f FILE] -- COMMAND` | Launch a command with the manifest's references resolved. |
+| `keybay set [--stdin] KEY` | Save a value from hidden input, or from a pipe with `--stdin`. |
+| `keybay run [-f FILE] -- COMMAND` | Launch a command with `.env` references resolved. |
 | `keybay get KEY` | Print one value to your terminal. Pipes and redirects are refused. |
 | `keybay list` | List key names. |
 | `keybay rm KEY` | Delete a key. |
 
-Moving a secret from another tool works without it ever appearing on screen:
+To migrate an existing `.env`, `keybay set` each secret, then replace its value
+with a `kb://` reference. Secrets from another tool can be piped in without
+appearing on screen:
 
 ```sh
 op read 'op://Engineering/OpenAI/credential' | keybay set --stdin my-app/openai-api-key
 ```
 
+Prefixes like `my-app/` organize your keys; every project shares the same CLI
+vault. Keybay reads `./.env` from the current directory, or another file with
+`-f`. Lines are plain `NAME=VALUE`, with no quotes, `export` or inline
+comments: `KEY="kb://…"` would pass the quotes and reference through as literal
+text. Values that aren't `kb://` references stay plaintext. See the
+[manifest format](packages/keybay_cli/README.md#manifest).
+
 ## The terminal UI
 
-`keybay open` is a keyboard-driven vault. Search names with `/`, reveal one
-value with Space, copy with `c`, and create, edit or delete with `n`, `e` and
-`d`. Values stay masked until you ask, and resizing the terminal or switching
-away hides them again. Settings (`s`) is where you add or remove a passphrase
-and hardware keys, clear or reset the vault, and pick an accent color.
+`keybay open` is a keyboard-driven vault for browsing, editing and protecting
+your secrets:
 
-<table>
-  <tr>
-    <td width="50%"><img src="assets/tui-unlock.svg" alt="Unlocking a passphrase-protected vault in the Keybay terminal UI"></td>
-    <td width="50%"><img src="assets/tui-security.svg" alt="Keybay Settings showing the passphrase enabled and an option to add a hardware key"></td>
-  </tr>
-  <tr>
-    <td align="center">Unlock with a passphrase or hardware key</td>
-    <td align="center">Manage protection in Settings</td>
-  </tr>
-</table>
+<kbd>/</kbd> search · <kbd>Space</kbd> reveal · <kbd>c</kbd> copy ·
+<kbd>n</kbd> <kbd>e</kbd> <kbd>d</kbd> new, edit, delete ·
+<kbd>s</kbd> settings · <kbd>q</kbd> quit
+
+Settings is where you add or remove a passphrase and hardware keys, clear or
+reset the vault, and pick an accent color. Values stay masked until you reveal
+one, and hide again when the terminal resizes or, in terminals that report it,
+loses focus. The vault closes after five minutes without input. Copied values go
+to the system clipboard, where clipboard managers may keep them; on Linux,
+copying needs `wl-copy` or `xclip`.
 
 The [browser demo](https://danreynolds.github.io/keybay/demo/) runs the same
-interface against fake records, so you can try it before installing.
+interface against fake records.
 
 ## Dart and Flutter
 
@@ -146,94 +150,115 @@ try {
 }
 ```
 
-Each application gets its own vault, tied to its platform identity. Reading
-and writing never prompt. To require a passphrase or passkey, enroll it from an
-open session:
+Reading and writing never prompt. To require a passphrase, enroll it from an
+open session before writing values that should need it:
 
 ```dart
-final passphrase = PassphraseCredential(phrase: utf8.encode(input)); // dart:convert
-await session.auth.add(passphrase);
+await session.auth.add(PassphraseCredential(phrase: enteredBytes));
 ```
 
-From then on, open the vault with that credential:
+Later, open the vault with the passphrase the user enters:
+`Keybay.open(credential: PassphraseCredential(phrase: enteredBytes))`.
+Hardware keys and system passkeys work the same way through
+`PasskeyCredential.hardware(...)` and `PasskeyCredential.system(...)`.
 
-```dart
-final session = await Keybay.open(credential: passphrase);
-```
-
-Hardware keys use `PasskeyCredential.hardware(...)` and platform passkeys use
-`PasskeyCredential.system(...)`, through the same two calls. Plain Dart
-executables on macOS and Linux declare an application ID in `pubspec.yaml` and
-compile with `dart run keybay:keybay_compile`. The [SDK guide](doc/sdk.md)
-covers native setup, errors and recovery, and
-[Keybay Demo](apps/keybay_demo/README.md) is a small Flutter app built on the
-SDK for iOS, Android and macOS.
+The [SDK guide](doc/sdk.md) covers native setup for each platform, including
+the application ID and build tools that desktop Dart programs need, plus errors
+and recovery. [Keybay Demo](apps/keybay_demo/README.md) is a small Flutter app
+built on the SDK.
 
 ## Supported platforms
 
-| Platform | Dart SDK | CLI | Platform key held by | Security class |
-| --- | :---: | :---: | --- | --- |
-| iOS | ✓ | | Data Protection Keychain | App-bound |
-| Android 12+ | ✓ | | Android Keystore | App-bound |
-| macOS app with a Keychain entitlement | ✓ | | Data Protection Keychain | App-bound |
-| macOS, unentitled app or executable | ✓ | ✓ Apple silicon | Login Keychain | Account-level |
-| Linux desktop | ✓ | ✓ x64, ARM64 | Secret Service: GNOME Keyring or KWallet | Account-level |
-| Flatpak | Candidate | | XDG Secret Portal | App-bound against other sandboxed apps |
+| Platform | CLI | Key store | Security class |
+| --- | :---: | --- | --- |
+| iOS | | Keychain | App-bound |
+| Android 12+ | | Android Keystore | App-bound |
+| macOS app with Keychain entitlement | | Keychain | App-bound |
+| macOS CLI and unentitled apps | ✓ arm64 | Login Keychain | Account-level |
+| Linux desktop | ✓ x64, arm64 | Secret Service | Account-level |
 
-Windows and Snap are not supported; Keybay refuses to open rather than fall
-back to weaker storage.
+The Dart SDK runs on all of these.
 
-- **App-bound:** the operating system checks the requesting app's signature or
-  package and gives the key to your app alone.
-- **Account-level:** programs running as you can reach the key: on macOS once
-  you approve a Keychain prompt or by running the app itself, and on Linux
-  silently. Add a passphrase or hardware key when that should not be enough.
+- **App-bound:** the OS checks the requesting app's signature, package or
+  sandbox ID and refuses other apps, even ones running as you.
+- **Account-level:** any program running as you can reach your secrets. On
+  Linux it reads the keyring silently. On macOS it can run the app itself, or
+  `keybay list` and `keybay run`, with no prompt. A passphrase or hardware key
+  closes that gap.
 
-[Security levels by platform](doc/security-levels.md) spells out who can read
-your secrets on each platform, with and without a passphrase or passkey.
+Windows and Snap aren't supported; Flatpak support is implemented but not yet
+qualified. [Security levels by platform](doc/security-levels.md) spells out who
+can read your secrets on each platform.
 
 ## Security model
 
 Two layers protect every vault:
 
-1. **The platform key, always.** The OS key store holds the key that seals the
+1. **The platform key, always.** A key held by the OS key store seals the
    vault, so a copy of the file reveals nothing and other user accounts are
    kept out.
-2. **Methods, optionally.** A passphrase (stretched with Argon2id), a FIDO2
-   hardware key or a system passkey. With one enrolled, opening the vault needs
-   the platform key *and* one method.
+2. **A passphrase or passkey, optionally.** A passphrase (stretched with
+   Argon2id), a FIDO2 hardware key or a system passkey. With one enrolled,
+   opening the vault needs the platform key *and* one of them, so the platform
+   key alone is no longer enough.
 
-The vault is encrypted with XChaCha20-Poly1305. Each method also confirms the
-vault it opens, so someone holding only the platform key cannot substitute a
-vault that your passphrase or passkey would accept. Keybay 0.3.0 added that
-check ([GHSA-2cm6-3f6q-5jqc](https://github.com/danReynolds/keybay/security/advisories/GHSA-2cm6-3f6q-5jqc)).
+The vault is encrypted with XChaCha20-Poly1305. Each passphrase or passkey also
+confirms the vault it opens, so someone holding only the platform key can't
+substitute a vault of their own that yours would open. That check arrived in
+0.3.0 ([GHSA-2cm6-3f6q-5jqc](https://github.com/danReynolds/keybay/security/advisories/GHSA-2cm6-3f6q-5jqc)).
+If a credential is compromised, see
+[what to do](doc/security-levels.md#after-a-credential-is-compromised).
 
-Administrator or root access, malware running inside your app or reading your
-keystrokes, and whatever a launched process does with the secrets it receives
-are out of scope. Read more:
+Out of scope:
+
+- administrator or root access, code running inside your app, keyloggers and
+  screen capture, and a modified Keybay binary;
+- deleting, replacing or rolling back the vault file. On account-level
+  platforms, a replacement vault with no passphrase opens without asking for
+  one, so notice if your passphrase prompt disappears;
+- what a launched process or a clipboard manager does with a secret once it has
+  it.
+
+Further reading:
 
 - [Architecture](doc/architecture.md): how the vault, its keys and protection
   changes work.
 - [Security design](doc/design.md): the threat model and numbered invariants.
-- [Security policy](SECURITY.md): guarantees, limitations and how to report a
-  vulnerability privately.
+- [Security policy](SECURITY.md): guarantees, limitations and private
+  vulnerability reporting.
 - [Verifying a CLI download](packages/keybay_cli/README.md#verify-a-release-download).
 
-## When to use something else
+## How it compares
+
+- **vs. 1Password CLI:** no account or subscription, but no team sharing
+  either.
+- **vs. dotenvx:** no decryption key to distribute, but the vault can't travel
+  with the repository.
+- **vs. envchain:** also keychain-backed, but secrets are referenced from a
+  `.env` you commit rather than grouped by namespace.
+- **vs. flutter_secure_storage:** an optional passphrase or FIDO2 key on top of
+  the platform store, but no Windows or web support.
 
 Keybay stores values on one device for one person. If you need to share secrets
-with a team, deliver them to CI or production, or run on Windows, a hosted
-secrets manager or an encrypted-file tool fits better.
-[Choosing Keybay](doc/ecosystem-comparison.md) compares it with 1Password CLI,
-dotenvx, SecretSpec and flutter_secure_storage.
+with a team, deliver them to CI or production, or run on Windows, use
+1Password CLI, dotenvx or your platform's secrets manager instead.
+[Choosing Keybay](doc/ecosystem-comparison.md) goes into more detail.
 
 ## Status
 
-Keybay is pre-1.0, and APIs and the vault format may change between minor
-versions. If a 0.2.0 vault has a passphrase or passkey, remove them with 0.2.0
-before upgrading to 0.3.0, then add them back; see the
-[changelog](packages/keybay/CHANGELOG.md#030). Device and provider coverage is
-recorded in [release readiness](doc/release-readiness.md).
+Keybay is pre-1.0 and has not had an independent security audit. Device and
+provider coverage is recorded in [release readiness](doc/release-readiness.md),
+and changes in the [changelog](packages/keybay/CHANGELOG.md).
+
+## Contributing
+
+Bug reports and pull requests are welcome. Run `dart pub get` at the repository
+root, install [Keypass's native build prerequisites](https://github.com/danReynolds/keypass/blob/main/doc/build-hooks.md),
+then run `dart test -x integration` in `packages/keybay` and
+`packages/keybay_cli`. The platform suites are described in
+[platform regressions](doc/platform-regression.md). Please report
+vulnerabilities privately, as described in [SECURITY.md](SECURITY.md), not in
+public issues.
 
 ## License
 

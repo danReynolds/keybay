@@ -72,16 +72,18 @@ Pub resolution messages; use the native build when exact CLI output matters.
 
 ### Verify a release download
 
-Releases are produced locally by rk from maintainer-signed tags. CLI releases
-since 0.1.1 are immutable GitHub releases, so a quick check confirms that a
-download is exactly the file attached to the release:
+Releases are produced locally by rk from tags signed with the maintainer's
+release key; the 0.3.0 tags are the exception and were published unsigned. CLI
+releases since 0.1.1 are immutable GitHub releases, so a quick check confirms
+that a download is exactly the file attached to the release:
 
 ```sh
 gh release verify-asset keybay_cli-v0.2.0 keybay-0.2.0-macos-arm64.tar.gz --repo danReynolds/keybay
 ```
 
-That trusts GitHub's release record; it is not build provenance. To verify
-independently of that record, check the tag with the maintainer's release key
+That trusts GitHub's release record; it is not build provenance. 0.3.0 has no
+signed tag to check, though on macOS the codesign check below still applies. To
+verify independently of that record, check the tag with the maintainer's release key
 from [SECURITY.md](../../SECURITY.md#verifying-releases), saved as an
 allowed-signers file, in a clone of this repository:
 
