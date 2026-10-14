@@ -1,16 +1,27 @@
 part of 'store_format.dart';
 
-const int v2MethodsPolicy = 2;
+/// Policy 3 adds a sealed vault secret and per-method confirmations. Policy 2
+/// (0.2.0) had neither; it is retired and fails closed without conversion.
+const int v2MethodsPolicy = 3;
 const int v2MethodsSuite = 2;
 const int v2MaxMethods = 8;
 const int v2MaxPasskeyRecordBytes = 12 * 1024;
 const int v2MaxMethodLabelBytes = 256;
+const int v2MethodConfirmationBytes = 32;
+const int v2VaultSecretBytes = 32;
+const int v2SealedVaultSecretBytes =
+    V2StoreLimits.nonceBytes + v2VaultSecretBytes + V2StoreLimits.tagBytes;
 const int v2MethodsPackageMaxBytes =
     16 +
     8 +
     1 +
+    v2SealedVaultSecretBytes +
     4 +
-    v2MaxMethods * (154 + v2MaxMethodLabelBytes + v2MaxPasskeyRecordBytes);
+    v2MaxMethods *
+        (154 +
+            v2MethodConfirmationBytes +
+            v2MaxMethodLabelBytes +
+            v2MaxPasskeyRecordBytes);
 
 /// The route used to recover a method's wrapping key.
 enum V2AuthMethodKind { passphrase, systemPasskey, hardwarePasskey }
@@ -28,6 +39,7 @@ final class V2AuthMethodEnvelope {
     required int profileId,
     required List<int> publicKey,
     required List<int> keyEnvelope,
+    required List<int> confirmation,
     List<int> passkeyRecord = const <int>[],
   }) {
     if (label.length > v2MaxMethodLabelBytes) _limit();
@@ -52,6 +64,7 @@ final class V2AuthMethodEnvelope {
       profileId: profileId,
       publicKey: _fixedCopy(publicKey, 32),
       keyEnvelope: _fixedCopy(keyEnvelope, 80),
+      confirmation: _fixedCopy(confirmation, v2MethodConfirmationBytes),
       passkeyRecord: Uint8List.fromList(passkeyRecord),
     );
   }
@@ -64,11 +77,13 @@ final class V2AuthMethodEnvelope {
     required this.profileId,
     required Uint8List publicKey,
     required Uint8List keyEnvelope,
+    required Uint8List confirmation,
     required Uint8List passkeyRecord,
   }) : _methodId = methodId,
        _salt = salt,
        _publicKey = publicKey,
        _keyEnvelope = keyEnvelope,
+       _confirmation = confirmation,
        _passkeyRecord = passkeyRecord;
 
   final Uint8List _methodId;
@@ -78,6 +93,7 @@ final class V2AuthMethodEnvelope {
   final int profileId;
   final Uint8List _publicKey;
   final Uint8List _keyEnvelope;
+  final Uint8List _confirmation;
   final Uint8List _passkeyRecord;
   bool _isCleared = false;
 
@@ -85,6 +101,11 @@ final class V2AuthMethodEnvelope {
   Uint8List get salt => _copyBytes(_salt);
   Uint8List get publicKey => _copyBytes(_publicKey);
   Uint8List get keyEnvelope => _copyBytes(_keyEnvelope);
+
+  /// MAC over the vault secret under a key only this method's credential
+  /// derives. It does not depend on the store key or epoch, so it survives
+  /// rotation and rewrapping without the credential.
+  Uint8List get confirmation => _copyBytes(_confirmation);
   Uint8List get passkeyRecord => _copyBytes(_passkeyRecord);
 
   /// Replaces the store-key envelope without changing the method identity.
@@ -108,6 +129,7 @@ final class V2AuthMethodEnvelope {
       profileId: profileId,
       publicKey: _publicKey,
       keyEnvelope: keyEnvelope ?? _keyEnvelope,
+      confirmation: _confirmation,
       passkeyRecord: passkeyRecord ?? _passkeyRecord,
     );
   }
@@ -130,6 +152,7 @@ final class V2AuthMethodEnvelope {
       _salt,
       _publicKey,
       _keyEnvelope,
+      _confirmation,
       _passkeyRecord,
     ]) {
       bytes.fillRange(0, bytes.length, 0);
@@ -140,12 +163,17 @@ final class V2AuthMethodEnvelope {
 
 /// A canonical directory of independent methods, each wrapping the store key.
 ///
+/// [sealedVaultSecret] is the vault secret sealed under a store-key subkey for
+/// this epoch. Each method's confirmation is a MAC over that secret, so only a
+/// credential holder can vouch for a vault; the platform root alone cannot.
+///
 /// Input envelopes are cloned so clearing this package cannot invalidate the
 /// caller's envelopes or another package. Returned envelopes cannot be mutated.
 final class V2MethodsPackage extends V2KeyPackage {
   factory V2MethodsPackage({
     required List<int> storeId,
     required int epoch,
+    required List<int> sealedVaultSecret,
     required List<V2AuthMethodEnvelope> methods,
   }) {
     if (methods.isEmpty || methods.length > v2MaxMethods) _limit();
@@ -172,6 +200,10 @@ final class V2MethodsPackage extends V2KeyPackage {
       return V2MethodsPackage._(
         storeId: storeId,
         epoch: epoch,
+        sealedVaultSecret: _fixedCopy(
+          sealedVaultSecret,
+          v2SealedVaultSecretBytes,
+        ),
         methods: List<V2AuthMethodEnvelope>.unmodifiable(owned),
       );
     } on Object {
@@ -185,10 +217,18 @@ final class V2MethodsPackage extends V2KeyPackage {
   V2MethodsPackage._({
     required super.storeId,
     required super.epoch,
+    required Uint8List sealedVaultSecret,
     required List<V2AuthMethodEnvelope> methods,
-  }) : _methods = methods;
+  }) : _sealedVaultSecret = sealedVaultSecret,
+       _methods = methods;
 
+  final Uint8List _sealedVaultSecret;
   final List<V2AuthMethodEnvelope> _methods;
+
+  Uint8List get sealedVaultSecret {
+    _ensureAvailable();
+    return Uint8List.fromList(_sealedVaultSecret);
+  }
 
   List<V2AuthMethodEnvelope> get methods {
     _ensureAvailable();
@@ -201,6 +241,7 @@ final class V2MethodsPackage extends V2KeyPackage {
     for (final method in _methods) {
       method._clear();
     }
+    _sealedVaultSecret.fillRange(0, _sealedVaultSecret.length, 0);
     _markCleared();
   }
 }
@@ -211,6 +252,7 @@ Uint8List _encodeMethodsPackage(V2MethodsPackage package) {
     ..add(package._storeId)
     ..add(_u64(package.epoch))
     ..addByte(v2MethodsPolicy)
+    ..add(package._sealedVaultSecret)
     ..add(_u32(package._methods.length));
   for (final method in package._methods) {
     final label = utf8.encode(method.label);
@@ -227,6 +269,7 @@ Uint8List _encodeMethodsPackage(V2MethodsPackage package) {
       ..addByte(method.profileId)
       ..add(method._publicKey)
       ..add(method._keyEnvelope)
+      ..add(method._confirmation)
       ..add(_u32(method._passkeyRecord.length))
       ..add(method._passkeyRecord);
   }
@@ -240,6 +283,7 @@ V2MethodsPackage _decodeMethodsPackage(Uint8List bytes) {
   final epochBytes = reader.takeBytes(8);
   final epoch = ByteData.sublistView(epochBytes).getUint64(0);
   if (reader.takeBytes(1).single != v2MethodsPolicy) _invalid();
+  final sealedVaultSecret = reader.takeBytes(v2SealedVaultSecretBytes);
   final count = reader.u32();
   if (count < 1 || count > v2MaxMethods) _limit();
   final methods = <V2AuthMethodEnvelope>[];
@@ -264,6 +308,7 @@ V2MethodsPackage _decodeMethodsPackage(Uint8List bytes) {
       final profileId = reader.takeBytes(1).single;
       final publicKey = reader.takeBytes(32);
       final keyEnvelope = reader.takeBytes(80);
+      final confirmation = reader.takeBytes(v2MethodConfirmationBytes);
       final recordLength = reader.u32();
       if (recordLength > v2MaxPasskeyRecordBytes) _limit();
       final passkeyRecord = reader.takeBytes(recordLength);
@@ -276,13 +321,19 @@ V2MethodsPackage _decodeMethodsPackage(Uint8List bytes) {
           profileId: profileId,
           publicKey: publicKey,
           keyEnvelope: keyEnvelope,
+          confirmation: confirmation,
           passkeyRecord: passkeyRecord,
         ),
       );
       previous = methodId;
     }
     if (!reader.isAtEnd) _invalid();
-    return V2MethodsPackage(storeId: storeId, epoch: epoch, methods: methods);
+    return V2MethodsPackage(
+      storeId: storeId,
+      epoch: epoch,
+      sealedVaultSecret: sealedVaultSecret,
+      methods: methods,
+    );
   } finally {
     for (final method in methods) {
       method._clear();

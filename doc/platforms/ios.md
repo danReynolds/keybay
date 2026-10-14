@@ -16,7 +16,8 @@ Keybay uses the application's private storage and the Data Protection Keychain.
   An unlocked session can return plaintext; there is no per-read biometric check.
 
 This is a [key-access level](../design.md#platform-protection-levels), not a
-hardware rating or protection against a compromised host process.
+hardware rating or protection against a compromised host process. See
+[security levels](../security-levels.md) for the exposure per attacker.
 
 ## Requirements
 

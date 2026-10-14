@@ -32,142 +32,184 @@ void main() {
     );
   });
 
-  for (final withCredential in [false, true]) {
-    for (final withStaging in [false, true]) {
-      test('retired open preserves state (credential=$withCredential, '
-          'staging=$withStaging)', () async {
-        final fixture = await buildV2StoreFixture(
-          records: {
-            'service/token': [1, 2, 3],
-          },
-          epoch: 7,
-          storeId: List.generate(16, (i) => 0x10 + i),
-          storeKey: List.generate(32, (i) => 0x20 + i),
-        );
-        addTearDown(fixture.dispose);
-        final original = fixture.bytes;
-        final oldBootstrap = decodeBootstrap(
-          Uint8List.sublistView(original, 0, fixture.bootstrapLength),
-        );
-        final state = ProviderState(oldBootstrap.core.providerState);
-        final domain = fixture.host.binding.domain.copyBytes();
-        final aad = encodePlatformPackageAad(
-          storageDomain: domain,
-          bootstrapCore: oldBootstrap.core,
-        );
-        final lease = (await fixture.host.protector.openExisting(
-          state,
-          interaction: PlatformInteraction.forbidden,
-        ))!;
-        late Uint8List sealedPackage;
-        late Uint8List retiredStore;
-        final storeKey = fixture.copyStoreKey();
-        V2Manifest? manifest;
-        try {
-          manifest = await openManifest(
-            storeKey: storeKey,
-            storeId: fixture.storeId,
+  test('unconfirmed 0.2.0 methods policy is unsupported', () {
+    expect(
+      () => decodeKeyPackage(_retiredMethodsPackage()),
+      throwsA(
+        isA<V2FormatFailure>().having(
+          (error) => error.code,
+          'code',
+          V2FormatFailureCode.unsupportedPolicy,
+        ),
+      ),
+    );
+  });
+
+  for (final (policy, retiredPackage, suite) in [
+    (1, _retiredPackage, v2PrimitiveSuite),
+    (2, _retiredMethodsPackage, v2MethodsSuite),
+  ]) {
+    for (final withCredential in [false, true]) {
+      for (final withStaging in [false, true]) {
+        test('retired policy $policy open preserves state '
+            '(credential=$withCredential, staging=$withStaging)', () async {
+          final fixture = await buildV2StoreFixture(
+            records: {
+              'service/token': [1, 2, 3],
+            },
+            epoch: 7,
+            storeId: List.generate(16, (i) => 0x10 + i),
+            storeKey: List.generate(32, (i) => 0x20 + i),
+          );
+          addTearDown(fixture.dispose);
+          final original = fixture.bytes;
+          final oldBootstrap = decodeBootstrap(
+            Uint8List.sublistView(original, 0, fixture.bootstrapLength),
+          );
+          final state = ProviderState(oldBootstrap.core.providerState);
+          final domain = fixture.host.binding.domain.copyBytes();
+          final core = V2BootstrapCore(
+            oldBootstrap.core.providerState,
+            suite: suite,
+          );
+          final aad = encodePlatformPackageAad(
             storageDomain: domain,
-            bootstrap: oldBootstrap,
-            sealedPackage: Uint8List.sublistView(
-              original,
-              fixture.packageOffset,
-              fixture.frameRegionOffset,
+            bootstrapCore: core,
+          );
+          final lease = (await fixture.host.protector.openExisting(
+            state,
+            interaction: PlatformInteraction.forbidden,
+          ))!;
+          late Uint8List sealedPackage;
+          late Uint8List retiredStore;
+          final storeKey = fixture.copyStoreKey();
+          V2Manifest? manifest;
+          try {
+            manifest = await openManifest(
+              storeKey: storeKey,
+              storeId: fixture.storeId,
+              storageDomain: domain,
+              bootstrap: oldBootstrap,
+              sealedPackage: Uint8List.sublistView(
+                original,
+                fixture.packageOffset,
+                fixture.frameRegionOffset,
+              ),
+              sealedManifest: Uint8List.sublistView(
+                original,
+                fixture.manifestOffset,
+                fixture.trailerOffset,
+              ),
+            );
+            sealedPackage = await lease.sealPackage(
+              plaintext: retiredPackage(),
+              aad: aad,
+            );
+            final bootstrap = V2Bootstrap(
+              core: core,
+              sealedPackageLength: sealedPackage.length,
+            );
+            final sealedManifest = await sealManifest(
+              storeKey: storeKey,
+              storeId: fixture.storeId,
+              storageDomain: domain,
+              bootstrap: bootstrap,
+              sealedPackage: sealedPackage,
+              manifest: manifest,
+              nonce: Uint8List.fromList(List.filled(24, 0xed)),
+            );
+            retiredStore =
+                (BytesBuilder()
+                      ..add(encodeBootstrap(bootstrap))
+                      ..add(sealedPackage)
+                      ..add(
+                        Uint8List.sublistView(
+                          original,
+                          fixture.frameRegionOffset,
+                          fixture.manifestOffset,
+                        ),
+                      )
+                      ..add(sealedManifest)
+                      ..add(encodeManifestLength(sealedManifest.length)))
+                    .takeBytes();
+          } finally {
+            manifest?.clear();
+            storeKey.fillRange(0, storeKey.length, 0);
+            await lease.close();
+          }
+          fixture.files.replaceLiveBytes(retiredStore);
+          fixture.files.hasTransactionArtifacts = withStaging;
+          final generation = fixture.files.liveGeneration;
+          final deriver = _UnexpectedDeriver();
+          final engine = V2StoreEngine(
+            fixture.hostPlatform,
+            passphraseDeriver: deriver,
+          );
+          await expectLater(
+            engine.open(
+              credential: withCredential
+                  ? PassphraseCredential(phrase: Uint8List.fromList([1, 2, 3]))
+                  : null,
             ),
-            sealedManifest: Uint8List.sublistView(
-              original,
-              fixture.manifestOffset,
-              fixture.trailerOffset,
+            throwsA(
+              isA<KeybayException>().having(
+                (error) => error.code,
+                'code',
+                KeybayErrorCode.unsupportedStoreVersion,
+              ),
             ),
           );
-          sealedPackage = await lease.sealPackage(
-            plaintext: _retiredPackage(),
-            aad: aad,
-          );
-          final bootstrap = V2Bootstrap(
-            core: oldBootstrap.core,
-            sealedPackageLength: sealedPackage.length,
-          );
-          final sealedManifest = await sealManifest(
-            storeKey: storeKey,
-            storeId: fixture.storeId,
-            storageDomain: domain,
-            bootstrap: bootstrap,
-            sealedPackage: sealedPackage,
-            manifest: manifest,
-            nonce: Uint8List.fromList(List.filled(24, 0xed)),
-          );
-          retiredStore =
-              (BytesBuilder()
-                    ..add(encodeBootstrap(bootstrap))
-                    ..add(sealedPackage)
-                    ..add(
-                      Uint8List.sublistView(
-                        original,
-                        fixture.frameRegionOffset,
-                        fixture.manifestOffset,
-                      ),
-                    )
-                    ..add(sealedManifest)
-                    ..add(encodeManifestLength(sealedManifest.length)))
-                  .takeBytes();
-        } finally {
-          manifest?.clear();
-          storeKey.fillRange(0, storeKey.length, 0);
-          await lease.close();
-        }
-        fixture.files.replaceLiveBytes(retiredStore);
-        fixture.files.hasTransactionArtifacts = withStaging;
-        final generation = fixture.files.liveGeneration;
-        final deriver = _UnexpectedDeriver();
-        final engine = V2StoreEngine(
-          fixture.hostPlatform,
-          passphraseDeriver: deriver,
-        );
-        await expectLater(
-          engine.open(
-            credential: withCredential
-                ? PassphraseCredential(phrase: Uint8List.fromList([1, 2, 3]))
-                : null,
-          ),
-          throwsA(
-            isA<KeybayException>().having(
-              (error) => error.code,
-              'code',
-              KeybayErrorCode.unsupportedStoreVersion,
-            ),
-          ),
-        );
-        expect(deriver.calls, 0);
-        expect(fixture.files.liveGeneration, generation);
-        expect(fixture.files.hasTransactionArtifacts, withStaging);
-        final pin = (await fixture.files.openPinnedLive())!;
-        try {
-          expect(
-            await pin.readExact(offset: 0, length: pin.length),
-            retiredStore,
-          );
-        } finally {
-          await pin.close();
-        }
-        expect(fixture.files.activeHandleCount, 0);
-        // The original provider root must still authenticate the same package.
-        final retained = (await fixture.host.protector.openExisting(
-          state,
-          interaction: PlatformInteraction.forbidden,
-        ))!;
-        try {
-          expect(
-            await retained.openPackage(sealedPackage: sealedPackage, aad: aad),
-            _retiredPackage(),
-          );
-        } finally {
-          await retained.close();
-        }
-      });
+          expect(deriver.calls, 0);
+          expect(fixture.files.liveGeneration, generation);
+          expect(fixture.files.hasTransactionArtifacts, withStaging);
+          final pin = (await fixture.files.openPinnedLive())!;
+          try {
+            expect(
+              await pin.readExact(offset: 0, length: pin.length),
+              retiredStore,
+            );
+          } finally {
+            await pin.close();
+          }
+          expect(fixture.files.activeHandleCount, 0);
+          // The original provider root must still authenticate the same package.
+          final retained = (await fixture.host.protector.openExisting(
+            state,
+            interaction: PlatformInteraction.forbidden,
+          ))!;
+          try {
+            expect(
+              await retained.openPackage(
+                sealedPackage: sealedPackage,
+                aad: aad,
+              ),
+              retiredPackage(),
+            );
+          } finally {
+            await retained.close();
+          }
+        });
+      }
     }
   }
 }
+
+/// A 0.2.0 policy-2 directory: one passphrase method with no vault secret or
+/// confirmation. Retained only as rejected input.
+Uint8List _retiredMethodsPackage() => Uint8List.fromList([
+  ...List.generate(16, (i) => 0x10 + i), // store ID
+  ...[0, 0, 0, 0, 0, 0, 0, 7], // epoch
+  2, // policy
+  ...[0, 0, 0, 1], // method count
+  ...List.filled(16, 0x22), // method ID
+  1, // passphrase
+  ...[0, 0, 0, 0], // empty label
+  ...List.filled(16, 0x33), // salt
+  1, // Argon2 profile
+  ...List.filled(32, 0x44), // public key
+  ...List.filled(80, 0x55), // envelope
+  ...[0, 0, 0, 0], // empty record
+]);
 
 Uint8List _retiredPackage() => Uint8List.fromList([
   for (var i = 0; i < _retiredPackageHex.length; i += 2)

@@ -1,4 +1,5 @@
-/// Credential-derived method keys and fixed-suite, single-shot RFC 9180 HPKE.
+/// Credential-derived method keys and confirmations, and fixed-suite,
+/// single-shot RFC 9180 HPKE.
 ///
 /// The store authenticates the complete method directory before trusting any
 /// recipient public key. HPKE base mode alone does not authenticate a sender.
@@ -20,6 +21,8 @@ const int _maximumContextBytes = 64 * 1024;
 const int _maximumPlaintextBytes = 64 * 1024;
 const String _methodPrivateKeyLabel = 'keybay:v2:methods1:key:private';
 const String _methodHpkeLabel = 'keybay:v2:methods1:hpke:store-key';
+const String _methodConfirmationKeyLabel = 'keybay:v2:methods2:key:confirm';
+const String _methodConfirmationLabel = 'keybay:v2:methods2:confirm';
 const DartX25519 _x25519 = DartX25519();
 const DartHmac _hmac = DartHmac(DartSha256());
 final DartChacha20 _aead = DartChacha20.poly1305Aead();
@@ -66,6 +69,58 @@ Future<Uint8List> deriveMethodPrivateKey({
     return Uint8List.fromList(_expand(owned, prk, info, 32));
   });
 }
+
+/// Computes a method's confirmation over the vault secret.
+///
+/// HPKE base mode lets anyone holding a recipient public key seal a store key
+/// to it, so a successful envelope open alone does not show that a credential
+/// holder built the vault. This MAC does: its key derives from the same
+/// credential [material] as the private key, under a distinct label, and it
+/// covers the vault secret that only the store key reveals. It excludes the
+/// store key and epoch, so rotation keeps it valid without the credential.
+Future<Uint8List> deriveMethodConfirmation({
+  required Uint8List material,
+  required Uint8List salt,
+  required Uint8List context,
+  required Uint8List publicKey,
+  required Uint8List vaultSecret,
+}) {
+  _requireLength(material, 32);
+  _requireLength(salt, 16);
+  _requireContext(context);
+  _requireLength(publicKey, 32);
+  _requireLength(vaultSecret, 32);
+  final owned = _OwnedBytes();
+  final materialCopy = owned.copy(material);
+  final saltCopy = owned.copy(salt);
+  final keyInfo = owned.join([
+    ascii.encode(_methodConfirmationKeyLabel),
+    [0],
+    context,
+  ]);
+  final transcript = owned.join([
+    ascii.encode(_methodConfirmationLabel),
+    [0],
+    _lengthPrefixed(owned, context),
+    _lengthPrefixed(owned, publicKey),
+    _lengthPrefixed(owned, vaultSecret),
+  ]);
+  return _withOwned(owned, () async {
+    final prk = _extract(owned, saltCopy, materialCopy);
+    final key = _expand(owned, prk, keyInfo, 32);
+    return Uint8List.fromList(_mac(owned, key, transcript));
+  });
+}
+
+Uint8List _lengthPrefixed(_OwnedBytes owned, Uint8List field) => owned.join([
+  [
+    (field.length >> 24) & 255,
+    (field.length >> 16) & 255,
+    (field.length >> 8) & 255,
+    field.length & 255,
+  ],
+  field,
+]);
 
 /// Returns the X25519 public key corresponding to a 32-byte private key.
 Future<Uint8List> methodPublicKey({required Uint8List privateKey}) {

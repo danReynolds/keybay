@@ -14,13 +14,18 @@ authenticated manifest holds record names; values are separate
 XChaCha20-Poly1305 frames. A random store key derives separate manifest/frame
 keys and is wrapped by the platform-protected key package.
 
-| Host | Platform protection | Application boundary |
-| --- | --- | --- |
-| iOS | Data Protection Keychain, exact signed group | Signed group and app-private files |
-| Android 12+ | Non-exportable Android Keystore key | Package/UID sandbox and no-backup files |
-| Entitled macOS | Data Protection Keychain, exact signed group | Root isolated by entitlement; file isolation depends on App Sandbox |
-| Unentitled macOS / CLI | Explicit login-Keychain item | Declared namespace and restrictive files, not an app sandbox |
-| Ordinary Linux desktop | Secret Service item | Declared namespace and restrictive files, not an app sandbox |
+| Host | Platform protection | Level | Without a passphrase or passkey |
+| --- | --- | --- | --- |
+| iOS | Data Protection Keychain, exact signed group | App-bound | Other apps cannot read values |
+| Android 12+ | Non-exportable Android Keystore key | App-bound | Other apps cannot read values |
+| Entitled macOS | Data Protection Keychain, exact signed group | App-bound | Other apps cannot read values; file isolation needs App Sandbox |
+| Unentitled macOS / CLI | Explicit login-Keychain item | Account-level | Programs running as you can read every value by running the app or CLI |
+| Ordinary Linux desktop | Secret Service item | Account-level | Programs running as you can read every value |
+
+[Security levels by platform](doc/security-levels.md) gives the full exposure
+matrix, including backups and the Flatpak candidate, and what a passphrase or
+passkey changes. [Architecture](doc/architecture.md) walks through how the vault
+works.
 
 The [Flatpak candidate](doc/platforms/linux.md) uses sandbox identity and XDG
 Secret Portal, never raw Secret Service. Snap, Windows and unsupported providers
@@ -31,7 +36,10 @@ With enrolled methods, opening requires
 A store supports one passphrase at most and eight methods total. Argon2id
 passphrase output or verified Keypass PRF material derives a method-specific
 X25519 recipient through HKDF. HPKE wraps the store key; the platform seals
-the method package, which the manifest authenticates. See
+the method package, which the manifest authenticates. Each method also stores
+a credential-keyed confirmation over a vault secret sealed under the store key,
+so holding the platform root is not enough to build a store that a genuine
+credential accepts. See
 [RFC 0003](doc/rfcs/0003-passkey-methods.md) for the construction.
 
 On ordinary Linux and unentitled macOS, another same-user program may claim
@@ -65,7 +73,9 @@ Keybay does not defend against root/kernel compromise, injected or malicious
 host code, keyloggers, terminal/screen capture, denial of service by actors able
 to delete state, or rollback to an older authentic snapshot. Returned plaintext
 is ordinary application data. An attacker controlling an unlocked session can
-change its protection policy.
+change its protection policy. Removing a method does not change the vault
+secret, so its former holder, with the platform root and file, could still
+substitute a store that the remaining methods accept.
 
 Auth changes rotate the current store key and re-encrypt records. They do not
 revoke old snapshots, issuer tokens or provider credentials. Removing the last

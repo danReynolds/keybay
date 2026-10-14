@@ -1,7 +1,7 @@
 import 'key.dart';
 
 const String defaultManifestPath = './.env';
-const String cliVersion = '0.2.0';
+const String cliVersion = '0.3.0';
 
 const String cliHelp = '''
 Usage: keybay <command>

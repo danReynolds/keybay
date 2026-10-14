@@ -1,6 +1,7 @@
-# Keybay 0.2.0 release readiness
+# Keybay release readiness
 
-SDK and CLI 0.2.0 are published. Subsequent source cleanup is unreleased.
+SDK and CLI 0.2.0 are published. Version 0.3.0 is the next release candidate;
+its source cleanup and input-border fix are not yet published.
 
 | Artifact | Publication evidence |
 | --- | --- |
@@ -15,12 +16,16 @@ installation available to transfer required secrets before switching.
 
 Keypass removed prototype verifier/native-loading exceptions. Keybay removed
 retired V2 singleton-passphrase conversion and duplicate release tooling.
-Published 0.2.0 still has that V2 conversion; current methods-based and
-platform-only encodings are unchanged. Keybay still pins published Keypass
-0.1.0-dev.2, not its newer main branch.
+Published 0.2.0 still has that V2 conversion. Keybay still pins published
+Keypass 0.1.0-dev.2, not its newer main branch.
 
-Version fields have not advanced with this cleanup. Use the
-[review guide](external-review.md) for exact commit/archive baselines.
+Version 0.3.0 includes this cleanup, confirms the vault on every method unlock
+(methods policy 3), and fixes underlined input borders in the CLI. The minor
+version marks both format changes: 0.2.0 vaults with a passphrase or passkey
+fail closed and need their methods removed before upgrading and added back
+after; platform-only vaults are unaffected. Policy 3 has unit, adversarial and
+vector coverage; it has no renewed device or hardware-key qualification. Use the
+[review guide](external-review.md) for published commit/archive baselines.
 
 ## Release status
 

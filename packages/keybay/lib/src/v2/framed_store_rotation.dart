@@ -353,6 +353,17 @@ Future<_PreparedAuthRotation> _prepareAuthRotation(
         );
       }
     }
+    // A platform-only session's store key is known to whoever holds the
+    // platform root, so a methods directory under that key and epoch cannot
+    // come from a credential holder; adopting it would carry over a vault
+    // secret the root holder chose. Real auth changes always move to a fresh
+    // key and epoch, which makes this session stale instead.
+    if (currentPackage is V2MethodsPackage && session._authMethods.isEmpty) {
+      throw _error(
+        KeybayErrorCode.storeAuthenticationFailed,
+        'The store policy changed outside this session.',
+      );
+    }
     final nextEpoch = session._epoch + 1;
     nextStoreKey = session._entropy.randomBytes(V2StoreLimits.storeKeyBytes);
     final next = await _buildAuthReplacement(

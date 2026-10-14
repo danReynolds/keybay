@@ -18,6 +18,8 @@ const String v2RecordFrameKeyInfo = 'keybay:v2:s1:key:record-frame';
 const String v2PlatformPackageAadLabel = 'keybay:v2:s1:aad:platform-package';
 const String v2ManifestAadLabel = 'keybay:v2:s1:aad:manifest';
 const String v2RecordFrameAadLabel = 'keybay:v2:s1:aad:record-frame';
+const String v2VaultSecretKeyInfo = 'keybay:v2:methods2:key:vault-secret';
+const String v2VaultSecretAadLabel = 'keybay:v2:methods2:aad:vault-secret';
 
 enum V2CryptoFailureCode { invalidInput, authenticationFailed }
 
@@ -355,6 +357,70 @@ Future<Uint8List> _openRecordFrameOwned({
   } finally {
     frameKey.destroy();
   }
+}
+
+/// Seals the methods vault secret under a store-key subkey for one epoch.
+///
+/// A party holding only the platform root cannot open this, so it cannot carry
+/// a genuine vault secret into a store keyed by a store key of its choosing.
+Future<Uint8List> sealVaultSecret({
+  required Uint8List storeKey,
+  required Uint8List storeId,
+  required int epoch,
+  required Uint8List vaultSecret,
+  required Uint8List nonce,
+}) {
+  _requireLength(vaultSecret, v2VaultSecretBytes);
+  _requireLength(nonce, V2StoreLimits.nonceBytes);
+  final aad = _vaultSecretAad(storeId, epoch);
+  final context = _StoreContext(storeKey, storeId);
+  final secretSnapshot = Uint8List.fromList(vaultSecret);
+  final nonceSnapshot = Uint8List.fromList(nonce);
+  return _withCleanup(
+    () async {
+      final key = await _deriveOwnedStoreSubkey(context, v2VaultSecretKeyInfo);
+      try {
+        return await _sealOwned(
+          plaintext: secretSnapshot,
+          key: key,
+          nonce: nonceSnapshot,
+          aad: aad,
+        );
+      } finally {
+        key.destroy();
+      }
+    },
+    () {
+      _clear(secretSnapshot);
+      context.clear();
+    },
+  );
+}
+
+/// Opens [sealVaultSecret] output and returns a caller-owned vault secret.
+Future<Uint8List> openVaultSecret({
+  required Uint8List storeKey,
+  required Uint8List storeId,
+  required int epoch,
+  required Uint8List sealedVaultSecret,
+}) {
+  _requireLength(sealedVaultSecret, v2SealedVaultSecretBytes);
+  final aad = _vaultSecretAad(storeId, epoch);
+  final context = _StoreContext(storeKey, storeId);
+  final sealedSnapshot = Uint8List.fromList(sealedVaultSecret);
+  return _withCleanup(() async {
+    final key = await _deriveOwnedStoreSubkey(context, v2VaultSecretKeyInfo);
+    try {
+      return await _openOwned(sealed: sealedSnapshot, key: key, aad: aad);
+    } finally {
+      key.destroy();
+    }
+  }, context.clear);
+}
+
+Uint8List _vaultSecretAad(Uint8List storeId, int epoch) {
+  _requireLength(storeId, V2StoreLimits.storeIdBytes);
+  return _encodeAad(v2VaultSecretAadLabel, <List<int>>[storeId, _u64(epoch)]);
 }
 
 /// SHA-256 commitment to the exact serialized frame bytes.

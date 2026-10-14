@@ -1,7 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
+- Confirm the vault on every passphrase or hardware-key unlock (Keybay SDK
+  0.3.0). Previously a program that could read the platform root could swap in a
+  vault your genuine passphrase or key would open, and read what you saved next.
+- **Upgrading a protected vault:** vaults protected by a passphrase or hardware
+  key under 0.2.0 do not open in 0.3.0 and are left untouched. Before upgrading,
+  open `keybay open` → Settings → Security with 0.2.0 and remove every method.
+  After upgrading, add them back. If you already upgraded, reinstall 0.2.0 from
+  the [keybay_cli-v0.2.0 release](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.2.0)
+  first. Vaults without a passphrase or key upgrade as is.
+- Reject retired V2 singleton-passphrase stores without changing them. Keep the
+  old installation to transfer needed secrets.
 - Keep focused and invalid input borders clean: high-contrast and error text
   underlines no longer draw extra lines through field outlines.
 

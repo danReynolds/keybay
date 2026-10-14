@@ -13,6 +13,7 @@ void main() {
       final package = V2MethodsPackage(
         storeId: List<int>.filled(16, 0x11),
         epoch: 7,
+        sealedVaultSecret: List<int>.filled(v2SealedVaultSecretBytes, 0x66),
         methods: <V2AuthMethodEnvelope>[
           V2AuthMethodEnvelope(
             methodId: List<int>.filled(16, 0x22),
@@ -22,13 +23,15 @@ void main() {
             profileId: 1,
             publicKey: List<int>.filled(32, 0x44),
             keyEnvelope: List<int>.filled(80, 0x55),
+            confirmation: List<int>.filled(32, 0x77),
           ),
         ],
       );
       final expected = <String>[
         '11' * 16,
         '0000000000000007',
-        '02',
+        '03',
+        '66' * 72,
         '00000001',
         '22' * 16,
         '01',
@@ -38,16 +41,19 @@ void main() {
         '01',
         '44' * 32,
         '55' * 80,
+        '77' * 32,
         '00000000',
       ].join();
 
       final encoded = encodeKeyPackage(package);
-      expect(encoded, hasLength(187));
+      expect(encoded, hasLength(291));
       expect(_hex(encoded), expected);
       final decoded = decodeKeyPackage(encoded) as V2MethodsPackage;
       expect(decoded.epoch, 7);
       expect(decoded.methods.single.label, 'Main');
       expect(decoded.methods.single.passkeyRecord, isEmpty);
+      expect(decoded.methods.single.confirmation, everyElement(0x77));
+      expect(decoded.sealedVaultSecret, everyElement(0x66));
       expect(encodeKeyPackage(decoded), encoded);
       package.clear();
       decoded.clear();
@@ -81,7 +87,7 @@ void main() {
           _method(index, label: 'x' * v2MaxMethodLabelBytes, record: record),
       ]);
       final encoded = encodeKeyPackage(package);
-      expect(v2MethodsPackageMaxBytes, 101613);
+      expect(v2MethodsPackageMaxBytes, 101941);
       expect(encoded, hasLength(v2MethodsPackageMaxBytes));
       expect(encoded.length, lessThan(V2StoreLimits.sealedPackageBytes));
       final decoded = decodeKeyPackage(encoded) as V2MethodsPackage;
@@ -98,15 +104,20 @@ void main() {
       final one = encodeKeyPackage(
         _package(<V2AuthMethodEnvelope>[_method(1)]),
       );
-      final entryLength = one.length - 29;
+      final entryLength = one.length - _header;
       final reordered = Uint8List.fromList(<int>[
-        ...encoded.sublist(0, 29),
-        ...encoded.sublist(29 + entryLength),
-        ...encoded.sublist(29, 29 + entryLength),
+        ...encoded.sublist(0, _header),
+        ...encoded.sublist(_header + entryLength),
+        ...encoded.sublist(_header, _header + entryLength),
       ]);
       expect(() => decodeKeyPackage(reordered), throwsA(_invalid));
       final duplicated = Uint8List.fromList(encoded);
-      duplicated.setRange(29 + entryLength, 45 + entryLength, encoded, 29);
+      duplicated.setRange(
+        _header + entryLength,
+        _header + 16 + entryLength,
+        encoded,
+        _header,
+      );
       expect(() => decodeKeyPackage(duplicated), throwsA(_invalid));
     });
 
@@ -132,13 +143,13 @@ void main() {
         _package(<V2AuthMethodEnvelope>[_method(1, label: 'abc')]),
       );
       for (final (offset, value) in <(int, int)>[
-        (25, 0),
-        (25, 9),
-        (25, 0xffffffff),
-        (46, v2MaxMethodLabelBytes + 1),
-        (46, 0xffffffff),
-        (182, v2MaxPasskeyRecordBytes + 1),
-        (182, 0xffffffff),
+        (97, 0),
+        (97, 9),
+        (97, 0xffffffff),
+        (118, v2MaxMethodLabelBytes + 1),
+        (118, 0xffffffff),
+        (286, v2MaxPasskeyRecordBytes + 1),
+        (286, 0xffffffff),
       ]) {
         final changed = Uint8List.fromList(encoded);
         ByteData.sublistView(changed).setUint32(offset, value);
@@ -166,11 +177,11 @@ void main() {
           _package(<V2AuthMethodEnvelope>[_method(1, label: 'abc')]),
         );
         for (final (offset, value) in <(int, int)>[
-          (45, 0),
-          (45, 4),
-          (69, 1),
-          (50, 0xff),
-          (186, 0xff),
+          (117, 0),
+          (117, 4),
+          (141, 1),
+          (122, 0xff),
+          (290, 0xff),
         ]) {
           final changed = Uint8List.fromList(encoded)..[offset] = value;
           expect(() => decodeKeyPackage(changed), throwsA(_invalid));
@@ -194,17 +205,35 @@ void main() {
             _method(2, kind: V2AuthMethodKind.passphrase),
           ]),
         );
-        final two = Uint8List.fromList(<int>[...first, ...second.sublist(29)]);
-        ByteData.sublistView(two).setUint32(25, 2);
+        final two = Uint8List.fromList(<int>[
+          ...first,
+          ...second.sublist(_header),
+        ]);
+        ByteData.sublistView(two).setUint32(97, 2);
         expect(() => decodeKeyPackage(two), throwsA(_invalid));
-        // The default fixture label is empty, putting profileId at byte 66.
-        final invalidProfile = Uint8List.fromList(first)..[66] = 0;
+        // The default fixture label is empty, putting profileId at byte 138.
+        final invalidProfile = Uint8List.fromList(first)..[138] = 0;
         expect(
           () => decodeKeyPackage(invalidProfile),
           throwsA(_failure(V2FormatFailureCode.unsupportedKdfProfile)),
         );
       },
     );
+  });
+
+  group('retired methods policy', () {
+    test('policy 2 directories are unsupported, not reinterpreted', () {
+      final encoded = encodeKeyPackage(_package([_method(1)]));
+      final retired = Uint8List.fromList(<int>[
+        ...encoded.sublist(0, 24),
+        2,
+        ...encoded.sublist(_header - 4),
+      ]);
+      expect(
+        () => decodeKeyPackage(retired),
+        throwsA(_failure(V2FormatFailureCode.unsupportedPolicy)),
+      );
+    });
   });
 
   group('multi-method construction and ownership', () {
@@ -274,6 +303,23 @@ void main() {
       for (final invalid in <List<int>>[<int>[], List<int>.filled(80, -1)]) {
         expect(() => _method(1, keyEnvelope: invalid), throwsA(_invalid));
       }
+      for (final invalid in <List<int>>[<int>[], List<int>.filled(32, 256)]) {
+        expect(() => _method(1, confirmation: invalid), throwsA(_invalid));
+      }
+      for (final invalid in <List<int>>[
+        List<int>.filled(v2SealedVaultSecretBytes - 1, 0),
+        List<int>.filled(v2SealedVaultSecretBytes, -1),
+      ]) {
+        expect(
+          () => V2MethodsPackage(
+            storeId: List<int>.filled(16, 0x11),
+            epoch: 1,
+            sealedVaultSecret: invalid,
+            methods: [_method(1)],
+          ),
+          throwsA(_invalid),
+        );
+      }
     });
 
     test('constructor inputs and returned byte buffers never alias', () {
@@ -319,6 +365,7 @@ void main() {
       expect(updated.methodId, original.methodId);
       expect(updated.salt, original.salt);
       expect(updated.publicKey, original.publicKey);
+      expect(updated.confirmation, original.confirmation);
       expect(updated.keyEnvelope, everyElement(0x99));
       expect(original.keyEnvelope, everyElement(4));
       expect(utf8.decode(original.passkeyRecord), '{}');
@@ -368,10 +415,14 @@ void main() {
   });
 }
 
+/// Store ID, epoch, policy, sealed vault secret and method count.
+const int _header = 16 + 8 + 1 + v2SealedVaultSecretBytes + 4;
+
 V2MethodsPackage _package(List<V2AuthMethodEnvelope> methods) =>
     V2MethodsPackage(
       storeId: List<int>.filled(16, 0x11),
       epoch: 1,
+      sealedVaultSecret: List<int>.filled(v2SealedVaultSecretBytes, 0x66),
       methods: methods,
     );
 
@@ -384,6 +435,7 @@ V2AuthMethodEnvelope _method(
   int? profileId,
   List<int>? publicKey,
   List<int>? keyEnvelope,
+  List<int>? confirmation,
   List<int>? record,
 }) => V2AuthMethodEnvelope(
   methodId: methodId ?? List<int>.filled(16, id),
@@ -393,6 +445,7 @@ V2AuthMethodEnvelope _method(
   profileId: profileId ?? (kind == V2AuthMethodKind.passphrase ? 1 : 0),
   publicKey: publicKey ?? List<int>.filled(32, 3),
   keyEnvelope: keyEnvelope ?? List<int>.filled(80, 4),
+  confirmation: confirmation ?? List<int>.filled(32, 5),
   passkeyRecord:
       record ??
       (kind == V2AuthMethodKind.passphrase ? <int>[] : utf8.encode('{}')),
