@@ -20,8 +20,7 @@
   <a href="https://danreynolds.github.io/keybay/demo/"><strong>Try it in your browser</strong></a> ·
   <a href="#install">Install</a> ·
   <a href="#quick-start">Quick start</a> ·
-  <a href="#platforms">Platforms</a> ·
-  <a href="#security">Security</a> ·
+  <a href="#platforms-and-security">Platforms and security</a> ·
   <a href="#learn-more">Learn more</a>
 </p>
 
@@ -84,7 +83,9 @@ keybay set my-app/openai-api-key
 ```
 
 Prefixes like `my-app/` just organize names; all your projects share one CLI
-vault. Point `.env` at the secret instead of pasting it:
+vault.
+
+Point `.env` at the secret instead of pasting it:
 
 ```diff
 -OPENAI_API_KEY=sk-live-…
@@ -101,8 +102,12 @@ keybay run -- npm start
 Your app gets the real value as an ordinary environment variable, so any
 language works. Only run commands and `.env` files you trust.
 
-Until you add a passphrase or hardware key, commands that read or write secrets
-print a warning saying so; see [Security](#security). Run `keybay --help` for the other commands.
+Next steps:
+
+- Browse and edit your secrets with `keybay open`.
+- Add a passphrase or hardware key in `keybay open` → Settings. Until you do,
+  commands that read or write secrets print a reminder.
+- See every command with `keybay --help`.
 
 ### Dart and Flutter
 
@@ -118,41 +123,36 @@ try {
 }
 ```
 
-Each app gets its own vault. See the [SDK guide](doc/sdk.md) for passphrases,
-passkeys and error handling.
+Each app gets its own vault. The [SDK guide](doc/sdk.md) covers adding a
+passphrase or passkey with `session.auth.add`, and handling errors.
 
-## Platforms
+## Platforms and security
 
-| Platform | SDK | CLI | Without a passphrase or hardware key, readable by |
+| Platform | SDK | CLI | Other apps kept out? |
 | --- | :---: | :---: | --- |
-| iOS, Android 12+ | ✓ | | No other app |
-| macOS app with Keychain entitlement | ✓ | | No other app |
-| macOS CLI | | ✓ | Any program running as you, by running `keybay` |
-| Other macOS apps | ✓ | | Programs you allow at a Keychain prompt, or that launch the app |
-| Linux desktop | ✓ | ✓ | Programs in your session that can reach your unlocked keyring |
+| iOS | ✓ | | Yes |
+| Android 12+ | ✓ | | Yes |
+| macOS app with Keychain entitlement | ✓ | | Yes |
+| macOS CLI and other macOS apps | ✓ | ✓ | No: add a passphrase or hardware key |
+| Linux desktop | ✓ | ✓ | No: add a passphrase or hardware key |
 
-On Linux that's most programs, because the Secret Service doesn't check which
-app is asking; sandboxed apps need to be granted access. On macOS, apps started
-with `dart run` share the Dart runtime's Keychain access, so any other Dart
-program run that way can read them. Once you add a passphrase or hardware key, these programs need
-it too.
+**Yes** means the OS gives the vault's key only to your app. **No** means other
+programs on your account can get it: on Linux, any that can reach your unlocked
+keyring; on macOS, any that can run `keybay` or your app, or that you allow at a
+Keychain prompt. Windows, web and Snap aren't supported.
 
-Windows, web and Snap aren't supported.
-[Security levels by platform](doc/security-levels.md) has the details.
+> [!TIP]
+> On a **No** platform, add a passphrase or a hardware key such as a YubiKey,
+> and other programs need it too. Use `keybay open` → Settings in the CLI, or
+> `session.auth.add` in the SDK.
 
-## Security
+Everywhere, a copied vault file is useless without your OS keychain. Keybay
+can't protect against root access, keyloggers, code running inside your app, or
+what your apps do with a secret once they have it. It's pre-1.0 and hasn't had
+an independent security audit.
 
-Your OS keychain always protects the vault, so a copied vault file is useless on
-its own. On desktop, though, other programs on your account may be able to read
-your secrets, as [Platforms](#platforms) shows, until you add a passphrase or a
-hardware key such as a YubiKey. Add one from `keybay open` → Settings in the
-CLI, or with `session.auth.add` in the SDK.
-
-Keybay can't protect against root access, keyloggers, code running inside your
-app, or what your apps do with a secret once they have it. It's pre-1.0 and
-hasn't had an independent security audit. See the
-[security policy](SECURITY.md) for the full list and the
-[architecture](doc/architecture.md) for how the vault works.
+More in [security levels by platform](doc/security-levels.md), the
+[security policy](SECURITY.md) and the [architecture](doc/architecture.md).
 
 ## Learn more
 
