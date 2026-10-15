@@ -18,6 +18,7 @@
 
 <p align="center">
   <a href="https://danreynolds.github.io/keybay/demo/"><strong>Try it in your browser</strong></a> ·
+  <a href="#install">Install</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#platforms">Platforms</a> ·
   <a href="#security">Security</a> ·
@@ -29,32 +30,69 @@
 </p>
 
 Keybay runs on macOS and Linux, plus iOS and Android for the SDK. Your OS
-keychain protects the vault, a passphrase or YubiKey can lock it further, and
-Keybay never uses the network.
+keychain protects the vault, a passphrase or hardware key (like a YubiKey) can
+lock it further, and Keybay never uses the network.
 
 | Tool | What it does | Learn more |
 | --- | --- | --- |
 | **`keybay run`** | Runs your app with secrets from your vault, so `.env` doesn't hold them. | [CLI guide](packages/keybay_cli/README.md) |
-| **`keybay open`** | A terminal UI to browse, search and edit secrets. | [Try it in your browser](https://danreynolds.github.io/keybay/demo/) |
+| **`keybay open`** | A terminal UI to browse, edit and protect your secrets. | [Try it in your browser](https://danreynolds.github.io/keybay/demo/) |
 | **`package:keybay`** | Encrypted storage for Dart and Flutter apps. | [SDK guide](doc/sdk.md) |
+
+## Install
+
+### CLI and terminal UI
+
+```sh
+brew install danReynolds/tap/keybay
+```
+
+Homebrew works on Apple silicon Macs and on Linux x64 and arm64; update with
+`brew upgrade keybay`. There's no Intel Mac build. You can also:
+
+- **Download a release.** Get the `macos-arm64`, `linux-x64` or `linux-arm64`
+  archive from the
+  [latest release](https://github.com/danReynolds/keybay/releases/latest) and
+  extract it. From the extracted folder, run `./keybay` on macOS or
+  `./bin/keybay` on Linux. Keep the folder together; no Dart SDK is needed.
+  [Verify the download](packages/keybay_cli/README.md#verify-a-release-download).
+- **Build from source** for development. See
+  [development builds](packages/keybay_cli/README.md#development-builds).
+
+On Linux, the CLI needs glibc 2.35+ (Ubuntu 22.04 or newer, for example) and a
+desktop keyring such as GNOME Keyring or KWallet that's already unlocked.
+Keybay won't unlock or create one, so it doesn't run on headless servers or in
+CI.
+
+### Dart and Flutter SDK
+
+```sh
+dart pub add keybay      # or: flutter pub add keybay
+```
+
+Most platforms need a one-time setup step, covered in the
+[SDK guide](doc/sdk.md).
 
 ## Quick start
 
 ### CLI
 
+Save a secret. You type the value into a hidden prompt:
+
 ```sh
-brew install danReynolds/tap/keybay   # Apple silicon Macs and Linux
-keybay set my-app/openai-api-key      # type the value into a hidden prompt
+keybay set my-app/openai-api-key
 ```
 
-Point `.env` at the secret instead of pasting it:
+Prefixes like `my-app/` just organize names; all your projects share one CLI
+vault. Point `.env` at the secret instead of pasting it:
 
 ```diff
 -OPENAI_API_KEY=sk-live-…
 +OPENAI_API_KEY=kb://my-app/openai-api-key
 ```
 
-Then run your app through Keybay, from the folder with `.env`:
+Then run your app through Keybay from the folder with `.env` (or name another
+file with `-f`):
 
 ```sh
 keybay run -- npm start
@@ -63,11 +101,10 @@ keybay run -- npm start
 Your app gets the real value as an ordinary environment variable, so any
 language works. Only run commands and `.env` files you trust.
 
-### Dart and Flutter
+Until you add a passphrase or hardware key, commands that read or write secrets
+print a warning saying so; see [Security](#security). Run `keybay --help` for the other commands.
 
-```sh
-dart pub add keybay
-```
+### Dart and Flutter
 
 ```dart
 import 'package:keybay/keybay.dart';
@@ -81,35 +118,41 @@ try {
 }
 ```
 
-Each app gets its own vault. Most platforms need a one-time setup step, covered
-in the [SDK guide](doc/sdk.md).
+Each app gets its own vault. See the [SDK guide](doc/sdk.md) for passphrases,
+passkeys and error handling.
 
 ## Platforms
 
-| Platform | SDK | CLI | By default, readable by |
+| Platform | SDK | CLI | Without a passphrase or hardware key, readable by |
 | --- | :---: | :---: | --- |
-| iOS, Android 12+ | ✓ | | only your app |
-| macOS app with Keychain entitlement | ✓ | | only your app |
-| macOS CLI and other apps | ✓ | ✓ | any program you run |
-| Linux desktop | ✓ | ✓ | any program you run |
+| iOS, Android 12+ | ✓ | | No other app |
+| macOS app with Keychain entitlement | ✓ | | No other app |
+| macOS CLI | | ✓ | Any program running as you, by running `keybay` |
+| Other macOS apps | ✓ | | Programs you allow at a Keychain prompt, or that launch the app |
+| Linux desktop | ✓ | ✓ | Programs in your session that can reach your unlocked keyring |
 
-Adding a passphrase or hardware key keeps other programs out on every platform.
-The CLI runs on Apple silicon Macs, and on Linux x64 and arm64 with glibc 2.35+
-and a desktop keyring such as GNOME Keyring or KWallet. Windows, web and Snap
-aren't supported.
-[Security levels by platform](doc/security-levels.md) explains each row.
+On Linux that's most programs, because the Secret Service doesn't check which
+app is asking; sandboxed apps need to be granted access. On macOS, apps started
+with `dart run` share the Dart runtime's Keychain access, so any other Dart
+program run that way can read them. Once you add a passphrase or hardware key, these programs need
+it too.
+
+Windows, web and Snap aren't supported.
+[Security levels by platform](doc/security-levels.md) has the details.
 
 ## Security
 
 Your OS keychain always protects the vault, so a copied vault file is useless on
-its own. On macOS and Linux, though, other programs you run can read your
-secrets until you add a passphrase or a hardware key such as a YubiKey (Mac apps
-with the Keychain entitlement are the exception). In the CLI, add one from
-`keybay open` → Settings.
+its own. On desktop, though, other programs on your account may be able to read
+your secrets, as [Platforms](#platforms) shows, until you add a passphrase or a
+hardware key such as a YubiKey. Add one from `keybay open` → Settings in the
+CLI, or with `session.auth.add` in the SDK.
 
-Keybay is pre-1.0 and hasn't had an independent security audit. The
-[security policy](SECURITY.md) covers what it can't protect against, and the
-[architecture](doc/architecture.md) explains how the vault works.
+Keybay can't protect against root access, keyloggers, code running inside your
+app, or what your apps do with a secret once they have it. It's pre-1.0 and
+hasn't had an independent security audit. See the
+[security policy](SECURITY.md) for the full list and the
+[architecture](doc/architecture.md) for how the vault works.
 
 ## Learn more
 
