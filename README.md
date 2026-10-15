@@ -105,8 +105,8 @@ language works. Only run commands and `.env` files you trust.
 Next steps:
 
 - Browse and edit your secrets with `keybay open`.
-- Add a passphrase or hardware key in `keybay open` → Settings. Until you do,
-  commands that read or write secrets print a reminder.
+- Add a second factor, a passphrase or hardware key, in `keybay open` →
+  Settings. Until you do, commands that read or write secrets print a reminder.
 - See every command with `keybay --help`.
 
 ### Dart and Flutter
@@ -128,25 +128,32 @@ passphrase or passkey with `session.auth.add`, and handling errors.
 
 ## Platforms and security
 
-| Platform | SDK | CLI | Other apps kept out? |
-| --- | :---: | :---: | --- |
-| iOS | ✓ | | Yes |
-| Android 12+ | ✓ | | Yes |
-| macOS app with Keychain entitlement | ✓ | | Yes |
-| macOS CLI and other macOS apps | ✓ | ✓ | No: add a passphrase or hardware key |
-| Linux desktop | ✓ | ✓ | No: add a passphrase or hardware key |
+| Platform | SDK | CLI | [Key isolation](doc/security-levels.md#security-classes) | Enforced by |
+| --- | :---: | :---: | --- | --- |
+| iOS | ✓ | | App-bound | Keychain access group |
+| Android 12+ | ✓ | | App-bound | Android Keystore, per app |
+| macOS app with Keychain entitlement | ✓ | | App-bound | Keychain access group |
+| macOS CLI and other macOS apps | ✓ | ✓ | Account-level | Login Keychain |
+| Linux desktop | ✓ | ✓ | Account-level | Secret Service |
 
-**Yes** means the OS gives the vault's key only to your app. **No** means other
-programs on your account can get it: on Linux, any that can reach your unlocked
-keyring; on macOS, any that can run `keybay` or your app, or that you allow at a
-Keychain prompt. Windows, web and Snap aren't supported.
+- **App-bound:** the OS releases the vault's key only to your app's signed
+  identity, so other apps can't get it, even ones running as you.
+- **Account-level:** other user accounts can't get the key, but processes
+  running as you can. On Linux, that's any that can reach your unlocked keyring
+  over D-Bus. On macOS, it's any that can run `keybay` or your app, or that you
+  approve at a Keychain prompt.
 
 > [!TIP]
-> On a **No** platform, add a passphrase or a hardware key such as a YubiKey,
-> and other programs need it too. Use `keybay open` → Settings in the CLI, or
-> `session.auth.add` in the SDK.
+> On account-level platforms, enroll a second factor: a passphrase or a
+> compatible FIDO2 hardware key such as a YubiKey. Opening the vault then takes the OS key *and*
+> that factor. Use `keybay open` → Settings in the CLI, or `session.auth.add` in
+> the SDK.
 
-Everywhere, a copied vault file is useless without your OS keychain. Keybay
+Key isolation decides who can decrypt the vault. App sandboxing is separate: it
+decides who can read or delete the encrypted file. Windows, web and Snap aren't
+supported.
+
+Everywhere, a copied vault file is useless without the key your OS holds. Keybay
 can't protect against root access, keyloggers, code running inside your app, or
 what your apps do with a secret once they have it. It's pre-1.0 and hasn't had
 an independent security audit.
