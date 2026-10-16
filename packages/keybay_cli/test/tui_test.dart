@@ -648,6 +648,33 @@ void main() {
     expect(model.resetFromFailure, isFalse);
   });
 
+  test(
+    'an unsupported store offers no retry that would fail the same way',
+    () async {
+      final session = await store.open();
+      await session.set('service/token', 'secret-sentinel');
+      await session.close();
+      final pin = (await store.files.openPinnedLive())!;
+      final vault = await pin.readExact(offset: 0, length: pin.length);
+      await pin.close();
+      // An unknown bootstrap suite is a format this version cannot open.
+      ByteData.sublistView(vault).setUint16(4, 0x7fff);
+      store.files.replaceLiveBytes(vault);
+
+      final tester = FleuryTester();
+      addTearDown(tester.dispose);
+      tester.pumpWidget(KeybayTui(model: model));
+      await model.open();
+      await tester.settle();
+      expect(model.view, TuiView.failed);
+      expect(model.failureRetryable, isFalse);
+      final screen = tester.renderToString();
+      expect(screen, contains('nothing was changed'));
+      expect(screen, isNot(contains('Reopen')));
+      expect(screen, contains('Quit'));
+    },
+  );
+
   test('typed reset exits without initializing a replacement store', () async {
     await model.open();
     model.navigate(TuiView.reset);

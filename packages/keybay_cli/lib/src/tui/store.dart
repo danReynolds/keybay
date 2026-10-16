@@ -87,6 +87,7 @@ final class TuiStoreException implements Exception {
     this.needsPin = false,
     this.pinRejected = false,
     this.retryHardware = true,
+    this.retryable = true,
   });
 
   final String message;
@@ -102,4 +103,9 @@ final class TuiStoreException implements Exception {
   final bool needsPin;
   final bool pinRejected;
   final bool retryHardware;
+
+  /// Whether opening again can succeed without a change outside this process.
+  /// False when this Keybay version can never open the store, so the UI does
+  /// not offer a retry that would fail the same way.
+  final bool retryable;
 }

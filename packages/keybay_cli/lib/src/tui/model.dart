@@ -144,6 +144,9 @@ final class TuiModel extends Notifier {
   bool error = false;
   bool resetFromFailure = false;
 
+  /// Whether the failed view should offer to open the store again.
+  bool failureRetryable = true;
+
   /// Authentication feedback belongs to the unlock field, not a global toast.
   String? unlockError;
   int exitCode = 0;
@@ -301,6 +304,7 @@ final class TuiModel extends Notifier {
     if (view != TuiView.unlock) view = TuiView.opening;
     unlockError = null;
     resetFromFailure = false;
+    failureRetryable = true;
     return _perform(
       (token) async {
         if (discovering) {
@@ -835,6 +839,7 @@ final class TuiModel extends Notifier {
           await _closeSession();
           view = TuiView.failed;
           resetFromFailure = failure.resetIncomplete;
+          failureRetryable = true;
         } else if (opening) {
           await _closeSession();
           if (failure.methods.isNotEmpty) {
@@ -850,6 +855,7 @@ final class TuiModel extends Notifier {
               : unlockMethods.isNotEmpty && _unlockMethod == null
               ? TuiView.unlockMethods
               : TuiView.unlock;
+          failureRetryable = failure.retryable;
           if (view == TuiView.unlock) {
             unlockError = failure.unlock == TuiUnlockFailure.incorrect
                 ? 'Could not unlock. Check your passphrase and try again.'
@@ -862,6 +868,7 @@ final class TuiModel extends Notifier {
           await _closeSession();
           view = TuiView.failed;
           resetFromFailure = false;
+          failureRetryable = true;
           text = '$text\nReopen to authenticate the current state.';
         }
         if (text.isEmpty) {
@@ -888,6 +895,7 @@ final class TuiModel extends Notifier {
         if (!_ending) {
           view = TuiView.failed;
           resetFromFailure = false;
+          failureRetryable = true;
           message(
             'The operation failed. Reopen to inspect current state.',
             failure: true,

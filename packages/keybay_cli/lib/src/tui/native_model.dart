@@ -124,6 +124,7 @@ Future<T> _nativeOperation<T>(Future<T> Function() operation) async {
         KeybayErrorCode.storeStateConflict,
       }.contains(error.code),
       resetIncomplete: error.code == KeybayErrorCode.resetIncomplete,
+      retryable: error.code != KeybayErrorCode.unsupportedStoreVersion,
       invalidatesSession: const {
         KeybayErrorCode.staleSession,
         KeybayErrorCode.storeAuthenticationFailed,
