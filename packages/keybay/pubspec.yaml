@@ -13,6 +13,14 @@ topics:
   - keystore
   - credentials
 
+# Supported hosts, so pub.dev lists these rather than inferring them from the
+# native build hooks. Windows and web fail closed.
+platforms:
+  android:
+  ios:
+  linux:
+  macos:
+
 # Identity used only by this package's runnable example. Applications declare
 # their own identity in their owning pubspec when the OS cannot supply one.
 keybay:
