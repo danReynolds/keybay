@@ -18,6 +18,12 @@ build_libfido2() {
 
 if [[ "$(uname -s)" == Darwin ]]; then
   brew install cmake pkg-config libcbor openssl@3
+  # Keypass's CMake accepts any OpenSSL from 3 and finds it through pkg-config,
+  # and Dart build hooks drop OPENSSL_ROOT_DIR, so the linked openssl must be 3.
+  if [[ "$(pkg-config --modversion openssl 2>/dev/null)" != 3.* ]]; then
+    if brew list --versions openssl@4 >/dev/null 2>&1; then brew unlink openssl@4; fi
+    brew link --force --overwrite openssl@3
+  fi
   # Keypass 0.1.0-dev.2 bundles OpenSSL 3, but Homebrew's libfido2 now links
   # OpenSSL 4. Keep an installed libfido2 only while it links OpenSSL 3.
   if pkg-config --atleast-version=1.16 libfido2; then
