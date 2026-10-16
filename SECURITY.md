@@ -123,8 +123,8 @@ Critical and High findings block the next release.
 
 SDK (`v*`) and CLI (`keybay_cli-v*`) tags are signed with the maintainer's
 release SSH key. The exception is 0.3.0: `v0.3.0` and `keybay_cli-v0.3.0` were
-published unsigned, so the checks below fail for them and the release audits
-report it. Releases after 0.3.0 will be signed again.
+published unsigned, so the checks below fail for them. Signing resumed with
+0.3.1.
 
 ```text
 me@danreynolds.ca ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDtnuwBbMwdKZu2YlUnDdhW7t0bp7JlCjUZR8/JOQae6
@@ -135,10 +135,10 @@ Cross-check it against GitHub's list of the maintainer's
 [signing keys](https://api.github.com/users/danReynolds/ssh_signing_keys).
 It is not one of the authentication keys at `github.com/danReynolds.keys`.
 In a clone of this repository, save the first line above as
-`keybay-allowed-signers`, then verify a tag (`v0.2.0` for the SDK):
+`keybay-allowed-signers`, then verify a tag (`v0.3.1` for the SDK):
 
 ```sh
-git -c gpg.ssh.allowedSignersFile=keybay-allowed-signers verify-tag keybay_cli-v0.2.0
+git -c gpg.ssh.allowedSignersFile=keybay-allowed-signers verify-tag keybay_cli-v0.3.1
 ```
 
 Since 0.1.1, a CLI tag's annotation records the SHA-256 of that release's

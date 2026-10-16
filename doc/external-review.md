@@ -1,7 +1,7 @@
 # External review guide
 
-Prepared October 11, 2026; published baselines updated for 0.3.0 on
-October 15, 2026. This handoff defines the source, threat model,
+Prepared October 11, 2026; published baselines updated for 0.3.1 on
+October 16, 2026. This handoff defines the source, threat model,
 review surface and evidence gaps. It does not claim a completed human security
 audit. Review the vault construction together with the resolved Keypass dependency.
 
@@ -9,17 +9,20 @@ audit. Review the vault construction together with the resolved Keypass dependen
 
 | Target | Identity |
 | --- | --- |
-| Implementation baseline | [`eab2908a16ea834bea0d5c8d3a56e29af9f15727`](https://github.com/danReynolds/keybay/tree/eab2908a16ea834bea0d5c8d3a56e29af9f15727), the published 0.3.0 source |
-| Published SDK | [0.3.0](https://pub.dev/packages/keybay/versions/0.3.0), unsigned tag `v0.3.0`, source `eab2908a16ea834bea0d5c8d3a56e29af9f15727` |
-| SDK Pub archive SHA-256 | `370148cc0e93ca41edb91b281023eaae90fb6fd5c52ec2a3711977ccd7f95126` |
-| Published CLI | [0.3.0](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.3.0), unsigned tag `keybay_cli-v0.3.0`, source `eab2908a16ea834bea0d5c8d3a56e29af9f15727` |
+| Implementation baseline | [`ce5d631b554aebe32ccc703f4f5c6dc3b40de2af`](https://github.com/danReynolds/keybay/tree/ce5d631b554aebe32ccc703f4f5c6dc3b40de2af), the published 0.3.1 source |
+| Published SDK | [0.3.1](https://pub.dev/packages/keybay/versions/0.3.1), signed tag `v0.3.1`, source `ce5d631b554aebe32ccc703f4f5c6dc3b40de2af` |
+| SDK Pub archive SHA-256 | `21d275b25758046998e690eca0fc9767f4281b641b2c6ad090c6eefe14d77a81` |
+| Published CLI | [0.3.1](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.3.1), signed tag `keybay_cli-v0.3.1`, source `ce5d631b554aebe32ccc703f4f5c6dc3b40de2af` |
 | Resolved Keypass dependency | Exact-pinned [0.1.0-dev.2](https://pub.dev/packages/keypass/versions/0.1.0-dev.2); archive SHA-256 `9c46f2bb0413b4f891d5e7eddce46830d2fa4c5c83ebad08b14333efe051c1ec` |
 | Separate Keypass source for joint review | [`d7d5316e66b0e6deebda74be1d62070a230af6c8`](https://github.com/danReynolds/keypass/tree/d7d5316e66b0e6deebda74be1d62070a230af6c8); includes unpublished cleanup |
 
-The 0.3.0 tags are unsigned; see [verifying releases](../SECURITY.md#verifying-releases).
-The [SDK 0.2.0](reviews/2026-10-07-sdk-publication.md) and
+The [0.3.1 publication record](reviews/2026-10-16-0.3.1-publication.md) gives
+its source, CI, signed tags and artifact hashes. The 0.3.0 tags are unsigned;
+see [verifying releases](../SECURITY.md#verifying-releases). The
+[SDK 0.2.0](reviews/2026-10-07-sdk-publication.md) and
 [CLI 0.2.0](reviews/2026-10-11-cli-publication.md) publication records keep
-the previous release's source, CI, artifact hashes and installation evidence.
+that release's installation evidence. Version 0.3.1 changes documentation,
+pub.dev metadata and the TUI failure view, not the vault construction.
 Version 0.3.0 removed retired V2 singleton-passphrase reading/migration and
 duplicate release tooling, and writes methods policy 3, which adds a credential
 confirmation; 0.2.0 policy-2 and old singleton packages fail without mutation.
