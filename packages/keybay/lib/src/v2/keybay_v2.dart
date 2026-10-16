@@ -90,33 +90,114 @@ final class PassphraseCredential extends KeybayCredential {
 }
 
 /// Stable machine-readable Keybay V2 failures.
+///
+/// Branch on these codes, never on [KeybayException.message]. None of them is
+/// permission to delete or reset a store automatically.
 enum KeybayErrorCode {
+  /// The host application's identity could not be established, such as a
+  /// desktop Dart program without a declared `keybay: application_id`.
   applicationIdentityUnavailable,
+
+  /// No qualified platform protector exists on this host. Keybay does not
+  /// fall back to weaker storage.
   platformProtectorUnavailable,
+
+  /// The platform key store is locked, such as a locked Linux keyring.
+  /// Unlock it and retry.
   platformProtectorLocked,
+
+  /// The platform key store needs user interaction this context cannot show.
+  /// Retry from an attended session.
   platformInteractionRequired,
+
+  /// A platform key store operation failed. A submitted change may have
+  /// committed; reopen to inspect state before retrying.
   platformOperationFailed,
+
+  /// The platform key that protects the store no longer exists or can no
+  /// longer be used. Existing values cannot be recovered without it.
   platformKeyInvalidated,
+
+  /// Reading or writing the store files failed. A submitted change may have
+  /// committed; reopen to inspect state before retrying.
   storageOperationFailed,
+
+  /// A credential-based open found no encrypted store. Nothing was created;
+  /// open without a credential to initialize one.
   storeNotFound,
+
+  /// Secure random bytes were unavailable.
   entropyUnavailable,
+
+  /// The store has additional protection and the call supplied no
+  /// credential. [KeybayException.authMethods] lists the configured methods.
   authRequired,
+
+  /// The supplied credential or route does not match the store's protection,
+  /// such as a passphrase for a store protected only by passkeys.
   protectionMismatch,
+
+  /// The supplied credential did not unlock the store, such as a wrong
+  /// passphrase.
   unlockFailed,
+
+  /// The method cannot be added because an equivalent one exists; a store
+  /// allows at most one passphrase.
   authMethodAlreadyConfigured,
+
+  /// The method is not configured in this store, including a method from
+  /// another store or one already removed.
   authMethodNotConfigured,
+
+  /// Several configured passkeys match the credential. Retry with a
+  /// `methodId` from [KeybayException.authMethods].
   authMethodSelectionRequired,
+
+  /// A passkey operation failed. [KeybayException.passkeyCode] says why, such
+  /// as cancellation, a PIN error or a missing credential.
   passkeyOperationFailed,
+
+  /// A reset passed the point where the store's files are revoked but did not
+  /// finish. Call [Keybay.reset] again to complete it.
   resetIncomplete,
+
+  /// The store failed authentication: it was damaged, replaced, or changed by
+  /// another process during this session. Close and reopen; do not erase it.
   storeAuthenticationFailed,
+
+  /// The store uses a format this Keybay version cannot open, such as a
+  /// 0.2.0 store with a passphrase or passkey. Nothing was changed.
   unsupportedStoreVersion,
+
+  /// The store files and platform state disagree, so Keybay can neither open
+  /// nor initialize them safely. Investigate before any deliberate reset.
   storeStateConflict,
+
+  /// Another Keybay operation holds the store. Retry with bounded backoff.
   storeBusy,
+
+  /// This session no longer matches the store, such as after a reset or a
+  /// protection change elsewhere. Close it and open a new one.
   staleSession,
+
+  /// The session is closed or closing. Open a new one.
   sessionClosed,
+
+  /// The record key does not follow Keybay's key format: 1 to 120 ASCII
+  /// characters in slash-separated segments of letters, digits, `.`, `_` and
+  /// `-`, each starting with a letter or digit.
   invalidRecordKey,
+
+  /// A string value is not valid Unicode, or a stored value read with
+  /// [KeybaySession.get] is not valid UTF-8. Use [KeybaySession.getBytes] for
+  /// binary values.
   invalidRecordEncoding,
+
+  /// A size or count limit was exceeded, such as [KeybayLimits.recordValueBytes].
   limitExceeded,
+
+  /// The supplied credential input is invalid, such as an empty passphrase or
+  /// a malformed passkey request.
   invalidAuthInput,
 }
 
@@ -190,12 +271,27 @@ abstract interface class KeybaySession {
   /// Additional unlock-method management for this authenticated session.
   KeybayAuthManager get auth;
 
+  /// Returns the value stored under [key] as a string, or null if absent.
+  ///
+  /// Fails with [KeybayErrorCode.invalidRecordEncoding] if the stored value is
+  /// not valid UTF-8; read binary values with [getBytes].
   Future<String?> get(String key);
 
+  /// Stores [value] under [key], replacing any existing value.
+  ///
+  /// The UTF-8 encoding of [value] may be up to
+  /// [KeybayLimits.recordValueBytes].
   Future<void> set(String key, String value);
 
+  /// Returns the bytes stored under [key], or null if absent.
+  ///
+  /// The returned buffer belongs to the caller; clear it when done.
   Future<Uint8List?> getBytes(String key);
 
+  /// Returns the bytes stored under each of [keys], with null for absent keys.
+  ///
+  /// Reads up to 1,024 keys and 16 MiB of values in one authenticated pass.
+  /// The returned buffers belong to the caller.
   Future<Map<String, Uint8List?>> getManyBytes(Iterable<String> keys);
 
   /// Returns the authenticated record names in canonical order.
@@ -204,14 +300,23 @@ abstract interface class KeybaySession {
   /// is immutable and contains caller-owned Dart strings.
   Future<List<String>> listKeys();
 
+  /// Stores a copy of [value] under [key], replacing any existing value.
+  ///
+  /// [value] may be up to [KeybayLimits.recordValueBytes]. Keybay copies it
+  /// synchronously, so the caller may clear its buffer afterwards.
   Future<void> setBytes(String key, Uint8List value);
 
+  /// Whether a value is stored under [key], without decrypting the value.
   Future<bool> contains(String key);
 
+  /// Removes the value stored under [key]. Returns whether one was removed.
   Future<bool> delete(String key);
 
+  /// Removes every record while keeping the store and its protection.
   Future<void> clearAll();
 
+  /// Closes the session after its in-flight operations settle, then clears
+  /// its key material. Safe to call more than once.
   Future<void> close();
 }
 

@@ -6,6 +6,10 @@ part of 'keybay_v2.dart';
 /// Keybay obtains and disposes the Keypass result internally. RP scope does not
 /// change Keybay's host identity, file location or mandatory platform protection.
 final class PasskeyCredential extends KeybayCredential {
+  /// Use a passkey from the operating system's passkey provider.
+  ///
+  /// Needs a supported native app host whose associated domain matches
+  /// [rpId]. The provider presents its own UI.
   const PasskeyCredential.system({required this.rpId, this.displayName})
     : route = PasskeyRoute.system,
       _pin = null;
@@ -22,9 +26,16 @@ final class PasskeyCredential extends KeybayCredential {
   }) : route = PasskeyRoute.hardware,
        _pin = pin;
 
+  /// The relying party ID that scopes the passkey: a domain associated with
+  /// your app for system passkeys, or a stable domain-style namespace for
+  /// hardware keys. It does not authenticate your app.
   final String rpId;
+
+  /// An optional name the provider can show for a passkey this credential
+  /// creates.
   final String? displayName;
 
+  /// Whether this credential uses a system passkey or a hardware key.
   final PasskeyRoute route;
   final Uint8List? _pin;
 
@@ -43,7 +54,10 @@ final class PasskeyMethod extends AuthMethod {
     required String label,
   }) : super._(id, storeId, label: label);
 
+  /// The relying party ID this passkey was enrolled under.
   final String rpId;
+
+  /// Whether this method uses a system passkey or a hardware key.
   final PasskeyRoute route;
 
   @override
