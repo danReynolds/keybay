@@ -1,25 +1,30 @@
 # Keybay release readiness
 
-SDK and CLI 0.3.0 are published from source `eab2908`. Version 0.3.1 is the
-next release candidate: it documents the exported SDK API, declares the SDK's
-platforms for pub.dev, and stops the TUI offering Reopen for a store it can
-never open.
+SDK and CLI 0.3.1 are published from source `ce5d631` with signed tags. No
+later release is in preparation.
 
 | Artifact | Publication evidence |
 | --- | --- |
-| [Keybay SDK 0.3.0](https://pub.dev/packages/keybay/versions/0.3.0) | Pub archive SHA-256 `370148cc0e93ca41edb91b281023eaae90fb6fd5c52ec2a3711977ccd7f95126`; tag `v0.3.0` is unsigned |
-| [CLI 0.3.0](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.3.0) | Immutable GitHub release with its release manifest and Homebrew formula; tag `keybay_cli-v0.3.0` is unsigned |
+| [Keybay SDK 0.3.1](https://pub.dev/packages/keybay/versions/0.3.1) | [Signed tag, exact-commit CI and served Pub archive](reviews/2026-10-16-0.3.1-publication.md#sdk) |
+| [CLI 0.3.1](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.3.1) | [Signed tag and manifest, served archives matching the stage, Homebrew formula](reviews/2026-10-16-0.3.1-publication.md#cli) |
 | [Keypass 0.1.0-dev.2](https://pub.dev/packages/keypass/versions/0.1.0-dev.2) | Pinned SDK/CLI dependency; remains a prerelease |
 
-The 0.3.0 tags were published without signatures, so the signed-tag checks in
-[verifying releases](../SECURITY.md#verifying-releases) fail for them and the
-release audits report it; 0.2.0 and earlier tags are signed. The
-[SDK 0.2.0](reviews/2026-10-07-sdk-publication.md) and
+The 0.3.0 tags are the only ones published without signatures, so the
+signed-tag checks in [verifying releases](../SECURITY.md#verifying-releases)
+fail for them. The [SDK 0.2.0](reviews/2026-10-07-sdk-publication.md) and
 [CLI 0.2.0](reviews/2026-10-11-cli-publication.md) publication records keep the
-previous release's evidence.
+evidence from that release.
 
 **Upgrading:** V1 stores are preserved but not read or migrated. Keep the old
 installation available to transfer required secrets before switching.
+
+## What 0.3.1 changed
+
+Version 0.3.1 documents every exported SDK member, declares the SDK's platforms
+for pub.dev, stops the TUI offering Reopen for a store it can never open, and
+gives the Homebrew formula a real description. The macOS CLI bundles OpenSSL
+3.5.9, which carries the September 29, 2026 advisory's fixes; 0.3.0 bundled
+3.6.3. The vault format is unchanged.
 
 ## What 0.3.0 changed
 
@@ -37,10 +42,10 @@ Keypass 0.1.0-dev.2, not its newer main branch. Use the
 
 RK bundling, native notices, Linux ABI baseline and publication are complete.
 The [candidate record](reviews/2026-10-11-cli-release-candidate.md) preserves
-installed Linux checks and attended macOS hardware evidence for 0.2.0, whose
-publication records cover its served artifacts; 0.3.0 has no separate
-publication record. These do not qualify untested devices or lifecycle
-behavior.
+installed Linux checks and attended macOS hardware evidence for 0.2.0. The
+[0.3.1 publication record](reviews/2026-10-16-0.3.1-publication.md) covers that release's served artifacts;
+0.3.0 has no separate publication record. These do not qualify untested
+devices or lifecycle behavior.
 
 SDK and CLI are separate release units; `release.toml` publishes the package
 before its dependent CLI. Never replace an already published SDK version.

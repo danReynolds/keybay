@@ -27,14 +27,14 @@ keybay open
 ```
 
 Update with `brew update` and `brew upgrade keybay`.
-[Release 0.3.0 archives](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.3.0)
+[Release 0.3.1 archives](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.3.1)
 need no Dart SDK. Keep the entire extracted directory: launch `./keybay` on
 macOS or `./bin/keybay` on Linux. Companion files are required.
 
 Linux needs glibc 2.35+ and a reachable, unlocked Secret Service provider on the
 user D-Bus session. Provider UI may appear; headless availability is not guaranteed.
-The macOS bundle is Developer ID signed and notarized. Exact hashes and observed
-installation checks are in the [publication record](../../doc/reviews/2026-10-11-cli-publication.md).
+The macOS bundle is Developer ID signed and notarized. Exact hashes are in the
+[0.3.1 publication record](../../doc/reviews/2026-10-16-0.3.1-publication.md).
 
 **Upgrading:** V1 stores are not migrated, and 0.3.0 rejects retired V2
 singleton-passphrase stores. If your 0.2.0 vault has a passphrase or hardware
@@ -78,7 +78,7 @@ releases since 0.1.1 are immutable GitHub releases, so a quick check confirms
 that a download is exactly the file attached to the release:
 
 ```sh
-gh release verify-asset keybay_cli-v0.2.0 keybay-0.2.0-macos-arm64.tar.gz --repo danReynolds/keybay
+gh release verify-asset keybay_cli-v0.3.1 keybay-0.3.1-macos-arm64.tar.gz --repo danReynolds/keybay
 ```
 
 That trusts GitHub's release record; it is not build provenance. 0.3.0 has no
@@ -88,7 +88,7 @@ from [SECURITY.md](../../SECURITY.md#verifying-releases), saved as an
 allowed-signers file, in a clone of this repository:
 
 ```sh
-git -c gpg.ssh.allowedSignersFile=keybay-allowed-signers verify-tag keybay_cli-v0.2.0
+git -c gpg.ssh.allowedSignersFile=keybay-allowed-signers verify-tag keybay_cli-v0.3.1
 ```
 
 The tag's `release-manifest-sha256` line binds the release's
@@ -96,11 +96,11 @@ The tag's `release-manifest-sha256` line binds the release's
 formula's. Compare them (on Linux, use `sha256sum` for `shasum -a 256`):
 
 ```sh
-git cat-file tag keybay_cli-v0.2.0 | grep '^release-manifest-sha256:'
-shasum -a 256 release-manifest.json keybay-0.2.0-macos-arm64.tar.gz
+git cat-file tag keybay_cli-v0.3.1 | grep '^release-manifest-sha256:'
+shasum -a 256 release-manifest.json keybay-0.3.1-macos-arm64.tar.gz
 ```
 
-The [publication record](../../doc/reviews/2026-10-11-cli-publication.md)
+The [0.3.1 publication record](../../doc/reviews/2026-10-16-0.3.1-publication.md)
 records the exact digests. The
 [CLI release audit](../../.github/workflows/audit-cli-release.yml) repeats this
 chain for each release and daily for the newest release and its published
