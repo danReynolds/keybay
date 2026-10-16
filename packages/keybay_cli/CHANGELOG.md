@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1
+
+- When the terminal UI meets a vault this version can never open, such as a
+  0.2.0 vault with a passphrase or hardware key, it no longer offers Reopen,
+  which failed the same way. It says the vault was preserved, shows the upgrade
+  steps, and offers Quit.
+- Built on Keybay SDK 0.3.1. The vault format is unchanged from 0.3.0.
+- Release tags are signed again; the 0.3.0 tags were not.
+
 ## 0.3.0
 
 - Confirm the vault on every passphrase or hardware-key unlock (Keybay SDK
