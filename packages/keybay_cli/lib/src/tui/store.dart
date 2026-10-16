@@ -104,8 +104,8 @@ final class TuiStoreException implements Exception {
   final bool pinRejected;
   final bool retryHardware;
 
-  /// Whether opening again can succeed without a change outside this process.
-  /// False when this Keybay version can never open the store, so the UI does
-  /// not offer a retry that would fail the same way.
+  /// Whether opening again may succeed. False when this Keybay version can
+  /// never open the store as it is, so the UI does not offer a retry that
+  /// would fail the same way.
   final bool retryable;
 }

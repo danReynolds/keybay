@@ -37,9 +37,10 @@ Keypass 0.1.0-dev.2, not its newer main branch. Use the
 
 RK bundling, native notices, Linux ABI baseline and publication are complete.
 The [candidate record](reviews/2026-10-11-cli-release-candidate.md) preserves
-installed Linux checks and attended macOS hardware evidence; the publication
-records above cover the served artifacts. These do not qualify untested devices
-or lifecycle behavior.
+installed Linux checks and attended macOS hardware evidence for 0.2.0, whose
+publication records cover its served artifacts; 0.3.0 has no separate
+publication record. These do not qualify untested devices or lifecycle
+behavior.
 
 SDK and CLI are separate release units; `release.toml` publishes the package
 before its dependent CLI. Never replace an already published SDK version.

@@ -28,7 +28,8 @@ final class PasskeyCredential extends KeybayCredential {
 
   /// The relying party ID that scopes the passkey: a domain associated with
   /// your app for system passkeys, or a stable domain-style namespace for
-  /// hardware keys. It does not authenticate your app.
+  /// hardware keys. It is not Keybay's application identity, and for hardware
+  /// keys it does not authenticate the calling program.
   final String rpId;
 
   /// An optional name the provider can show for a passkey this credential

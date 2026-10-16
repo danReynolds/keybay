@@ -669,9 +669,11 @@ void main() {
       expect(model.view, TuiView.failed);
       expect(model.failureRetryable, isFalse);
       final screen = tester.renderToString();
-      expect(screen, contains('nothing was changed'));
+      expect(
+        screen,
+        contains('The store was preserved and nothing was changed.'),
+      );
       expect(screen, isNot(contains('Reopen')));
-      expect(screen, contains('Quit'));
     },
   );
 

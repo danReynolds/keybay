@@ -122,8 +122,9 @@ enum KeybayErrorCode {
   /// committed; reopen to inspect state before retrying.
   storageOperationFailed,
 
-  /// A credential-based open found no encrypted store. Nothing was created;
-  /// open without a credential to initialize one.
+  /// A credential-based open found no encrypted store, and nothing was
+  /// created. Offer explicit first-use setup rather than opening without a
+  /// credential automatically, which creates a new platform-only store.
   storeNotFound,
 
   /// Secure random bytes were unavailable.
@@ -173,7 +174,9 @@ enum KeybayErrorCode {
   /// nor initialize them safely. Investigate before any deliberate reset.
   storeStateConflict,
 
-  /// Another Keybay operation holds the store. Retry with bounded backoff.
+  /// Another Keybay operation holds the store: retry with bounded backoff.
+  /// Also reported for a call made from inside an authentication callback,
+  /// which must instead run after the callback returns.
   storeBusy,
 
   /// This session no longer matches the store, such as after a reset or a

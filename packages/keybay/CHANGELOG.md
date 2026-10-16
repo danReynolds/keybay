@@ -8,6 +8,7 @@
 - Declare the supported platforms (Android, iOS, Linux and macOS) for pub.dev,
   which had inferred Windows and Linux from the native build hooks.
 - The vault format is unchanged from 0.3.0.
+- Release tags are signed again; the 0.3.0 tags were not.
 
 ## 0.3.0
 

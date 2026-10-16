@@ -9,7 +9,7 @@ audit. Review the vault construction together with the resolved Keypass dependen
 
 | Target | Identity |
 | --- | --- |
-| Implementation baseline before this documentation update | [`162b4778075a4f303524d508015a019864634aa5`](https://github.com/danReynolds/keybay/tree/162b4778075a4f303524d508015a019864634aa5) |
+| Implementation baseline | [`eab2908a16ea834bea0d5c8d3a56e29af9f15727`](https://github.com/danReynolds/keybay/tree/eab2908a16ea834bea0d5c8d3a56e29af9f15727), the published 0.3.0 source |
 | Published SDK | [0.3.0](https://pub.dev/packages/keybay/versions/0.3.0), unsigned tag `v0.3.0`, source `eab2908a16ea834bea0d5c8d3a56e29af9f15727` |
 | SDK Pub archive SHA-256 | `370148cc0e93ca41edb91b281023eaae90fb6fd5c52ec2a3711977ccd7f95126` |
 | Published CLI | [0.3.0](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.3.0), unsigned tag `keybay_cli-v0.3.0`, source `eab2908a16ea834bea0d5c8d3a56e29af9f15727` |
@@ -95,7 +95,7 @@ These are explicit design limits, not gaps to conceal in a support claim.
 | Passkey coverage | Keypass has bounded macOS/provider and single-key USB/phone-NFC receipts. Android OS-provider, Windows runtime, other hardware/vendors and wider lifecycle/production packaging remain unqualified. Keypass Windows work cannot supply a Keybay Windows platform root. |
 | Independent audit | Internal/AI-assisted reviews and test vectors are engineering evidence. No completed human audit of the combined construction is claimed. |
 
-The latest retained assessed watcher run is [October 7](../watchers/reports/2026-10-07-37651745087-1/assessment.md).
+The latest retained assessed watcher run is [October 12](../watchers/reports/2026-10-12-38221007653-1/assessment.md).
 It found no new established Keybay defect and retained #75/#76. A successful scan
 job is not a zero-findings or full-reachability guarantee. Recheck current
 advisories and open issues when beginning the audit.
