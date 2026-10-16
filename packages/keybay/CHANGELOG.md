@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.1
+
+- Document every exported API member. Each `KeybayErrorCode` now says what
+  happened and what to do, and session methods describe their return values,
+  limits and buffer ownership. The library documentation opens with an example.
+- Declare the supported platforms (Android, iOS, Linux and macOS) for pub.dev,
+  which had inferred Windows and Linux from the native build hooks.
+- The vault format is unchanged from 0.3.0.
+- Release tags are signed again; the 0.3.0 tags were not.
+
 ## 0.3.0
 
 - Confirm the vault on every method unlock. Each passphrase or passkey method now

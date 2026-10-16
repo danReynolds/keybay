@@ -29,7 +29,7 @@ DOCUMENTS = [
   {source: "doc/architecture.md", route: "docs/architecture/", label: "Architecture", summary: "How the vault, its key hierarchy, opening, writing and protection changes work."},
   {source: "doc/design.md", route: "docs/design/", label: "Security design", summary: "The V2 threat model, cryptographic construction, platform boundaries, and evidence-linked guarantees."},
   {source: "SECURITY.md", route: "docs/security/", label: "Security", summary: "Where secrets live on each platform, how releases are verified, current evidence limits, and the private vulnerability-reporting route."},
-  {source: "doc/release-readiness.md", route: "docs/releases/", label: "Release readiness", summary: "Published 0.2.0 artifacts, unreleased source changes, and retained qualification evidence."},
+  {source: "doc/release-readiness.md", route: "docs/releases/", label: "Release readiness", summary: "Published 0.3.0 artifacts, changes since that release, and retained qualification evidence."},
   {source: "doc/external-review.md", route: "docs/review/", label: "External review", summary: "Exact source and release baselines, security boundaries, code and test maps, and outstanding qualification."},
   {source: "doc/ecosystem-comparison.md", route: "docs/comparison/", label: "Choosing Keybay", summary: "Choose the smallest tool that matches whether you need local storage, provider portability, team sharing, or encrypted files."},
 ].freeze

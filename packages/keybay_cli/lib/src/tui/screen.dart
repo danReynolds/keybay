@@ -255,12 +255,15 @@ final class KeybayTui extends StatelessWidget {
         context,
         'Keybay needs your attention',
         [
-          const Text(
-            'The store was preserved. Reopen to authenticate its current state.',
+          Text(
+            model.failureRetryable
+                ? 'The store was preserved. Reopen to authenticate its current state.'
+                : 'The store was preserved and nothing was changed.',
           ),
         ],
         [
-          _call(context, 'Reopen', model.open, autofocus: true),
+          if (model.failureRetryable)
+            _call(context, 'Reopen', model.open, autofocus: true),
           if (model.resetFromFailure)
             _go(context, 'Reset Keybay', TuiView.reset),
           _quit(),

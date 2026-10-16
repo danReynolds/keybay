@@ -1,6 +1,7 @@
 # External review guide
 
-Prepared October 11, 2026. This handoff defines the source, threat model,
+Prepared October 11, 2026; published baselines updated for 0.3.0 on
+October 15, 2026. This handoff defines the source, threat model,
 review surface and evidence gaps. It does not claim a completed human security
 audit. Review the vault construction together with the resolved Keypass dependency.
 
@@ -8,22 +9,22 @@ audit. Review the vault construction together with the resolved Keypass dependen
 
 | Target | Identity |
 | --- | --- |
-| Implementation baseline before this documentation update | [`162b4778075a4f303524d508015a019864634aa5`](https://github.com/danReynolds/keybay/tree/162b4778075a4f303524d508015a019864634aa5) |
-| Published SDK | [0.2.0](https://pub.dev/packages/keybay/versions/0.2.0), signed tag `v0.2.0`, source `6d2add6a95fa42ef4775e458e4635c045f2cb99c` |
-| SDK Pub archive SHA-256 | `f45c2df4b7e027d1555036caf6a01cfa58661a1acf924b01ce5c8bffa05ba61d` |
-| Published CLI | [0.2.0](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.2.0), signed tag `keybay_cli-v0.2.0`, source `607b070d75c3d9facee9a4b10064cfac55fb837b` |
+| Implementation baseline | [`eab2908a16ea834bea0d5c8d3a56e29af9f15727`](https://github.com/danReynolds/keybay/tree/eab2908a16ea834bea0d5c8d3a56e29af9f15727), the published 0.3.0 source |
+| Published SDK | [0.3.0](https://pub.dev/packages/keybay/versions/0.3.0), unsigned tag `v0.3.0`, source `eab2908a16ea834bea0d5c8d3a56e29af9f15727` |
+| SDK Pub archive SHA-256 | `370148cc0e93ca41edb91b281023eaae90fb6fd5c52ec2a3711977ccd7f95126` |
+| Published CLI | [0.3.0](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.3.0), unsigned tag `keybay_cli-v0.3.0`, source `eab2908a16ea834bea0d5c8d3a56e29af9f15727` |
 | Resolved Keypass dependency | Exact-pinned [0.1.0-dev.2](https://pub.dev/packages/keypass/versions/0.1.0-dev.2); archive SHA-256 `9c46f2bb0413b4f891d5e7eddce46830d2fa4c5c83ebad08b14333efe051c1ec` |
 | Separate Keypass source for joint review | [`d7d5316e66b0e6deebda74be1d62070a230af6c8`](https://github.com/danReynolds/keypass/tree/d7d5316e66b0e6deebda74be1d62070a230af6c8); includes unpublished cleanup |
 
-[SDK publication](reviews/2026-10-07-sdk-publication.md) and
-[CLI publication](reviews/2026-10-11-cli-publication.md) record source, CI,
-artifact hashes and installation evidence. Current source additionally removes
-retired V2 singleton-passphrase reading/migration and duplicate release tooling.
-Those changes are [unreleased](../packages/keybay/CHANGELOG.md#030).
-Version fields alone do not identify a checkout's contents. Current source
-also writes methods policy 3, which adds a credential confirmation; 0.2.0
-policy-2 and old singleton packages now fail without mutation. The platform-only
-encoding is unchanged. There is no automatic conversion.
+The 0.3.0 tags are unsigned; see [verifying releases](../SECURITY.md#verifying-releases).
+The [SDK 0.2.0](reviews/2026-10-07-sdk-publication.md) and
+[CLI 0.2.0](reviews/2026-10-11-cli-publication.md) publication records keep
+the previous release's source, CI, artifact hashes and installation evidence.
+Version 0.3.0 removed retired V2 singleton-passphrase reading/migration and
+duplicate release tooling, and writes methods policy 3, which adds a credential
+confirmation; 0.2.0 policy-2 and old singleton packages fail without mutation.
+The platform-only encoding is unchanged. There is no automatic conversion.
+Version fields alone do not identify a checkout's contents.
 
 Capture `git rev-parse HEAD`, `git status --short`, toolchain versions,
 `pubspec.lock`, native library versions/hashes and the precise tested artifact.
@@ -94,7 +95,7 @@ These are explicit design limits, not gaps to conceal in a support claim.
 | Passkey coverage | Keypass has bounded macOS/provider and single-key USB/phone-NFC receipts. Android OS-provider, Windows runtime, other hardware/vendors and wider lifecycle/production packaging remain unqualified. Keypass Windows work cannot supply a Keybay Windows platform root. |
 | Independent audit | Internal/AI-assisted reviews and test vectors are engineering evidence. No completed human audit of the combined construction is claimed. |
 
-The latest retained assessed watcher run is [October 7](../watchers/reports/2026-10-07-37651745087-1/assessment.md).
+The latest retained assessed watcher run is [October 12](../watchers/reports/2026-10-12-38221007653-1/assessment.md).
 It found no new established Keybay defect and retained #75/#76. A successful scan
 job is not a zero-findings or full-reachability guarantee. Recheck current
 advisories and open issues when beginning the audit.

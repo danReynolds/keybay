@@ -2,7 +2,7 @@ name: keybay
 description: >-
   Cross-platform local secret storage for Dart without Flutter: one encrypted,
   platform-protected application store with optional passphrase or passkey protection.
-version: 0.3.0
+version: 0.3.1
 repository: https://github.com/danReynolds/keybay
 homepage: https://danreynolds.github.io/keybay/
 issue_tracker: https://github.com/danReynolds/keybay/issues
@@ -12,6 +12,14 @@ topics:
   - keychain
   - keystore
   - credentials
+
+# Supported hosts, so pub.dev lists these rather than inferring them from the
+# native build hooks. Windows and web fail closed.
+platforms:
+  android:
+  ios:
+  linux:
+  macos:
 
 # Identity used only by this package's runnable example. Applications declare
 # their own identity in their owning pubspec when the OS cannot supply one.

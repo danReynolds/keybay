@@ -16,6 +16,9 @@ path = "packages/keybay_cli"
 tag = "keybay_cli-v{version}"
 publish = ["git-tag", "github-release", "homebrew"]
 binary_platforms = ["macos-arm64", "linux-x64", "linux-arm64"]
+# The formula's desc, shown by `brew info`. Needs rk with homebrew_description
+# (danReynolds/release-kit#124); older rk refuses the unknown setting.
+homebrew_description = "Encrypted local secrets vault that keeps plaintext out of .env files"
 # Embed the CLI's application ID, as keybay_compile does; without it the
 # release binary cannot resolve which store it owns.
 dart_defines_from_pubspec = ["keybay.application_id"]
