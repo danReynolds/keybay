@@ -1,30 +1,36 @@
 # Keybay release readiness
 
-SDK and CLI 0.2.0 are published. Version 0.3.0 is the next release candidate;
-its source cleanup and input-border fix are not yet published.
+SDK and CLI 0.3.0 are published from source `eab2908`. Version 0.3.1 is the
+next release candidate: it documents the exported SDK API, declares the SDK's
+platforms for pub.dev, and stops the TUI offering Reopen for a store it can
+never open.
 
 | Artifact | Publication evidence |
 | --- | --- |
-| [Keybay SDK 0.2.0](https://pub.dev/packages/keybay/versions/0.2.0) | [Signed tag, exact-commit CI and served Pub archive](reviews/2026-10-07-sdk-publication.md) |
-| [CLI 0.2.0](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.2.0) | [Signed manifest, public downloads, Homebrew upgrade and RK installation](reviews/2026-10-11-cli-publication.md) |
+| [Keybay SDK 0.3.0](https://pub.dev/packages/keybay/versions/0.3.0) | Pub archive SHA-256 `370148cc0e93ca41edb91b281023eaae90fb6fd5c52ec2a3711977ccd7f95126`; tag `v0.3.0` is unsigned |
+| [CLI 0.3.0](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.3.0) | Immutable GitHub release with its release manifest and Homebrew formula; tag `keybay_cli-v0.3.0` is unsigned |
 | [Keypass 0.1.0-dev.2](https://pub.dev/packages/keypass/versions/0.1.0-dev.2) | Pinned SDK/CLI dependency; remains a prerelease |
+
+The 0.3.0 tags were published without signatures, so the signed-tag checks in
+[verifying releases](../SECURITY.md#verifying-releases) fail for them and the
+release audits report it; 0.2.0 and earlier tags are signed. The
+[SDK 0.2.0](reviews/2026-10-07-sdk-publication.md) and
+[CLI 0.2.0](reviews/2026-10-11-cli-publication.md) publication records keep the
+previous release's evidence.
 
 **Upgrading:** V1 stores are preserved but not read or migrated. Keep the old
 installation available to transfer required secrets before switching.
 
-## Source after publication
+## What 0.3.0 changed
 
-Keypass removed prototype verifier/native-loading exceptions. Keybay removed
-retired V2 singleton-passphrase conversion and duplicate release tooling.
-Published 0.2.0 still has that V2 conversion. Keybay still pins published
-Keypass 0.1.0-dev.2, not its newer main branch.
-
-Version 0.3.0 includes this cleanup, confirms the vault on every method unlock
-(methods policy 3), and fixes underlined input borders in the CLI. The minor
-version marks both format changes: 0.2.0 vaults with a passphrase or passkey
-fail closed and need their methods removed before upgrading and added back
-after; platform-only vaults are unaffected. Policy 3 has unit, adversarial and
-vector coverage; it has no renewed device or hardware-key qualification. Use the
+Version 0.3.0 removed retired V2 singleton-passphrase conversion and duplicate
+release tooling, confirms the vault on every method unlock (methods policy 3),
+and fixed underlined input borders in the CLI. The minor version marks both
+format changes: 0.2.0 vaults with a passphrase or passkey fail closed and need
+their methods removed before upgrading and added back after; platform-only
+vaults are unaffected. Policy 3 has unit, adversarial and vector coverage; it
+has no renewed device or hardware-key qualification. Keybay still pins published
+Keypass 0.1.0-dev.2, not its newer main branch. Use the
 [review guide](external-review.md) for published commit/archive baselines.
 
 ## Release status
