@@ -229,10 +229,10 @@ packages:
     dependency: transitive
     description:
       name: keypass
-      sha256: "9c46f2bb0413b4f891d5e7eddce46830d2fa4c5c83ebad08b14333efe051c1ec"
+      sha256: e11a551ba04bd9311bd76276d00828502999221f9be4cc408eaf83782c76d77d
       url: "https://pub.dev"
     source: hosted
-    version: "0.1.0-dev.2"
+    version: "0.1.0-dev.3"
   lints:
     dependency: transitive
     description:

@@ -111,7 +111,7 @@ void main() {
     // and complete hosted closure. Keep the CLI's new verification dependency
     // versions explicit here as well.
     expect(byName['fleury']?['version'], '0.1.1');
-    expect(byName['keypass']?['version'], '0.1.0-dev.2');
+    expect(byName['keypass']?['version'], '0.1.0-dev.3');
     expect(byName['pointycastle']?['version'], '4.0.0');
     expect(byName['convert']?['version'], '3.1.2');
   });
@@ -152,7 +152,7 @@ void main() {
     );
     expect(
       pubspec,
-      contains(RegExp(r'^  keypass: 0\.1\.0-dev\.2$', multiLine: true)),
+      contains(RegExp(r'^  keypass: 0\.1\.0-dev\.3$', multiLine: true)),
     );
     final workspace = File(
       '${packageDirectory.path}/../../pubspec.yaml',

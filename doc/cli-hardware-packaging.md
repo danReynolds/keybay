@@ -1,7 +1,7 @@
 # Native CLI hardware builds
 
 The hardware route uses the exact hosted Keypass prerelease, libfido2 >= 1.16,
-OpenSSL 3 and CBOR. `tool/build_cli_hardware.sh` resolves the source from Dart's
+OpenSSL 3 or 4 (whichever libfido2 links) and CBOR. `tool/build_cli_hardware.sh` resolves the source from Dart's
 package configuration and verifies native inputs against `tool/keypass-source.json`,
 which records the reviewed release commit, registry archive hash and file hashes.
 It rejects modified, missing, additional or linked native inputs,

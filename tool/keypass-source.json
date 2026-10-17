@@ -1,20 +1,20 @@
 {
-  "version": "0.1.0-dev.2",
-  "revision": "e4c933a5a7a63ed51bdfa211e528a42659cd6f1c",
-  "archiveSha256": "9c46f2bb0413b4f891d5e7eddce46830d2fa4c5c83ebad08b14333efe051c1ec",
+  "version": "0.1.0-dev.3",
+  "revision": "000988de96d736b5d8725de06426196b4a705582",
+  "archiveSha256": "e11a551ba04bd9311bd76276d00828502999221f9be4cc408eaf83782c76d77d",
   "files": {
     "LICENSE": "63bafc862b45e03c687f1823ce0ff68798d09bda3bd6c0dde77e1a2fca900d7e",
     "hook/build.dart": "7237ffae68760598ab0a5d4e01d0dfd4c916293fd98df6535757add3239f3ac0",
-    "hook/bundle.py": "27f522c38a576e787dcaef973d8bb95dee089740df28aa33effc1b9174b80cf4",
+    "hook/bundle.py": "bacbe46e2c3ef6cea005a92414095286ade9687d2c9b4415ab84d020af8952e4",
     "native/hardware/CMakeLists.txt": "4e4e96aa4f8df360a0cf916bbb2b9eb371b3b2e6f5e9fa40e1ee05255484087e",
-    "native/hardware/README.md": "ead7a28b231626b36e6a0d01d4a4d2ba7476dc4e990057ab959ba2bf2997caf5",
+    "native/hardware/README.md": "3d228fee8094d1348b10d24a1a38e39924e758ae520eb175796d3dbf95e68e77",
     "native/hardware/keypass_hardware.cpp": "f968525d9d9f7516b7e5340a6652b0ee47b5b0fd9cab9f45a27b73020b7abd67",
     "native/hardware/keypass_hardware.h": "05f35657550da5839e679482c4a8993c2c9f08a52d92992d9b17c4b4982a3d4c",
     "native/hardware/licenses/libcbor.txt": "6a5e182d758db66ecad6e6fa304dc637d4d2585bafceb5003c86e8dc9f6344ff",
     "native/hardware/licenses/libfido2.txt": "4aad6cad5e570c10cccd1a6124bf2690eedb548b709fede991ed41326122ee2a",
     "native/hardware/licenses/nlohmann-json.txt": "c0d068392ea65358b798b8c165103560f06e9e3b38c4ab4e2d8810a7b931af86",
     "native/hardware/licenses/openssl.txt": "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a",
-    "native/hardware/test.cpp": "bab1eb4c7e91d4d5345a5855969f05410e81ebafa4a68dfefd93f7913b08e02e",
-    "pubspec.yaml": "b577c8334f21c95fd4e77c93e55c44e572ef0d1e8421f159d9b7aa914df6f1b2"
+    "native/hardware/test.cpp": "b31fc532093f382186541b6f92b1fdd2951c219c7bf315b1ae504b375e594c89",
+    "pubspec.yaml": "817b6d9a020ccefdb3c1b7e0e9aa33d8551f21145b5814a0153b83a34e065fda"
   }
 }

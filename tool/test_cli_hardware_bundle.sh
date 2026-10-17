@@ -40,10 +40,11 @@ dart --suppress-analytics compile exe tool/probe_cli_hardware.dart -o "$tmp/relo
 ln -s "$tmp/relocated bundle/probe" "$tmp/bin/probe"
 env -u LD_LIBRARY_PATH -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH "$tmp/bin/probe"
 case "$(uname -s)" in
-  Darwin) crypto=libcrypto.3.dylib ;;
-  Linux) crypto=libcrypto.so.3 ;;
+  Darwin|Linux) ;;
   *) exit 69 ;;
 esac
+# OpenSSL 3 or 4, whichever libfido2 links.
+crypto="$(cd "$tmp/relocated bundle" && ls libcrypto.*)"
 # A missing required member must be rejected without trying to load anything.
 mv "$tmp/relocated bundle/$crypto" "$tmp/$crypto"
 if python3 tool/cli_hardware_bundle.py verify "$tmp/relocated bundle"; then

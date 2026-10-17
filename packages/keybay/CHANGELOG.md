@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.2
+
+- Depend on Keypass 0.1.0-dev.3, which builds desktop hardware support against
+  OpenSSL 3 or 4. Homebrew's libfido2 now links OpenSSL 4, so desktop builds on
+  a current Homebrew failed with `unexpected native dependency libcrypto.4`.
+- Keypass 0.1.0-dev.3 also requires saved authenticator state on every
+  assertion and removes a development library-path override. The vault format
+  is unchanged from 0.3.0.
+
 ## 0.3.1
 
 - Document every exported API member. Each `KeybayErrorCode` now says what
