@@ -52,7 +52,7 @@ void main() {
       'dbus': '0.7.15',
       'ffi': '2.2.0',
       'hooks': '2.0.2',
-      'keypass': '0.1.0-dev.2',
+      'keypass': '0.1.0-dev.3',
       'logging': '1.3.0',
       'meta': '1.19.0',
       'path': '1.9.1',
@@ -107,11 +107,11 @@ void main() {
 
   test('Keypass hosted archive is the reviewed release', () {
     const hash =
-        '9c46f2bb0413b4f891d5e7eddce46830d2fa4c5c83ebad08b14333efe051c1ec';
+        'e11a551ba04bd9311bd76276d00828502999221f9be4cc408eaf83782c76d77d';
     final spec = File('pubspec.yaml').readAsStringSync();
     expect(
       spec,
-      contains(RegExp(r'^  keypass: 0\.1\.0-dev\.2$', multiLine: true)),
+      contains(RegExp(r'^  keypass: 0\.1\.0-dev\.3$', multiLine: true)),
     );
     // Standalone SDK tests have their own lock; workspace tests use the root.
     final local = File('pubspec.lock');
@@ -121,9 +121,13 @@ void main() {
       r'^  keypass:\n([\s\S]*?)(?=^  \w|\Z)',
       multiLine: true,
     ).firstMatch(lock)!.group(1)!;
-    expect(entry, contains('sha256: "$hash"'));
+    // pub quotes the hash only when it starts with a digit.
+    expect(
+      entry,
+      contains(RegExp('^      sha256: "?$hash"?\$', multiLine: true)),
+    );
     expect(entry, contains('url: "https://pub.dev"'));
     expect(entry, contains('source: hosted'));
-    expect(entry, contains('version: "0.1.0-dev.2"'));
+    expect(entry, contains('version: "0.1.0-dev.3"'));
   });
 }

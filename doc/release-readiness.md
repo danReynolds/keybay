@@ -1,7 +1,8 @@
 # Keybay release readiness
 
-SDK and CLI 0.3.1 are published from source `ce5d631` with signed tags. No
-later release is in preparation.
+SDK and CLI 0.3.1 are published from source `ce5d631` with signed tags.
+Version 0.3.2 is the next release candidate: it moves to Keypass 0.1.0-dev.3,
+which builds desktop hardware support against OpenSSL 3 or 4.
 
 | Artifact | Publication evidence |
 | --- | --- |

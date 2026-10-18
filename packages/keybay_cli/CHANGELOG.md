@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2
+
+- Built on Keybay SDK 0.3.2 and Keypass 0.1.0-dev.3, which bundle hardware-key
+  support against OpenSSL 3 or 4. The vault format is unchanged from 0.3.0.
+
 ## 0.3.1
 
 - When the terminal UI meets a vault this version can never open, such as a

@@ -16,10 +16,11 @@ import tempfile
 REVISION = json.loads(pathlib.Path(__file__).with_name("keypass-source.json").read_text())["revision"]
 MANIFEST = "hardware.json"
 NOTICES = "THIRD_PARTY_NOTICES.txt"
+# Keypass bundles OpenSSL 3 or 4, whichever libfido2 links.
 MAC = (r"libkeypass_hardware\.dylib", r"libfido2\.1\.dylib",
-       r"libcrypto\.3\.dylib", r"libcbor\.[0-9.]+\.dylib")
+       r"libcrypto\.[34]\.dylib", r"libcbor\.[0-9.]+\.dylib")
 LINUX = (r"libkeypass_hardware\.so", r"libfido2\.so\.1",
-         r"libcrypto\.so\.3", r"libcbor\.so\.[0-9.]+")
+         r"libcrypto\.so\.[34]", r"libcbor\.so\.[0-9.]+")
 
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
