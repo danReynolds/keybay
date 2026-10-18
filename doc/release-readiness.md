@@ -1,14 +1,13 @@
 # Keybay release readiness
 
-SDK and CLI 0.3.1 are published from source `ce5d631` with signed tags.
-Version 0.3.2 is the next release candidate: it moves to Keypass 0.1.0-dev.3,
-which builds desktop hardware support against OpenSSL 3 or 4.
+SDK and CLI 0.3.2 are published from source `1fb82cb` with signed tags. No
+later release is in preparation.
 
 | Artifact | Publication evidence |
 | --- | --- |
-| [Keybay SDK 0.3.1](https://pub.dev/packages/keybay/versions/0.3.1) | [Signed tag, exact-commit CI and served Pub archive](reviews/2026-10-16-0.3.1-publication.md#sdk) |
-| [CLI 0.3.1](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.3.1) | [Signed tag and manifest, served archives matching the stage, Homebrew formula](reviews/2026-10-16-0.3.1-publication.md#cli) |
-| [Keypass 0.1.0-dev.2](https://pub.dev/packages/keypass/versions/0.1.0-dev.2) | Pinned SDK/CLI dependency; remains a prerelease |
+| [Keybay SDK 0.3.2](https://pub.dev/packages/keybay/versions/0.3.2) | [Signed tag, exact-commit CI and served Pub archive](reviews/2026-10-18-0.3.2-publication.md#sdk) |
+| [CLI 0.3.2](https://github.com/danReynolds/keybay/releases/tag/keybay_cli-v0.3.2) | [Signed tag and manifest, served archives matching the stage, Homebrew formula](reviews/2026-10-18-0.3.2-publication.md#cli) |
+| [Keypass 0.1.0-dev.3](https://pub.dev/packages/keypass/versions/0.1.0-dev.3) | Pinned SDK/CLI dependency, [verified against its source](reviews/2026-10-18-0.3.2-publication.md#why-this-release); remains a prerelease |
 
 The 0.3.0 tags are the only ones published without signatures, so the
 signed-tag checks in [verifying releases](../SECURITY.md#verifying-releases)
@@ -18,6 +17,14 @@ evidence from that release.
 
 **Upgrading:** V1 stores are preserved but not read or migrated. Keep the old
 installation available to transfer required secrets before switching.
+
+## What 0.3.2 changed
+
+Version 0.3.2 moves to Keypass 0.1.0-dev.3, which builds desktop hardware
+support against OpenSSL 3 or 4. Homebrew's libfido2 now links OpenSSL 4, so
+desktop builds of 0.3.1 failed on a current Homebrew. Keypass 0.1.0-dev.3 also
+requires saved authenticator state on every assertion. CI exercised OpenSSL 4
+end to end. The vault format is unchanged.
 
 ## What 0.3.1 changed
 
@@ -44,7 +51,7 @@ Keypass 0.1.0-dev.2, not its newer main branch. Use the
 RK bundling, native notices, Linux ABI baseline and publication are complete.
 The [candidate record](reviews/2026-10-11-cli-release-candidate.md) preserves
 installed Linux checks and attended macOS hardware evidence for 0.2.0. The
-[0.3.1 publication record](reviews/2026-10-16-0.3.1-publication.md) covers that release's served artifacts;
+[0.3.2](reviews/2026-10-18-0.3.2-publication.md) and [0.3.1](reviews/2026-10-16-0.3.1-publication.md) publication records cover those releases' served artifacts;
 0.3.0 has no separate publication record. These do not qualify untested
 devices or lifecycle behavior.
 

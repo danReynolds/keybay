@@ -135,10 +135,10 @@ Cross-check it against GitHub's list of the maintainer's
 [signing keys](https://api.github.com/users/danReynolds/ssh_signing_keys).
 It is not one of the authentication keys at `github.com/danReynolds.keys`.
 In a clone of this repository, save the first line above as
-`keybay-allowed-signers`, then verify a tag (`v0.3.1` for the SDK):
+`keybay-allowed-signers`, then verify a tag (`v0.3.2` for the SDK):
 
 ```sh
-git -c gpg.ssh.allowedSignersFile=keybay-allowed-signers verify-tag keybay_cli-v0.3.1
+git -c gpg.ssh.allowedSignersFile=keybay-allowed-signers verify-tag keybay_cli-v0.3.2
 ```
 
 Since 0.1.1, a CLI tag's annotation records the SHA-256 of that release's
