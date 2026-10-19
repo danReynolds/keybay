@@ -18,9 +18,9 @@ void main() {
       markTestSkipped('the hard core-file limit is 0 here');
       return;
     }
+    _allowDumping();
 
     final result = ProcessHardening.apply();
-    expect(result.failed, isFalse, reason: '$result');
     expect(result.coreDumps.status, KeybayHardeningStatus.applied);
     expect(softCoreLimit, 0);
     if (Platform.isLinux) expect(linuxDumpable, 0);
@@ -39,18 +39,52 @@ void main() {
       return;
     }
     expect(softCoreLimit, isNot(0));
-    if (Platform.isLinux) {
-      // An earlier test may already have made this process non-dumpable.
-      final dumpable = linuxDumpable!;
-      addTearDown(() => _prctl(_prSetDumpable, dumpable, 0, 0, 0));
-      expect(_prctl(_prSetDumpable, 1, 0, 0, 0), 0);
-    }
+    _allowDumping();
+    // Pass the real hardening through, so a user namespace (toolbox, a
+    // rootless container), where the CLI refuses, still checks the policy.
+    KeybayProcessHardening? result;
 
-    expect(await runKeybay(['--version']), 0);
+    final exitCode = await runKeybay([
+      '--version',
+    ], hardenProcess: () => result = ProcessHardening.apply());
 
+    expect(result, isNotNull);
+    expect(exitCode, result!.failed ? 1 : 0, reason: '$result');
     expect(softCoreLimit, 0);
     if (Platform.isLinux) expect(linuxDumpable, 0);
   });
+
+  test('a command stops when hardening fails', () async {
+    var hardened = 0;
+    for (final (dumpable, tracer) in [(1, 0), (0, 4242)]) {
+      expect(
+        await runKeybay(
+          ['--version'],
+          hardenProcess: () {
+            hardened++;
+            return linuxHardeningResult(
+              dumpable: dumpable,
+              initialUserNamespace: true,
+              tracer: tracer,
+              ptraceScope: 1,
+              environment: const {},
+            );
+          },
+        ),
+        1,
+      );
+    }
+    expect(hardened, 2);
+  });
+}
+
+/// Makes this process dumpable for the test on Linux, restoring the previous
+/// state afterwards; an earlier test may already have made it non-dumpable.
+void _allowDumping() {
+  if (!Platform.isLinux) return;
+  final dumpable = linuxDumpable!;
+  addTearDown(() => _prctl(_prSetDumpable, dumpable, 0, 0, 0));
+  expect(_prctl(_prSetDumpable, 1, 0, 0, 0), 0);
 }
 
 /// Gives this process a nonzero soft core limit for the test, so a default of

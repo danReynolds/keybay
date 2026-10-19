@@ -39,8 +39,10 @@ resetting may invoke provider UI. Binary access uses `getBytes`, `setBytes` and
 Call `Keybay.hardenProcess()` first in `main` and stop if its result has
 `failed`. It disables core files and, on Linux, makes the process non-dumpable,
 so other programs running as the user cannot attach a debugger or read
-`/proc/<pid>/mem`. It also reports the Linux Yama ptrace scope and whether the
-session is X11. See [process hardening](https://github.com/danReynolds/keybay/blob/main/doc/sdk.md#harden-the-process).
+`/proc/<pid>/mem`. Inside Flatpak or another user namespace that protection
+fails, and the result says so. It also reports the Linux Yama ptrace scope and
+whether the session is X11. See
+[process hardening](https://github.com/danReynolds/keybay/blob/main/doc/sdk.md#harden-the-process).
 
 `clearAll` keeps protection while removing records. `Keybay.reset()` deletes
 the current store and deletable provider state. Never reset automatically on

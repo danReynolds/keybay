@@ -93,7 +93,7 @@ on every command, limits which programs running as you can read that memory:
 
 | Platform | Crash core files | Debuggers and memory reads by programs running as you |
 | --- | --- | --- |
-| Linux | Never written | Refused, including `/proc/<pid>/mem` |
+| Linux | Never written | Refused, including `/proc/<pid>/mem`, except inside Flatpak or another user namespace |
 | macOS | Not written | Decided by the code signature: a notarized build refuses them |
 | iOS, Android | Governed by the operating system | Governed by the operating system |
 
@@ -103,6 +103,10 @@ release builds. It does not help against:
 - root or the kernel;
 - code injected when the application starts: by whatever launches it, by shell
   startup files, or by replacing an application installed in your own files;
+- programs you run outside a user namespace the application runs in, such as
+  a Flatpak app or one in toolbox, distrobox or a rootless container. You own
+  that namespace, so your programs outside it can still attach; the result
+  reports this as a failure;
 - anything that attached before the call. On Linux, Yama `ptrace_scope` 1 or
   higher narrows that to, at most, the programs that started the application;
   the result reports the scope so an application can warn at 0;

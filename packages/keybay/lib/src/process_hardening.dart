@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
@@ -8,8 +9,8 @@ enum KeybayHardeningStatus {
   /// Keybay applied the protection and confirmed that it is in effect.
   applied,
 
-  /// Keybay attempted the protection and it is not in effect. Do not handle
-  /// secrets as though it were.
+  /// Keybay attempted the protection and could not confirm that it is in
+  /// effect. Do not handle secrets as though it were.
   failed,
 
   /// Keybay does not attempt this protection on this platform. The detail
@@ -24,8 +25,8 @@ final class KeybayHardeningMeasure {
   /// Whether the protection is in effect.
   final KeybayHardeningStatus status;
 
-  /// What Keybay did, or why the protection is not in effect. For logs and
-  /// diagnostics; branch on [status].
+  /// What Keybay did, or why the protection is not confirmed in effect. For
+  /// logs and diagnostics; branch on [status].
   final String detail;
 
   @override
@@ -43,7 +44,7 @@ final class KeybayProcessHardening {
     required this.coreDumps,
     required this.debuggerAttach,
     required this.ptraceScope,
-    required this.ptraceUnrestricted,
+    required this.yamaUnrestricted,
     required this.x11Session,
   });
 
@@ -56,10 +57,12 @@ final class KeybayProcessHardening {
   /// Whether other programs running as the same user can attach a debugger
   /// or read this process's memory through `/proc/<pid>/mem`.
   ///
-  /// Applied on Linux only, by `prctl(PR_SET_DUMPABLE, 0)`. Failed if a
-  /// process was already tracing this one, since that attachment survives.
-  /// Not attempted on macOS, where the code signature's Hardened Runtime
-  /// decides debugger access.
+  /// Applied on Linux only, by `prctl(PR_SET_DUMPABLE, 0)`. Failed when a
+  /// process was already tracing one of this process's threads, since that
+  /// attachment survives, and in a user namespace such as Flatpak's, whose
+  /// owner's programs outside it keep `CAP_SYS_PTRACE` over this process. Not
+  /// attempted on macOS, where the code signature's Hardened Runtime decides
+  /// debugger access.
   final KeybayHardeningMeasure debuggerAttach;
 
   /// Linux Yama `kernel.yama.ptrace_scope`: 0 lets any program running as the
@@ -72,8 +75,10 @@ final class KeybayProcessHardening {
   /// On Linux, true unless Yama is confirmed to restrict ptrace (scope 1 or
   /// higher). Without that restriction, any program running as the same user
   /// can attach to this process before `hardenProcess` runs, and an
-  /// attachment made then survives the call. Always false off Linux.
-  final bool ptraceUnrestricted;
+  /// attachment made then survives the call. Inside a user namespace Yama
+  /// does not restrict its owner's programs outside it; see [debuggerAttach].
+  /// Always false off Linux.
+  final bool yamaUnrestricted;
 
   /// Whether this is a Linux X11 session, where any X client can read the
   /// keystrokes typed into another. Warn before asking for a passphrase or a
@@ -83,16 +88,17 @@ final class KeybayProcessHardening {
   /// `WAYLAND_DISPLAY` is not. Always false off Linux.
   final bool x11Session;
 
-  /// Whether a protection Keybay attempted on this platform is not in effect.
+  /// Whether a protection Keybay attempted on this platform is not confirmed
+  /// in effect.
   bool get failed =>
       coreDumps.status == KeybayHardeningStatus.failed ||
       debuggerAttach.status == KeybayHardeningStatus.failed;
 
   @override
   String toString() =>
-      'KeybayProcessHardening(coreDumps: ${coreDumps.status.name}, '
-      'debuggerAttach: ${debuggerAttach.status.name}, '
-      'ptraceScope: $ptraceScope, x11Session: $x11Session)';
+      'KeybayProcessHardening(coreDumps: $coreDumps, '
+      'debuggerAttach: $debuggerAttach, ptraceScope: $ptraceScope, '
+      'yamaUnrestricted: $yamaUnrestricted, x11Session: $x11Session)';
 }
 
 /// Applies Keybay's process policy and reports the result. Never throws.
@@ -111,46 +117,13 @@ KeybayProcessHardening applyProcessHardening() {
     });
     // Belt and braces for the file core pattern; dumpability is decisive.
     _attempt(() => _setSoftCoreLimit(0));
-    final applied = dumpable == 0;
-    // Non-dumpability refuses new attachments; one made earlier survives.
-    final tracer = linuxTracerPid();
-    final scope = linuxPtraceScope();
-    return KeybayProcessHardening._(
-      coreDumps: applied
-          ? const KeybayHardeningMeasure._(
-              KeybayHardeningStatus.applied,
-              'non-dumpable (PR_SET_DUMPABLE 0) with soft RLIMIT_CORE 0',
-            )
-          : KeybayHardeningMeasure._(
-              KeybayHardeningStatus.failed,
-              'PR_SET_DUMPABLE 0 did not take effect (dumpable: $dumpable), '
-              'so a core-pattern pipe can still dump this process',
-            ),
-      debuggerAttach: !applied
-          ? KeybayHardeningMeasure._(
-              KeybayHardeningStatus.failed,
-              'PR_SET_DUMPABLE 0 did not take effect (dumpable: $dumpable)',
-            )
-          : tracer == null
-          ? const KeybayHardeningMeasure._(
-              KeybayHardeningStatus.failed,
-              'could not read TracerPid from /proc/self/status, so a '
-              'debugger attached before the call cannot be ruled out',
-            )
-          : tracer != 0
-          ? KeybayHardeningMeasure._(
-              KeybayHardeningStatus.failed,
-              'process $tracer was already tracing this process and stays '
-              'attached',
-            )
-          : const KeybayHardeningMeasure._(
-              KeybayHardeningStatus.applied,
-              'non-dumpable (PR_SET_DUMPABLE 0) and untraced: same-user '
-              'ptrace and /proc/<pid>/mem need CAP_SYS_PTRACE',
-            ),
-      ptraceScope: scope,
-      ptraceUnrestricted: scope == null || scope == 0,
-      x11Session: isX11Session(Platform.environment),
+    // Read after the process is non-dumpable, so no new tracer can slip in.
+    return linuxHardeningResult(
+      dumpable: dumpable,
+      initialUserNamespace: linuxInitialUserNamespace(),
+      tracer: linuxTracerPid(),
+      ptraceScope: linuxPtraceScope(),
+      environment: Platform.environment,
     );
   }
   if (Platform.isMacOS) {
@@ -176,7 +149,7 @@ KeybayProcessHardening applyProcessHardening() {
         'memory reads',
       ),
       ptraceScope: null,
-      ptraceUnrestricted: false,
+      yamaUnrestricted: false,
       x11Session: false,
     );
   }
@@ -194,8 +167,66 @@ KeybayProcessHardening applyProcessHardening() {
       platform,
     ),
     ptraceScope: null,
-    ptraceUnrestricted: false,
+    yamaUnrestricted: false,
     x11Session: false,
+  );
+}
+
+/// The Linux result for what the process observed after `PR_SET_DUMPABLE`:
+/// its [dumpable] value, whether it is in the [initialUserNamespace], the
+/// first nonzero [tracer] of any of its threads, Yama's [ptraceScope] and its
+/// [environment]. Null means unreadable.
+KeybayProcessHardening linuxHardeningResult({
+  required int? dumpable,
+  required bool? initialUserNamespace,
+  required int? tracer,
+  required int? ptraceScope,
+  required Map<String, String> environment,
+}) {
+  final nonDumpable = dumpable == 0;
+  KeybayHardeningMeasure failed(String detail) =>
+      KeybayHardeningMeasure._(KeybayHardeningStatus.failed, detail);
+  return KeybayProcessHardening._(
+    coreDumps: nonDumpable
+        ? const KeybayHardeningMeasure._(
+            KeybayHardeningStatus.applied,
+            'non-dumpable (PR_SET_DUMPABLE 0) with soft RLIMIT_CORE 0',
+          )
+        : failed(
+            'PR_SET_DUMPABLE 0 did not take effect (dumpable: $dumpable), '
+            'so a core-pattern pipe can still dump this process',
+          ),
+    debuggerAttach: !nonDumpable
+        ? failed('the process is still dumpable (dumpable: $dumpable)')
+        : initialUserNamespace == null
+        ? failed(
+            'could not read /proc/self/uid_map, so a user namespace whose '
+            'owner keeps CAP_SYS_PTRACE over this process cannot be ruled out',
+          )
+        : !initialUserNamespace
+        ? failed(
+            'this process runs in a user namespace (such as Flatpak, toolbox '
+            'or a rootless container); programs its owner runs outside it '
+            'keep CAP_SYS_PTRACE over this process',
+          )
+        : tracer == null
+        ? failed(
+            'could not read TracerPid for every thread, so a debugger '
+            'attached before the call cannot be ruled out',
+          )
+        : tracer != 0
+        ? failed(
+            'process $tracer was already tracing a thread of this process '
+            'and stays attached',
+          )
+        : const KeybayHardeningMeasure._(
+            KeybayHardeningStatus.applied,
+            'non-dumpable (PR_SET_DUMPABLE 0) and untraced: same-user ptrace '
+            'and /proc/<pid>/mem need CAP_SYS_PTRACE',
+          ),
+    ptraceScope: ptraceScope,
+    yamaUnrestricted: ptraceScope == null || ptraceScope == 0,
+    x11Session: isX11Session(environment),
   );
 }
 
@@ -220,22 +251,74 @@ int? linuxPtraceScope({String Function() read = _readPtraceScope}) {
 String _readPtraceScope() =>
     File('/proc/sys/kernel/yama/ptrace_scope').readAsStringSync();
 
-/// The `TracerPid` in `/proc/self/status` as returned by [read]: 0 when no
-/// process traces this one, or null if it is absent or unreadable.
-int? linuxTracerPid({String Function() read = _readStatus}) {
+/// Whether the `uid_map` returned by [read] is the initial user namespace's
+/// identity map, or null if it is unreadable. In any other user namespace,
+/// programs its owner runs outside it hold every capability inside it.
+bool? linuxInitialUserNamespace({String Function() read = _readUidMap}) {
   try {
-    for (final line in read().split('\n')) {
-      if (!line.startsWith('TracerPid:')) continue;
-      final tracer = int.tryParse(line.substring('TracerPid:'.length).trim());
-      return tracer != null && tracer >= 0 ? tracer : null;
-    }
-    return null;
+    final lines = read()
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+    return lines.length == 1 &&
+        lines.single.split(RegExp(r'\s+')).join(' ') == '0 0 4294967295';
   } on Object {
     return null;
   }
 }
 
-String _readStatus() => File('/proc/self/status').readAsStringSync();
+String _readUidMap() =>
+    latin1.decode(File('/proc/self/uid_map').readAsBytesSync());
+
+/// The first nonzero `TracerPid` among the thread [statuses], 0 when no
+/// process traces any thread, or null if any is unreadable or none was read.
+///
+/// ptrace attaches to one thread at a time, and a tracer holding any thread
+/// can read the whole address space, so every thread is checked.
+int? linuxTracerPid({List<String> Function() statuses = _threadStatuses}) {
+  try {
+    final all = statuses();
+    if (all.isEmpty) return null;
+    var tracer = 0;
+    for (final status in all) {
+      final value = _tracerPid(status);
+      if (value == null) return null;
+      if (tracer == 0) tracer = value;
+    }
+    return tracer;
+  } on Object {
+    return null;
+  }
+}
+
+int? _tracerPid(String status) {
+  for (final line in status.split('\n')) {
+    if (!line.startsWith('TracerPid:')) continue;
+    final tracer = int.tryParse(line.substring('TracerPid:'.length).trim());
+    return tracer != null && tracer >= 0 ? tracer : null;
+  }
+  return null;
+}
+
+// Status files are read as bytes: the Name line holds the executable's name
+// cut at 15 bytes, which need not be valid UTF-8.
+List<String> _threadStatuses() {
+  final statuses = <String>[];
+  for (final task in Directory('/proc/self/task').listSync()) {
+    try {
+      statuses.add(
+        latin1.decode(File('${task.path}/status').readAsBytesSync()),
+      );
+    } on FileSystemException catch (error) {
+      // A thread that exited after the listing has no tracer left to report.
+      final code = error.osError?.errorCode;
+      if (code == _enoent || code == _esrch) continue;
+      rethrow;
+    }
+  }
+  return statuses;
+}
 
 /// The current soft core-file limit on macOS and Linux, otherwise null. For
 /// regression tests.
@@ -277,6 +360,8 @@ void _setSoftCoreLimit(int soft) {
 const int _rlimitCore = 4;
 const int _prGetDumpable = 3;
 const int _prSetDumpable = 4;
+const int _enoent = 2;
+const int _esrch = 3;
 
 final class _Rlimit extends Struct {
   @Uint64()

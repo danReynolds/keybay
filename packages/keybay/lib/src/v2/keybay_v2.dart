@@ -75,10 +75,13 @@ abstract final class Keybay {
   /// and whether the session is X11.
   ///
   /// It never throws and never substitutes a weaker policy: check
-  /// [KeybayProcessHardening.failed] and decide whether to continue. It does
-  /// not protect against root or the kernel, against code injected at launch
-  /// through a launcher, shell startup files or a per-user install, or during
-  /// the window before it runs. Calling it again is harmless.
+  /// [KeybayProcessHardening.failed] and decide whether to continue. On Linux
+  /// the debugger protection fails when a tracer is already attached, and in
+  /// a user namespace such as Flatpak's, whose owner keeps ptrace access from
+  /// outside it. It does not protect against root or the kernel, against code
+  /// injected at launch through a launcher, shell startup files or a per-user
+  /// install, or during the window before it runs. Calling it again is
+  /// harmless.
   static KeybayProcessHardening hardenProcess() => applyProcessHardening();
 }
 

@@ -95,7 +95,9 @@ non-dumpable, so same-user debuggers and `/proc/<pid>/mem` reads are refused. It
 reports what it applied and never falls back. The CLI calls it before every
 command and stops if it fails; SDK hosts call it first in `main`
 ([SDK guide](doc/sdk.md#harden-the-process)). It cannot help against root, code
-injected at launch, or anything attached before the call.
+injected at launch, or anything attached before the call. In a user namespace
+(Flatpak, toolbox, rootless containers) the user's programs outside it keep
+ptrace access, and the result reports the debugger protection as failed.
 
 CLI `get` rejects captured/redirected output, but that disclosure guard is not
 authorization. `run` gives referenced secrets to its child. Copy releases a

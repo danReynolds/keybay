@@ -7,9 +7,11 @@
   process non-dumpable, which also refuses same-user debuggers and
   `/proc/<pid>/mem` reads. It changes nothing on iOS and Android. The result
   reports each protection as applied, failed or not attempted, with a detail;
-  Keybay never falls back to a weaker policy. On Linux a debugger or tracer
-  already attached makes the debugger protection fail, since it stays attached. It also reports the Linux Yama
-  ptrace scope and whether the session is X11.
+  Keybay never falls back to a weaker policy. On Linux the debugger protection
+  fails when a debugger or tracer is already attached to any thread, since it
+  stays attached, and in a user namespace such as Flatpak's, whose owner's
+  programs outside it keep ptrace access. It also reports the Linux Yama ptrace
+  scope and whether the session is X11.
 
 ## 0.3.2
 

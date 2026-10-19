@@ -23,16 +23,19 @@ Future<int> runKeybay(
   Duration idleWarning = tuiIdleWarning,
   UnlockPreference? unlockPreference,
   Future<bool> Function(TuiCancellation)? hardwareConnected,
+  KeybayProcessHardening Function() hardenProcess = ProcessHardening.apply,
 }) async {
-  final hardening = ProcessHardening.apply();
+  final hardening = hardenProcess();
   if (hardening.failed) {
-    final reasons = {
-      for (final measure in [hardening.coreDumps, hardening.debuggerAttach])
-        if (measure.status == KeybayHardeningStatus.failed) measure.detail,
-    };
-    stderr.writeln(
-      'error: could not harden this process: ${reasons.join('; ')}.',
-    );
+    stderr.writeln('error: could not harden this process.');
+    for (final (name, measure) in [
+      ('core dumps', hardening.coreDumps),
+      ('debugger attach', hardening.debuggerAttach),
+    ]) {
+      if (measure.status == KeybayHardeningStatus.failed) {
+        stderr.writeln('  $name: ${measure.detail}.');
+      }
+    }
     return exitFailure;
   }
   final lifetime = CommandLifetime();

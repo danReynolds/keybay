@@ -62,8 +62,8 @@ access under that snapshot's policy.
 
 An open session holds its store key in memory, and values the application reads
 are ordinary data there. Call `Keybay.hardenProcess()` first in `main`, before
-any other Keybay call, to keep other programs running as the same user from
-reading that memory:
+any other Keybay call. It keeps that memory out of core files and, on Linux,
+away from other programs running as the same user:
 
 ```dart
 import 'dart:io';
@@ -82,22 +82,30 @@ Future<void> main() async {
 
 | Platform | Core files | Same-user debugger attach and `/proc/<pid>/mem` |
 | --- | --- | --- |
-| Linux | Never written: non-dumpable (`PR_SET_DUMPABLE` 0), soft `RLIMIT_CORE` 0 | Refused unless the reader has `CAP_SYS_PTRACE` |
+| Linux | Never written: non-dumpable (`PR_SET_DUMPABLE` 0), soft `RLIMIT_CORE` 0 | Refused unless the reader has `CAP_SYS_PTRACE`, which you hold over a user namespace you own: see below |
 | macOS | Not written: soft `RLIMIT_CORE` 0 | Unchanged. The code signature decides: a Hardened Runtime build without `get-task-allow`, such as a notarized one, refuses them. |
 | iOS, Android | Unchanged; the operating system governs app processes | Unchanged |
 
-- **Release builds.** On Linux it also stops debuggers, profilers and crash
-  reporters that read the process's memory. Call it in release builds; leave it
-  out of a build you are debugging.
+- **Every build you ship.** On Linux it also stops debuggers, profilers and
+  crash reporters that read the process's memory. Call it in every build you
+  ship, including tools run with `dart run` or `dart pub global activate`, which
+  are never product builds; leave it out only while you attach a debugger.
 - **Check the result.** It never throws and never substitutes a weaker policy.
   `coreDumps` and `debuggerAttach` each report `applied`, `failed` or
   `notAttempted`, with a `detail` for logs. `failed` is true when a protection
-  Keybay attempted is not in effect, including on Linux when a debugger was
-  already attached: that attachment survives the call. Continuing then is the
-  application's decision, without that protection.
-- **Child programs.** The hard core limit is unchanged, so an application that
-  execs another program can restore that program's soft limit first. `execve`
-  restores dumpability for the new program. The Keybay CLI does this for `run`.
+  Keybay attempted is not confirmed in effect. Keybay leaves the decision to
+  the application; the sample stops, as the Keybay CLI does.
+- **When `debuggerAttach` fails on Linux.** Besides a process that stays
+  dumpable, it fails when a debugger or tracer such as `strace` was already
+  attached to any thread, since that attachment survives the call, and in a user
+  namespace: Flatpak, toolbox, distrobox or a rootless container. The user owns
+  that namespace, so programs they run outside it hold `CAP_SYS_PTRACE` over the
+  application and can still attach or read its memory. Core files stay off.
+- **Child programs.** Programs the application starts, including through
+  `Process.run`, inherit a soft core limit of 0. The hard limit is unchanged, so
+  a child can raise its own. Restoring the caller's limit before `execve` means
+  reading it before the call, as the Keybay CLI does for `run`. `execve`
+  restores dumpability for the new program.
 - **No `PT_DENY_ATTACH`.** On macOS Keybay does not use it: it leaves task-port
   memory reads open, a debugger that launches the process can step around it,
   and it terminates a process that is already being debugged.
@@ -105,10 +113,11 @@ Future<void> main() async {
 It also reports two facts about the session for the application to act on:
 
 - `ptraceScope` is Linux Yama's `kernel.yama.ptrace_scope`, and
-  `ptraceUnrestricted` is true at scope 0 or when Yama is absent or unreadable.
+  `yamaUnrestricted` is true at scope 0 or when Yama is absent or unreadable.
   Then any program running as the user can attach before the call, and an
   attachment made then survives it. Scope 1 limits that to the application's
-  ancestors. Consider warning or refusing when it is unrestricted.
+  ancestors, except in a user namespace, where the owner's programs outside it
+  are not limited. Consider warning or refusing when it is unrestricted.
 - `x11Session` is true in a Linux X11 session: `XDG_SESSION_TYPE` is `x11`, or
   `DISPLAY` is set without `WAYLAND_DISPLAY`. Any X client can read keystrokes
   typed into another, so warn before asking for a passphrase or a security
