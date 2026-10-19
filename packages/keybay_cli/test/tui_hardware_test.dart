@@ -50,6 +50,7 @@ void main() {
     UnlockPreference? preference,
     Future<bool> Function(TuiCancellation)? connected,
     Duration connectionTimeout = const Duration(minutes: 2),
+    bool x11Session = false,
   }) {
     final value = createNativeTuiModel(
       openSession: store.open,
@@ -60,6 +61,7 @@ void main() {
       hardwareConnected: connected,
       hardwarePollInterval: const Duration(milliseconds: 10),
       hardwareConnectionTimeout: connectionTimeout,
+      x11Session: x11Session,
     );
     models.add(value);
     return value;
@@ -629,6 +631,39 @@ void main() {
         expect(m.view, TuiView.browse);
       },
     );
+
+    for (final x11Session in [false, true]) {
+      test(
+        'the PIN form warns under X11 only (X11: $x11Session) at $size',
+        () async {
+          final m = model(x11Session: x11Session);
+          await m.open();
+          m.navigate(TuiView.hardware);
+          final tester = FleuryTester(viewportSize: size);
+          addTearDown(tester.dispose);
+          String screen() => tester.renderToString(emptyMark: ' ');
+          tester.pumpWidget(KeybayTui(model: m));
+          await tester.settle();
+          expect(screen(), isNot(contains('Warning: under X11')));
+          provider.nextFailure = PasskeyErrorCode.pinRequired;
+          tester.sendKey(const KeyEvent(KeyCode.enter));
+          await tester.settle();
+          expect(m.hardwareNeedsPin, isTrue);
+          expect(screen().contains('Warning: under X11'), x11Session);
+          expect(screen().contains('read what you type.'), x11Session);
+          for (final visible in [
+            'Hardware key PIN',
+            'Use your key’s existing PIN.',
+            '[Enter] Add',
+            '[Esc] Cancel',
+          ]) {
+            expect(screen(), contains(visible));
+          }
+          tester.sendKey(const KeyEvent(KeyCode.escape));
+          await tester.settle();
+        },
+      );
+    }
 
     test('hardware form keeps PIN and undo state private at $size', () async {
       final m = model();

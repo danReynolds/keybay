@@ -75,6 +75,7 @@ final class TuiModel extends Notifier {
     this.hardwareConnected,
     this.hardwarePollInterval = const Duration(milliseconds: 500),
     this.hardwareConnectionTimeout = const Duration(minutes: 2),
+    this.x11Session = false,
   }) : _appearance = appearance;
 
   TuiAppearance _appearance;
@@ -114,6 +115,10 @@ final class TuiModel extends Notifier {
   final Future<bool> Function(TuiCancellation)? hardwareConnected;
   final Duration hardwarePollInterval;
   final Duration hardwareConnectionTimeout;
+
+  /// Under X11 any client can read keystrokes typed into another, so the
+  /// passphrase and PIN forms say so.
+  final bool x11Session;
   String? _preferredMethodId;
   List<TuiAuthMethod> methods = const [];
   List<TuiAuthMethod> unlockMethods = const [];

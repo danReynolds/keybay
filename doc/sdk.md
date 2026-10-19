@@ -58,6 +58,70 @@ Reset does not initialize a replacement. The next open creates a fresh store key
 Flatpak retains its portal secret; restoring an old complete snapshot can restore
 access under that snapshot's policy.
 
+## Harden the process
+
+An open session holds its store key in memory, and values the application reads
+are ordinary data there. Call `Keybay.hardenProcess()` first in `main`, before
+any other Keybay call, to keep other programs running as the same user from
+reading that memory:
+
+```dart
+import 'dart:io';
+
+import 'package:keybay/keybay.dart';
+
+Future<void> main() async {
+  final hardening = Keybay.hardenProcess();
+  if (hardening.failed) {
+    stderr.writeln('Not handling secrets: $hardening');
+    exit(1);
+  }
+  // ... Keybay.open() and the rest of the application.
+}
+```
+
+| Platform | Core files | Same-user debugger attach and `/proc/<pid>/mem` |
+| --- | --- | --- |
+| Linux | Never written: non-dumpable (`PR_SET_DUMPABLE` 0), soft `RLIMIT_CORE` 0 | Refused unless the reader has `CAP_SYS_PTRACE` |
+| macOS | Not written: soft `RLIMIT_CORE` 0 | Unchanged. The code signature decides: a Hardened Runtime build without `get-task-allow`, such as a notarized one, refuses them. |
+| iOS, Android | Unchanged; the operating system governs app processes | Unchanged |
+
+- **Release builds.** On Linux it also stops debuggers, profilers and crash
+  reporters that read the process's memory. Call it in release builds; leave it
+  out of a build you are debugging.
+- **Check the result.** It never throws and never substitutes a weaker policy.
+  `coreDumps` and `debuggerAttach` each report `applied`, `failed` or
+  `notAttempted`, with a `detail` for logs. `failed` is true when a protection
+  Keybay attempted is not in effect, including on Linux when a debugger was
+  already attached: that attachment survives the call. Continuing then is the
+  application's decision, without that protection.
+- **Child programs.** The hard core limit is unchanged, so an application that
+  execs another program can restore that program's soft limit first. `execve`
+  restores dumpability for the new program. The Keybay CLI does this for `run`.
+- **No `PT_DENY_ATTACH`.** On macOS Keybay does not use it: it leaves task-port
+  memory reads open, a debugger that launches the process can step around it,
+  and it terminates a process that is already being debugged.
+
+It also reports two facts about the session for the application to act on:
+
+- `ptraceScope` is Linux Yama's `kernel.yama.ptrace_scope`, and
+  `ptraceUnrestricted` is true at scope 0 or when Yama is absent or unreadable.
+  Then any program running as the user can attach before the call, and an
+  attachment made then survives it. Scope 1 limits that to the application's
+  ancestors. Consider warning or refusing when it is unrestricted.
+- `x11Session` is true in a Linux X11 session: `XDG_SESSION_TYPE` is `x11`, or
+  `DISPLAY` is set without `WAYLAND_DISPLAY`. Any X client can read keystrokes
+  typed into another, so warn before asking for a passphrase or a security
+  key's PIN. The Keybay CLI and TUI do.
+
+It does not protect against root or the kernel; code running in the process
+from launch, injected by a launcher, shell startup files (such as `LD_PRELOAD`)
+or a replaced per-user install; or anything done in the window before the call,
+including a debugger or a `/proc/<pid>/mem` descriptor attached or opened then.
+It does not keep secrets out of the Dart heap, or out of anything the
+application passes to other processes, files or the clipboard. Calling it again
+is harmless.
+
 ## Application identity
 
 The API has no application-ID, path, provider or store selector. iOS, Android and

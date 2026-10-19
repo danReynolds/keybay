@@ -90,8 +90,12 @@ restoring an old complete snapshot can restore its former access policy.
 Buffer clearing is best-effort, not proof of erasure of VM/OS/dependency copies.
 Keybay wipes its native Argon2 workspace before freeing it. The pinned HKDF
 wrapper discards its immutable backing bytes without overwriting them.
-The CLI disables core files and becomes non-dumpable on Linux before opening;
-SDK hosts must choose their own process-wide dump policy.
+`Keybay.hardenProcess()` disables core files and, on Linux, makes the process
+non-dumpable, so same-user debuggers and `/proc/<pid>/mem` reads are refused. It
+reports what it applied and never falls back. The CLI calls it before every
+command and stops if it fails; SDK hosts call it first in `main`
+([SDK guide](doc/sdk.md#harden-the-process)). It cannot help against root, code
+injected at launch, or anything attached before the call.
 
 CLI `get` rejects captured/redirected output, but that disclosure guard is not
 authorization. `run` gives referenced secrets to its child. Copy releases a

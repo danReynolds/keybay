@@ -405,6 +405,68 @@ void main() {
   });
 
   for (final size in [const CellSize(40, 24), const CellSize(80, 20)]) {
+    for (final x11Session in [false, true]) {
+      test(
+        'passphrase forms warn under X11 only (X11: $x11Session) at $size',
+        () async {
+          final warned = createNativeTuiModel(
+            openSession: store.open,
+            resetStore: store.reset,
+            authorize: () {},
+            onExit: () {},
+            x11Session: x11Session,
+          );
+          addTearDown(() async {
+            await warned.close();
+            warned.dispose();
+          });
+          final tester = FleuryTester(viewportSize: size);
+          addTearDown(tester.dispose);
+          String screen() => tester.renderToString(emptyMark: ' ');
+          void expectWarning() {
+            expect(screen().contains('Warning: under X11'), x11Session);
+            expect(screen().contains('read what you type.'), x11Session);
+          }
+
+          await warned.open();
+          warned.navigate(TuiView.passphrase);
+          tester.pumpWidget(KeybayTui(model: warned));
+          await tester.settle();
+          expect(screen(), contains('No recovery for a lost passphrase.'));
+          expectWarning();
+          expectFormActions(tester);
+          await warned.close();
+
+          final session = await store.open();
+          await session.auth.add(PassphraseCredential(phrase: bytes('good')));
+          await session.close();
+          final unlocking = createNativeTuiModel(
+            openSession: store.open,
+            resetStore: store.reset,
+            authorize: () {},
+            onExit: () {},
+            x11Session: x11Session,
+          );
+          addTearDown(() async {
+            await unlocking.close();
+            unlocking.dispose();
+          });
+          await unlocking.open();
+          tester.pumpWidget(KeybayTui(model: unlocking));
+          await tester.settle();
+          expect(unlocking.view, TuiView.unlock);
+          expectWarning();
+          for (final visible in [
+            'Passphrase',
+            '[Enter] Unlock',
+            'Forgot passphrase?',
+          ]) {
+            expect(screen(), contains(visible));
+          }
+        },
+      );
+    }
+
     test(
       'unlock offers a compact recovery link before reset at $size',
       () async {

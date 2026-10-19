@@ -24,8 +24,15 @@ Future<int> runKeybay(
   UnlockPreference? unlockPreference,
   Future<bool> Function(TuiCancellation)? hardwareConnected,
 }) async {
-  if (!ProcessHardening.apply()) {
-    stderr.writeln('error: could not disable core dumps for this process.');
+  final hardening = ProcessHardening.apply();
+  if (hardening.failed) {
+    final reasons = {
+      for (final measure in [hardening.coreDumps, hardening.debuggerAttach])
+        if (measure.status == KeybayHardeningStatus.failed) measure.detail,
+    };
+    stderr.writeln(
+      'error: could not harden this process: ${reasons.join('; ')}.',
+    );
     return exitFailure;
   }
   final lifetime = CommandLifetime();
@@ -40,6 +47,7 @@ Future<int> runKeybay(
         idleWarning: idleWarning,
         unlockPreference: unlockPreference,
         hardwareConnected: hardwareConnected,
+        x11Session: hardening.x11Session,
       );
     }
     lifetime.start();
@@ -68,6 +76,7 @@ Future<int> runKeybay(
       stdout: stdout,
       stderr: stderr,
       showLaunchSummary: input.showSummary,
+      x11Session: hardening.x11Session,
     );
     return await application.execute(command);
   } on CommandInterrupted catch (error) {

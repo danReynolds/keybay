@@ -85,6 +85,31 @@ enrolled, any one of them opens the vault.
 | Hardware passkey | The key, plus its PIN or touch | On Linux, a program running as you can ask your key directly and needs only your touch and PIN. On a key with a fingerprint sensor, your fingerprint replaces the PIN. |
 | System passkey | Your OS passkey provider and its verification | Needs a supported app host and domain association. A synced passkey follows your platform account but never replaces the device's platform root. |
 
+## While an application runs
+
+An open vault's key, and any value the application has read, are in its memory.
+An application that calls `Keybay.hardenProcess()` first, as the Keybay CLI does
+on every command, limits which programs running as you can read that memory:
+
+| Platform | Crash core files | Debuggers and memory reads by programs running as you |
+| --- | --- | --- |
+| Linux | Never written | Refused, including `/proc/<pid>/mem` |
+| macOS | Not written | Decided by the code signature: a notarized build refuses them |
+| iOS, Android | Governed by the operating system | Governed by the operating system |
+
+On Linux this also blocks debuggers you run yourself, so applications call it in
+release builds. It does not help against:
+
+- root or the kernel;
+- code injected when the application starts: by whatever launches it, by shell
+  startup files, or by replacing an application installed in your own files;
+- anything that attached before the call. On Linux, Yama `ptrace_scope` 1 or
+  higher narrows that to, at most, the programs that started the application;
+  the result reports the scope so an application can warn at 0;
+- keystrokes read under X11, where any program in the session can read what you
+  type into another. The Keybay CLI and TUI warn before a passphrase or PIN
+  prompt in an X11 session.
+
 ## Never protected
 
 On every platform, with or without a method:

@@ -60,6 +60,7 @@ void main() {
     await store.dispose();
     provider.clear();
   });
+  var x11Session = false;
   CliApplication app({SessionOpener? opener}) => CliApplication(
     loadManifest: (_) async => Manifest({}),
     openSession:
@@ -85,6 +86,7 @@ void main() {
     stderr: StringBuffer(),
     showLaunchSummary: (_) {},
     authTerminal: terminal,
+    x11Session: x11Session,
   );
 
   test(
@@ -115,6 +117,16 @@ void main() {
       expect(provider.operationCount, before + 2);
     },
   );
+  for (final x11 in [false, true]) {
+    test('the PIN prompt warns under X11 only (X11: $x11)', () async {
+      x11Session = x11;
+      addTearDown(() => x11Session = false);
+      provider.nextFailure = PasskeyErrorCode.pinRequired;
+      expect(await app().execute(const ListCommand()), 0);
+      expect(terminal.pinReads, 1);
+      expect(terminal.pinWarning, x11 ? x11Warning : isNull);
+    });
+  }
   test('rejected PIN exits without automatic retry', () async {
     provider.nextFailure = PasskeyErrorCode.pinRequired;
     terminal.onPin = () => provider.nextFailure = PasskeyErrorCode.pinInvalid;
@@ -205,6 +217,7 @@ void main() {
 
 final class _Terminal implements AuthTerminal, HardwarePrompt {
   int selection = 0, pinReads = 0;
+  String? pinWarning;
   PasskeyMethod? chosen;
   final pin = utf8.encode('test-pin');
   void Function()? onPin;
@@ -226,8 +239,9 @@ final class _Terminal implements AuthTerminal, HardwarePrompt {
   }
 
   @override
-  Future<Uint8List> readPin() async {
+  Future<Uint8List> readPin({String? warning}) async {
     pinReads++;
+    pinWarning = warning;
     onPin?.call();
     return pin;
   }

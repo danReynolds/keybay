@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Process hardening now comes from the SDK's `Keybay.hardenProcess()`, with the
+  same policy as before: no core files, and non-dumpable on Linux. `run` still
+  gives its program the caller's core-file limit. On Linux a command now also
+  stops when a debugger or tracer, such as `strace`, is already attached, since
+  that attachment could read its secrets.
+- In an X11 session, passphrase and PIN prompts, in commands and the terminal
+  UI, first warn that other programs can read what you type.
+
 ## 0.3.2
 
 - Built on Keybay SDK 0.3.2 and Keypass 0.1.0-dev.3, which bundle hardware-key

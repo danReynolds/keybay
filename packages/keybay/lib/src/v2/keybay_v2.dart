@@ -9,6 +9,7 @@ import 'dart:typed_data';
 import 'package:cryptography/dart.dart';
 import 'package:keypass/keypass.dart';
 
+import '../process_hardening.dart';
 import 'android_host_platform.dart';
 import 'apple_data_protection_host_platform.dart';
 import 'application_identity.dart';
@@ -61,6 +62,24 @@ abstract final class Keybay {
   /// Nonsecret coordination files and provider-owned roots may remain.
   /// Trusted operating-system/provider UI may participate in this operation.
   static Future<void> reset() => _future(_productionRuntime.reset);
+
+  /// Hardens the current process before it handles secrets. Call it first in
+  /// `main`, before any other Keybay call, in release builds: on Linux it
+  /// stops debuggers attaching.
+  ///
+  /// On Linux the process becomes non-dumpable (`PR_SET_DUMPABLE` 0) and its
+  /// soft `RLIMIT_CORE` becomes 0, so a crash writes no core file and other
+  /// programs running as the same user can neither attach a debugger nor read
+  /// `/proc/<pid>/mem`. On macOS the soft `RLIMIT_CORE` becomes 0. On iOS and
+  /// Android it changes nothing. It also reports the Linux Yama ptrace scope
+  /// and whether the session is X11.
+  ///
+  /// It never throws and never substitutes a weaker policy: check
+  /// [KeybayProcessHardening.failed] and decide whether to continue. It does
+  /// not protect against root or the kernel, against code injected at launch
+  /// through a launcher, shell startup files or a per-user install, or during
+  /// the window before it runs. Calling it again is harmless.
+  static KeybayProcessHardening hardenProcess() => applyProcessHardening();
 }
 
 /// Public limits callers may need before submitting plaintext to Keybay.

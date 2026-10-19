@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:keybay/keybay.dart';
 import 'package:keybay_cli/src/application.dart';
+import 'package:keybay_cli/src/auth_terminal.dart' show x11Warning;
 import 'package:keybay_cli/src/command.dart';
 import 'package:keybay_cli/src/manifest.dart';
 import 'package:keybay_cli/src/process_executor.dart';
@@ -335,6 +336,28 @@ void main() {
     expect(prompted, 1);
     expect(shown, isEmpty);
   });
+
+  for (final x11Session in [false, true]) {
+    test(
+      'the passphrase prompt warns under X11 only (X11: $x11Session)',
+      () async {
+        final harness = _Harness();
+        await harness.seed({'acme/key': utf8.encode('secret-sentinel')});
+        await harness.protect('correct');
+        String? shown;
+        final app = _application(
+          harness: harness,
+          x11Session: x11Session,
+          passphraseReader: ({summary}) async {
+            shown = summary;
+            return Uint8List.fromList(utf8.encode('correct'));
+          },
+        );
+        expect(await app.execute(const ListCommand()), exitSuccess);
+        expect(shown, x11Session ? '$x11Warning\n' : isNull);
+      },
+    );
+  }
 
   test('execution-affecting names cover common injection variables', () {
     for (final name in [
@@ -777,6 +800,7 @@ CliApplication _application({
   CommandLifetime? lifetime,
   SessionOpener? opener,
   LaunchSummaryWriter? showLaunchSummary,
+  bool x11Session = false,
 }) {
   addTearDown(harness.dispose);
   return CliApplication(
@@ -800,6 +824,7 @@ CliApplication _application({
     stdout: stdout ?? StringBuffer(),
     stderr: stderr ?? StringBuffer(),
     showLaunchSummary: showLaunchSummary ?? (_) {},
+    x11Session: x11Session,
   );
 }
 

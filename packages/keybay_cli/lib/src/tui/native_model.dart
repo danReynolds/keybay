@@ -30,8 +30,10 @@ TuiModel createNativeTuiModel({
   Future<bool> Function(TuiCancellation)? hardwareConnected,
   Duration hardwarePollInterval = const Duration(milliseconds: 500),
   Duration hardwareConnectionTimeout = const Duration(minutes: 2),
+  bool x11Session = false,
 }) => TuiModel(
   supportsHardware: true,
+  x11Session: x11Session,
   appearance: appearance,
   saveAppearance: saveAppearance,
   unlockPreference: unlockPreference,

@@ -329,9 +329,12 @@ unmentioned parent environment bytes, overlays manifest entries and resolves
 all references before launch. It restores shell-default signal behavior for
 the child.
 
-Keybay disables its core files and becomes non-dumpable on Linux before opening
-the store; failure stops the command. The child receives the caller's original
-core-file limit. Injected values are ordinary child environment variables:
+Every command first applies the SDK's `Keybay.hardenProcess()`: no core files,
+and on Linux a non-dumpable process that other programs running as you cannot
+attach to or read through `/proc/<pid>/mem`. Failure stops the command, as
+does a debugger or tracer such as `strace` already attached on Linux. The
+child receives the caller's original core-file limit. In an X11 session,
+passphrase and PIN prompts first warn that other programs can read keystrokes. Injected values are ordinary child environment variables:
 child code, descendants, process inspection and dumps may expose them. Trust
 the manifest and launched code. Prefer the Dart SDK when you can avoid injection.
 

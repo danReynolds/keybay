@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Add `Keybay.hardenProcess()`, for applications to call first in `main`. It
+  sets the soft core-file limit to 0 on macOS and Linux, and on Linux makes the
+  process non-dumpable, which also refuses same-user debuggers and
+  `/proc/<pid>/mem` reads. It changes nothing on iOS and Android. The result
+  reports each protection as applied, failed or not attempted, with a detail;
+  Keybay never falls back to a weaker policy. On Linux a debugger or tracer
+  already attached makes the debugger protection fail, since it stays attached. It also reports the Linux Yama
+  ptrace scope and whether the session is X11.
+
 ## 0.3.2
 
 - Depend on Keypass 0.1.0-dev.3, which builds desktop hardware support against

@@ -36,6 +36,7 @@ Future<int> runTui({
   Duration idleWarning = tuiIdleWarning,
   UnlockPreference? unlockPreference,
   Future<bool> Function(TuiCancellation)? hardwareConnected,
+  bool x11Session = false,
 }) async {
   authorizeTui();
   if (Platform.environment.entries.any(
@@ -83,6 +84,7 @@ Future<int> runTui({
     appearance: appearance,
     saveAppearance: appearancePreference?.write,
     hardwareConnected: hardwareConnected,
+    x11Session: x11Session,
   );
   bool accept(TuiEvent event) {
     if (!tuiForeground()) {
