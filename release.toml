@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 
 # Two independently released units, so each states its own tag pattern.
 # The CLI depends on the core package, and rk publishes in that order.
@@ -15,10 +15,8 @@ publish = ["git-tag", "pub.dev"]
 path = "packages/keybay_cli"
 tag = "keybay_cli-v{version}"
 publish = ["git-tag", "github-release", "homebrew"]
-binary_platforms = ["macos-arm64", "linux-x64", "linux-arm64"]
-# The formula's desc, shown by `brew info`. Needs rk with homebrew_description
-# (danReynolds/release-kit#124); older rk refuses the unknown setting.
-homebrew_description = "Encrypted local secrets vault that keeps plaintext out of .env files"
+binary.platforms = ["macos-arm64", "linux-x64", "linux-arm64"]
 # Embed the CLI's application ID, as keybay_compile does; without it the
 # release binary cannot resolve which store it owns.
-dart_defines_from_pubspec = ["keybay.application_id"]
+binary.defines_from_pubspec = ["keybay.application_id"]
+homebrew.description = "Encrypted local secrets vault that keeps plaintext out of .env files"
