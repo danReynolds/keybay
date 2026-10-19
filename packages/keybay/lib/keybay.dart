@@ -25,7 +25,11 @@
 library;
 
 export 'src/process_hardening.dart'
-    show KeybayHardeningMeasure, KeybayHardeningStatus, KeybayProcessHardening;
+    show
+        KeybayHardeningCause,
+        KeybayHardeningMeasure,
+        KeybayHardeningStatus,
+        KeybayProcessHardening;
 export 'src/v2/keybay_v2.dart'
     show
         AuthMethod,

@@ -5,8 +5,8 @@ Commit `848073e` moved the CLI's process hardening into the SDK as
 Linux Yama and X11 signals, X11 warnings at the CLI and TUI passphrase and PIN
 prompts, and docs. A fresh-context reviewer (Claude Opus, xhigh effort, reading
 only git objects) reviewed that commit. Its full text follows, then the
-response to each finding. The follow-up commit carries the fixes and this
-record.
+response to each finding. Commit `b1b5b67` answered the review; the same
+reviewer checked it, and the final commit answers that check.
 
 ## Verification
 
@@ -262,6 +262,58 @@ I expect both commands to succeed while the probe prints `debuggerAttach: applie
      that way would never harden. The guide now says to call it in every build
      you ship, and to leave it out only while attaching a debugger.
 
+## Follow-up check of b1b5b67
+
+The same reviewer checked the fixes in `b1b5b67`. Its text follows verbatim,
+with its heading moved down one level.
+
+### Follow-up check of b1b5b67
+
+**Verdict:** All six findings are fixed correctly. The delta adds no correctness bugs, only the two Low and three Nit items below, so it is ready after those or once they are accepted as known limits.
+
+**Per finding:**
+1. **User namespace: fixed.** Only the single identity line `0 0 4294967295` counts as the initial namespace; whitespace is normalised and an unreadable `uid_map` fails. `coreDumps` correctly stays `applied`. The Flatpak PID-namespace `TracerPid` blind spot is now covered by the namespace failure.
+2. **Child programs: resolved by rewording.** Declining `previousSoftCoreLimit` is reasonable, since `Process.run` gives no exec hook anyway.
+3. **Per-thread tracer: fixed.** `/proc/self/task/*/status` is walked. ENOENT and ESRCH cover a thread that exits between listing and open, and between open and read. Any other error, a failed listing or an empty list returns null and so reports `failed`. A thread created after the listing can't hide a tracer that attached earlier.
+4. **Latin-1: fixed.** Latin-1 decodes every byte, and the `PR_SET_NAME` test (0x6b 0xe6 0x97) would fail if strict UTF-8 came back. The test stays on one thread because it has no await, and it restores the name.
+5. **Log line and repeated error: fixed.** `toString` now carries each detail. The CLI prints one line per failed measure, details carry no trailing period, and the duplicate line is gone.
+6. **Tests: fixed.** `linuxHardeningResult` is pure and table-tested on every branch. The CLI hook is a constant static tear-off. Teardowns are registered in the right order and restore both the soft limit and dumpability; CLI test 1 now sets dumpability to 1 first.
+
+**New or remaining findings:**
+1. **Low: the CLI now also refuses in root-owned user namespaces (`packages/keybay/lib/src/process_hardening.dart:206-211, 257-269`; `packages/keybay_cli/README.md:336`).** Unprivileged LXD/Incus containers, Docker with userns-remap and Kubernetes user namespaces all have a non-identity `uid_map`. Their owner is root, so same-user programs outside can't attach. The CLI still refuses every command there, and the detail blames "programs its owner runs". The README and CHANGELOG name only toolbox, distrobox and rootless containers.
+   - Fix: document this, and reword the detail to "unless its owner is root".
+   - Optional: refine the check with `ioctl(/proc/self/ns/user, NS_GET_OWNER_UID)`, which returns the overflow uid when the owner is unmapped. Treat that as a heuristic only, because a newuidmap setup can leave a same-user owner unmapped.
+2. **Low: Flatpak apps can't follow the guide (`doc/sdk.md:58, 97`; `packages/keybay/README.md:39`).** In Flatpak, `debuggerAttach` is always `failed`, and the sample and README stop on `failed`. So a Flatpak SDK app either never starts or must tell "user namespace" apart from "tracer attached" by matching `detail` text, which the docs say not to branch on.
+   - Fix: expose the cause as data (for example `bool userNamespace`, or a reason enum on the measure). Then tell Flatpak apps to accept that case knowingly while still stopping for a tracer or a dumpable process.
+3. **Nit: SDK test 1 isn't namespace-safe (`packages/keybay/test/process_hardening_test.dart:42, 45`).** The two denial asserts fail when the runner is root inside a user namespace (`unshare -r`, rootless podman as root). A child there holds `CAP_SYS_PTRACE` in `mm->user_ns`, so it can still read `environ` and open `mem`. That contradicts the response that the live tests accept user namespaces; toolbox, which keeps the user's uid, is fine.
+   - Fix: skip both asserts unless `linuxInitialUserNamespace() == true`.
+4. **Nit: "release builds" wording remains.** `packages/keybay/lib/src/v2/keybay_v2.dart:66-68` and `doc/security-levels.md:100-101` still say "release builds", while `doc/sdk.md:89-92` now says "every build you ship". Align them.
+5. **Nit: the new per-measure stderr lines are untested.** The refusal test checks only the exit code because `runKeybay` writes to the real stderr. Assert the lines through an injected sink, or accept them as untested.
+
+### Responses to the follow-up
+
+1. **Root-owned namespaces: documented, and still failed.**
+   - The detail now says the owner is the user in Flatpak, toolbox or a
+     rootless container, and root in LXD, Incus or userns-remapped Docker, and
+     that Keybay cannot tell which. The CLI README and CHANGELOG say the same.
+   - `NS_GET_OWNER_UID` was not adopted. From inside `unshare -r`, the user who
+     owns the namespace appears as uid 0, and an unmapped owner can be the user
+     too, so no answer would be reliable.
+   - Whether the CLI should refuse there stays the maintainer's decision.
+2. **Flatpak apps: the cause is now data.**
+   - A failed measure carries `cause`, a new exported `KeybayHardeningCause`:
+     `settingRejected`, `unreadable`, `traced` or `userNamespace`.
+   - The namespace is checked last, so `userNamespace` means nothing else
+     failed.
+   - `doc/sdk.md` shows a Flatpak app accepting only that cause, and the table
+     test covers the ordering.
+3. **Namespace-safe test: done.** The denial asserts run only in the initial
+   user namespace.
+4. **Wording: aligned.** The dartdoc and `doc/security-levels.md` now match
+   `doc/sdk.md`.
+5. **Error lines: tested.** `ProcessHardening.failureLines` builds the CLI's
+   error, `runKeybay` writes it, and a test asserts its lines.
+
 ## Not covered here
 
 - The package suites did not run on Linux locally, and nothing ran on Linux
@@ -270,3 +322,5 @@ I expect both commands to succeed while the probe prints `debuggerAttach: applie
   TUI tester, not by a PTY run in a real X11 session.
 - No Flatpak, toolbox or Yama 1 host was used. The user-namespace case used
   `unshare` in Docker, with seccomp unconfined.
+- The follow-up changes after `b1b5b67` (the failure cause, error lines, test
+  guard and wording) were not reviewed again.

@@ -75,6 +75,34 @@ void main() {
       );
     }
     expect(hardened, 2);
+    expect(
+      ProcessHardening.failureLines(
+        linuxHardeningResult(
+          dumpable: 0,
+          initialUserNamespace: true,
+          tracer: 4242,
+          ptraceScope: 1,
+          environment: const {},
+        ),
+      ),
+      [
+        'error: could not harden this process.',
+        '  debugger attach: process 4242 was already tracing a thread of this '
+            'process and stays attached.',
+      ],
+    );
+    final dumpable = ProcessHardening.failureLines(
+      linuxHardeningResult(
+        dumpable: 1,
+        initialUserNamespace: true,
+        tracer: 0,
+        ptraceScope: 1,
+        environment: const {},
+      ),
+    );
+    expect(dumpable, hasLength(3));
+    expect(dumpable[1], startsWith('  core dumps: PR_SET_DUMPABLE 0'));
+    expect(dumpable[2], startsWith('  debugger attach: the process is still'));
   });
 }
 

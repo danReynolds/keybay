@@ -18,12 +18,36 @@ enum KeybayHardeningStatus {
   notAttempted,
 }
 
+/// Why a protection is [KeybayHardeningStatus.failed], for applications that
+/// knowingly accept one cause, such as a Flatpak app and [userNamespace].
+enum KeybayHardeningCause {
+  /// The kernel did not keep Keybay's setting: the process stayed dumpable, or
+  /// the soft core-file limit is not 0.
+  settingRejected,
+
+  /// Keybay could not read what it needs to confirm the protection.
+  unreadable,
+
+  /// A process was already tracing one of this process's threads, and that
+  /// attachment survives.
+  traced,
+
+  /// The process runs in a user namespace (Flatpak, toolbox, a container).
+  /// Programs its owner runs outside it keep `CAP_SYS_PTRACE` over this
+  /// process. Keybay reports this cause only when nothing else failed.
+  userNamespace,
+}
+
 /// One protection reported by [KeybayProcessHardening].
 final class KeybayHardeningMeasure {
-  const KeybayHardeningMeasure._(this.status, this.detail);
+  const KeybayHardeningMeasure._(this.status, this.detail, [this.cause]);
 
   /// Whether the protection is in effect.
   final KeybayHardeningStatus status;
+
+  /// Why the protection failed; null unless [status] is
+  /// [KeybayHardeningStatus.failed].
+  final KeybayHardeningCause? cause;
 
   /// What Keybay did, or why the protection is not confirmed in effect. For
   /// logs and diagnostics; branch on [status].
@@ -140,6 +164,9 @@ KeybayProcessHardening applyProcessHardening() {
           : KeybayHardeningMeasure._(
               KeybayHardeningStatus.failed,
               'soft RLIMIT_CORE is ${soft ?? 'unreadable'}, not 0',
+              soft == null
+                  ? KeybayHardeningCause.unreadable
+                  : KeybayHardeningCause.settingRejected,
             ),
       debuggerAttach: const KeybayHardeningMeasure._(
         KeybayHardeningStatus.notAttempted,
@@ -184,8 +211,12 @@ KeybayProcessHardening linuxHardeningResult({
   required Map<String, String> environment,
 }) {
   final nonDumpable = dumpable == 0;
-  KeybayHardeningMeasure failed(String detail) =>
-      KeybayHardeningMeasure._(KeybayHardeningStatus.failed, detail);
+  final dumpableCause = dumpable == null
+      ? KeybayHardeningCause.unreadable
+      : KeybayHardeningCause.settingRejected;
+  KeybayHardeningMeasure failed(KeybayHardeningCause cause, String detail) =>
+      KeybayHardeningMeasure._(KeybayHardeningStatus.failed, detail, cause);
+  // The namespace is checked last, so its cause means nothing else failed.
   return KeybayProcessHardening._(
     coreDumps: nonDumpable
         ? const KeybayHardeningMeasure._(
@@ -193,31 +224,40 @@ KeybayProcessHardening linuxHardeningResult({
             'non-dumpable (PR_SET_DUMPABLE 0) with soft RLIMIT_CORE 0',
           )
         : failed(
+            dumpableCause,
             'PR_SET_DUMPABLE 0 did not take effect (dumpable: $dumpable), '
             'so a core-pattern pipe can still dump this process',
           ),
     debuggerAttach: !nonDumpable
-        ? failed('the process is still dumpable (dumpable: $dumpable)')
-        : initialUserNamespace == null
         ? failed(
-            'could not read /proc/self/uid_map, so a user namespace whose '
-            'owner keeps CAP_SYS_PTRACE over this process cannot be ruled out',
-          )
-        : !initialUserNamespace
-        ? failed(
-            'this process runs in a user namespace (such as Flatpak, toolbox '
-            'or a rootless container); programs its owner runs outside it '
-            'keep CAP_SYS_PTRACE over this process',
+            dumpableCause,
+            'the process is still dumpable (dumpable: $dumpable)',
           )
         : tracer == null
         ? failed(
+            KeybayHardeningCause.unreadable,
             'could not read TracerPid for every thread, so a debugger '
             'attached before the call cannot be ruled out',
           )
         : tracer != 0
         ? failed(
+            KeybayHardeningCause.traced,
             'process $tracer was already tracing a thread of this process '
             'and stays attached',
+          )
+        : initialUserNamespace == null
+        ? failed(
+            KeybayHardeningCause.unreadable,
+            'could not read /proc/self/uid_map, so a user namespace whose '
+            'owner keeps CAP_SYS_PTRACE over this process cannot be ruled out',
+          )
+        : !initialUserNamespace
+        ? failed(
+            KeybayHardeningCause.userNamespace,
+            'this process runs in a user namespace; programs its owner runs '
+            'outside it keep CAP_SYS_PTRACE over this process. The owner is '
+            'you in Flatpak, toolbox or a rootless container, and root in '
+            'LXD, Incus or userns-remapped Docker; Keybay cannot tell which',
           )
         : const KeybayHardeningMeasure._(
             KeybayHardeningStatus.applied,

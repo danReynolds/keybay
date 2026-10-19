@@ -6,8 +6,8 @@
   sets the soft core-file limit to 0 on macOS and Linux, and on Linux makes the
   process non-dumpable, which also refuses same-user debuggers and
   `/proc/<pid>/mem` reads. It changes nothing on iOS and Android. The result
-  reports each protection as applied, failed or not attempted, with a detail;
-  Keybay never falls back to a weaker policy. On Linux the debugger protection
+  reports each protection as applied, failed or not attempted, with a detail
+  and, when failed, a cause; Keybay never falls back to a weaker policy. On Linux the debugger protection
   fails when a debugger or tracer is already attached to any thread, since it
   stays attached, and in a user namespace such as Flatpak's, whose owner's
   programs outside it keep ptrace access. It also reports the Linux Yama ptrace

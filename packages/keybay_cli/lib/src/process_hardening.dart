@@ -39,6 +39,17 @@ abstract final class ProcessHardening {
   /// Reinstates the policy when `execve` fails and Keybay continues.
   static void reapplyAfterFailedExec() => Keybay.hardenProcess();
 
+  /// The error a command prints before refusing a failed [hardening].
+  static List<String> failureLines(KeybayProcessHardening hardening) => [
+    'error: could not harden this process.',
+    for (final (name, measure) in [
+      ('core dumps', hardening.coreDumps),
+      ('debugger attach', hardening.debuggerAttach),
+    ])
+      if (measure.status == KeybayHardeningStatus.failed)
+        '  $name: ${measure.detail}.',
+  ];
+
   static int? _softCoreLimit() {
     if (!Platform.isMacOS && !Platform.isLinux) return null;
     final limit = calloc<_Rlimit>();

@@ -10,63 +10,62 @@ import 'package:keybay/keybay.dart';
 import 'package:keybay/src/process_hardening.dart';
 import 'package:test/test.dart';
 
+typedef C = KeybayHardeningCause;
+
 void main() {
-  test(
-    'hardenProcess disables core files and, on Linux, dumpability',
-    () {
-      // Start from a caller that allows core files and, on Linux, is dumpable;
-      // a default limit of 0 would let every expectation pass even if nothing
-      // were changed.
-      final hard = _preserveProcessState();
-      if (hard == 0) {
-        markTestSkipped('the hard core-file limit is 0 here');
-        return;
-      }
-      final caller = hard > 0 && hard < 1 << 20 ? hard : 1 << 20;
-      _setSoftCoreLimit(caller);
-      if (Platform.isLinux) {
-        expect(_prctl(_prSetDumpable, 1, 0, 0, 0), 0);
-        expect(linuxDumpable, 1);
-        // A child running as the same user reads a dumpable parent's /proc
-        // entries; that read is the positive control for the one below.
-        expect(_childReads('/proc/$pid/environ'), isTrue);
-      }
+  test('hardenProcess disables core files and, on Linux, dumpability', () {
+    // Start from a caller that allows core files and, on Linux, is dumpable;
+    // a default limit of 0 would let every expectation pass even if nothing
+    // were changed.
+    final hard = _preserveProcessState();
+    if (hard == 0) {
+      markTestSkipped('the hard core-file limit is 0 here');
+      return;
+    }
+    final caller = hard > 0 && hard < 1 << 20 ? hard : 1 << 20;
+    _setSoftCoreLimit(caller);
+    if (Platform.isLinux) {
+      expect(_prctl(_prSetDumpable, 1, 0, 0, 0), 0);
+      expect(linuxDumpable, 1);
+      // A child running as the same user reads a dumpable parent's /proc
+      // entries; that read is the positive control for the one below.
+      expect(_childReads('/proc/$pid/environ'), isTrue);
+    }
 
-      final result = Keybay.hardenProcess();
+    final result = Keybay.hardenProcess();
 
-      expect(result.coreDumps.status, KeybayHardeningStatus.applied);
-      expect(softCoreLimit, 0);
-      expect(_coreLimits().$2, hard, reason: 'the hard limit is unchanged');
-      if (Platform.isLinux) {
-        expect(linuxDumpable, 0);
+    expect(result.coreDumps.status, KeybayHardeningStatus.applied);
+    expect(softCoreLimit, 0);
+    expect(_coreLimits().$2, hard, reason: 'the hard limit is unchanged');
+    if (Platform.isLinux) {
+      expect(linuxDumpable, 0);
+      // A user namespace's root keeps CAP_SYS_PTRACE over its processes, so
+      // the denials hold only in the initial one.
+      if (linuxInitialUserNamespace() == true) {
         expect(_childReads('/proc/$pid/environ'), isFalse);
         // Opening mem needs attach rights, which Yama may already refuse a
         // child, so only the denial is asserted.
         expect(_childOpens('/proc/$pid/mem'), isFalse);
-        // A user namespace (toolbox, a rootless container) cannot confirm it.
-        expect(
-          result.debuggerAttach.status,
-          linuxInitialUserNamespace() == true
-              ? KeybayHardeningStatus.applied
-              : KeybayHardeningStatus.failed,
-          reason: '$result',
-        );
-      } else {
-        expect(result.failed, isFalse, reason: '$result');
-        expect(
-          result.debuggerAttach.status,
-          KeybayHardeningStatus.notAttempted,
-        );
-        expect(result.debuggerAttach.detail, contains('PT_DENY_ATTACH'));
       }
+      // A user namespace (toolbox, a rootless container) cannot confirm it.
+      expect(
+        result.debuggerAttach.status,
+        linuxInitialUserNamespace() == true
+            ? KeybayHardeningStatus.applied
+            : KeybayHardeningStatus.failed,
+        reason: '$result',
+      );
+    } else {
+      expect(result.failed, isFalse, reason: '$result');
+      expect(result.debuggerAttach.status, KeybayHardeningStatus.notAttempted);
+      expect(result.debuggerAttach.detail, contains('PT_DENY_ATTACH'));
+    }
 
-      // Repeating the call is harmless and reports the same policy.
-      final again = Keybay.hardenProcess();
-      expect(again.coreDumps.status, result.coreDumps.status);
-      expect(again.debuggerAttach.status, result.debuggerAttach.status);
-    },
-    testOn: 'mac-os || linux',
-  );
+    // Repeating the call is harmless and reports the same policy.
+    final again = Keybay.hardenProcess();
+    expect(again.coreDumps.status, result.coreDumps.status);
+    expect(again.debuggerAttach.status, result.debuggerAttach.status);
+  }, testOn: 'mac-os || linux');
 
   test('the result reports Yama and X11 only on Linux', () {
     _preserveProcessState();
@@ -91,16 +90,21 @@ void main() {
 
   test('the Linux result fails each protection it cannot confirm', () {
     final cases = [
-      // dumpable, initial user namespace, tracer: core dumps, debugger attach.
+      // dumpable, initial user namespace, tracer: core dumps, debugger attach
+      // and its cause.
       (0, true, 0, 'applied', 'applied', null),
-      (1, true, 0, 'failed', 'failed', 'still dumpable'),
-      (null, true, 0, 'failed', 'failed', 'still dumpable'),
-      (0, false, 0, 'applied', 'failed', 'user namespace'),
-      (0, null, 0, 'applied', 'failed', 'uid_map'),
-      (0, true, 4242, 'applied', 'failed', 'process 4242'),
-      (0, true, null, 'applied', 'failed', 'TracerPid'),
+      (1, true, 0, 'failed', 'failed', C.settingRejected),
+      (null, true, 0, 'failed', 'failed', C.unreadable),
+      (0, false, 0, 'applied', 'failed', C.userNamespace),
+      (0, null, 0, 'applied', 'failed', C.unreadable),
+      (0, true, 4242, 'applied', 'failed', C.traced),
+      (0, true, null, 'applied', 'failed', C.unreadable),
+      // The namespace is reported only when nothing else failed.
+      (0, false, 4242, 'applied', 'failed', C.traced),
+      (0, false, null, 'applied', 'failed', C.unreadable),
+      (1, false, 0, 'failed', 'failed', C.settingRejected),
     ];
-    for (final (dumpable, initial, tracer, core, debugger, why) in cases) {
+    for (final (dumpable, initial, tracer, core, debugger, cause) in cases) {
       final result = linuxHardeningResult(
         dumpable: dumpable,
         initialUserNamespace: initial,
@@ -112,9 +116,12 @@ void main() {
       expect(result.coreDumps.status.name, core, reason: label);
       expect(result.debuggerAttach.status.name, debugger, reason: label);
       expect(result.failed, core == 'failed' || debugger == 'failed');
-      if (why != null) {
-        expect(result.debuggerAttach.detail, contains(why), reason: label);
-      }
+      expect(result.debuggerAttach.cause, cause, reason: label);
+      expect(
+        result.coreDumps.cause,
+        core == 'failed' ? cause : null,
+        reason: label,
+      );
     }
   });
 
@@ -186,26 +193,22 @@ void main() {
     );
   });
 
-  test(
-    'a thread name that is not UTF-8 does not hide the tracer state',
-    () {
-      // The kernel cuts Name at 15 bytes regardless of character boundaries.
-      final previous = calloc<Uint8>(16);
-      final name = calloc<Uint8>(16);
-      try {
-        expect(_prctl(_prGetName, previous.address, 0, 0, 0), 0);
-        name.asTypedList(16).setAll(0, Uint8List.fromList([0x6b, 0xe6, 0x97]));
-        expect(_prctl(_prSetName, name.address, 0, 0, 0), 0);
-        expect(linuxTracerPid(), 0);
-      } finally {
-        _prctl(_prSetName, previous.address, 0, 0, 0);
-        calloc
-          ..free(previous)
-          ..free(name);
-      }
-    },
-    testOn: 'linux',
-  );
+  test('a thread name that is not UTF-8 does not hide the tracer state', () {
+    // The kernel cuts Name at 15 bytes regardless of character boundaries.
+    final previous = calloc<Uint8>(16);
+    final name = calloc<Uint8>(16);
+    try {
+      expect(_prctl(_prGetName, previous.address, 0, 0, 0), 0);
+      name.asTypedList(16).setAll(0, Uint8List.fromList([0x6b, 0xe6, 0x97]));
+      expect(_prctl(_prSetName, name.address, 0, 0, 0), 0);
+      expect(linuxTracerPid(), 0);
+    } finally {
+      _prctl(_prSetName, previous.address, 0, 0, 0);
+      calloc
+        ..free(previous)
+        ..free(name);
+    }
+  }, testOn: 'linux');
 
   test('an X11 session is XDG_SESSION_TYPE x11 or DISPLAY without Wayland', () {
     for (final (environment, x11) in <(Map<String, String>, bool)>[

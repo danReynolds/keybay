@@ -27,15 +27,7 @@ Future<int> runKeybay(
 }) async {
   final hardening = hardenProcess();
   if (hardening.failed) {
-    stderr.writeln('error: could not harden this process.');
-    for (final (name, measure) in [
-      ('core dumps', hardening.coreDumps),
-      ('debugger attach', hardening.debuggerAttach),
-    ]) {
-      if (measure.status == KeybayHardeningStatus.failed) {
-        stderr.writeln('  $name: ${measure.detail}.');
-      }
-    }
+    ProcessHardening.failureLines(hardening).forEach(stderr.writeln);
     return exitFailure;
   }
   final lifetime = CommandLifetime();

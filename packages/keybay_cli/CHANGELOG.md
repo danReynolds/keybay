@@ -6,9 +6,10 @@
   same policy as before: no core files, and non-dumpable on Linux. `run` still
   gives its program the caller's core-file limit. On Linux a command now also
   stops when a debugger or tracer, such as `strace`, is already attached, since
-  that attachment could read its secrets, and when it runs in a user namespace
-  (toolbox, distrobox, a rootless container), where the user's programs outside
-  it can still attach.
+  that attachment could read its secrets, and when it runs in any user
+  namespace: in toolbox, distrobox or a rootless container the user's programs
+  outside it can still attach, and Keybay cannot tell those from root-owned
+  ones such as LXD, Incus or userns-remapped Docker.
 - In an X11 session, passphrase and PIN prompts, in commands and the terminal
   UI, first warn that other programs can read what you type.
 

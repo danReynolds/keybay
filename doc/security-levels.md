@@ -97,8 +97,8 @@ on every command, limits which programs running as you can read that memory:
 | macOS | Not written | Decided by the code signature: a notarized build refuses them |
 | iOS, Android | Governed by the operating system | Governed by the operating system |
 
-On Linux this also blocks debuggers you run yourself, so applications call it in
-release builds. It does not help against:
+On Linux this also blocks debuggers you run yourself, so applications leave it
+out only while they are being debugged. It does not help against:
 
 - root or the kernel;
 - code injected when the application starts: by whatever launches it, by shell

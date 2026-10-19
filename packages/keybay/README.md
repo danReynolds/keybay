@@ -40,7 +40,7 @@ Call `Keybay.hardenProcess()` first in `main` and stop if its result has
 `failed`. It disables core files and, on Linux, makes the process non-dumpable,
 so other programs running as the user cannot attach a debugger or read
 `/proc/<pid>/mem`. Inside Flatpak or another user namespace that protection
-fails, and the result says so. It also reports the Linux Yama ptrace scope and
+fails with the cause `userNamespace`, which an app can accept knowingly. It also reports the Linux Yama ptrace scope and
 whether the session is X11. See
 [process hardening](https://github.com/danReynolds/keybay/blob/main/doc/sdk.md#harden-the-process).
 

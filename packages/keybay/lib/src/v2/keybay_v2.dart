@@ -64,8 +64,8 @@ abstract final class Keybay {
   static Future<void> reset() => _future(_productionRuntime.reset);
 
   /// Hardens the current process before it handles secrets. Call it first in
-  /// `main`, before any other Keybay call, in release builds: on Linux it
-  /// stops debuggers attaching.
+  /// `main`, before any other Keybay call, in every build you ship; on Linux
+  /// it stops debuggers attaching, so leave it out only while you attach one.
   ///
   /// On Linux the process becomes non-dumpable (`PR_SET_DUMPABLE` 0) and its
   /// soft `RLIMIT_CORE` becomes 0, so a crash writes no core file and other

@@ -92,15 +92,32 @@ Future<void> main() async {
   are never product builds; leave it out only while you attach a debugger.
 - **Check the result.** It never throws and never substitutes a weaker policy.
   `coreDumps` and `debuggerAttach` each report `applied`, `failed` or
-  `notAttempted`, with a `detail` for logs. `failed` is true when a protection
-  Keybay attempted is not confirmed in effect. Keybay leaves the decision to
-  the application; the sample stops, as the Keybay CLI does.
-- **When `debuggerAttach` fails on Linux.** Besides a process that stays
-  dumpable, it fails when a debugger or tracer such as `strace` was already
-  attached to any thread, since that attachment survives the call, and in a user
-  namespace: Flatpak, toolbox, distrobox or a rootless container. The user owns
-  that namespace, so programs they run outside it hold `CAP_SYS_PTRACE` over the
-  application and can still attach or read its memory. Core files stay off.
+  `notAttempted`, with a `detail` for logs and, when failed, a `cause` to
+  branch on. `failed` is true when a protection Keybay attempted is not
+  confirmed in effect. Keybay leaves the decision to the application; the
+  sample stops, as the Keybay CLI does.
+- **When `debuggerAttach` fails on Linux.** Its `cause` is `settingRejected`
+  when the process stays dumpable, `traced` when a debugger or tracer such as
+  `strace` was already attached to any thread (that attachment survives the
+  call), `unreadable` when `/proc` cannot confirm either, and `userNamespace`
+  when nothing else failed but the process runs in a user namespace. That
+  namespace's owner keeps `CAP_SYS_PTRACE` over the application from outside
+  it. In Flatpak, toolbox, distrobox or a rootless container the owner is the
+  user, so programs they run can still attach or read its memory; in LXD,
+  Incus or userns-remapped Docker it is root. Keybay cannot tell which. Core
+  files stay off either way.
+- **Flatpak apps.** A Flatpak app always runs in a user namespace. To accept
+  that knowingly while still stopping for everything else, check the cause
+  instead of `failed`:
+
+  ```dart
+  bool usable(KeybayHardeningMeasure measure) =>
+      measure.status != KeybayHardeningStatus.failed ||
+      measure.cause == KeybayHardeningCause.userNamespace;
+  final usableHere =
+      usable(hardening.coreDumps) && usable(hardening.debuggerAttach);
+  ```
+
 - **Child programs.** Programs the application starts, including through
   `Process.run`, inherit a soft core limit of 0. The hard limit is unchanged, so
   a child can raise its own. Restoring the caller's limit before `execve` means

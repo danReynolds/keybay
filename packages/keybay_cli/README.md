@@ -333,8 +333,9 @@ Every command first applies the SDK's `Keybay.hardenProcess()`: no core files,
 and on Linux a non-dumpable process that other programs running as you cannot
 attach to or read through `/proc/<pid>/mem`. Failure stops the command. On
 Linux that includes a debugger or tracer such as `strace` already attached, and
-running in a user namespace (toolbox, distrobox, a rootless container), where
-your programs outside it can still attach. The child receives the caller's
+running in any user namespace: in toolbox, distrobox or a rootless container
+your programs outside it can still attach, and Keybay cannot tell those apart
+from root-owned ones such as LXD, Incus or userns-remapped Docker. The child receives the caller's
 original core-file limit. In an X11 session, passphrase and PIN prompts first
 warn that other programs can read keystrokes.
 
