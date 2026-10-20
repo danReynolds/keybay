@@ -88,8 +88,9 @@ enrolled, any one of them opens the vault.
 ## While an application runs
 
 An open vault's key, and any value the application has read, are in its memory.
-An application that calls `Keybay.hardenProcess()` first, as the Keybay CLI does
-on every command, limits which programs running as you can read that memory:
+Keybay hardens every application process at its first open, including the
+Keybay CLI on every command, which limits which programs running as you can read
+that memory:
 
 | Platform | Crash core files | Debuggers and memory reads by programs running as you |
 | --- | --- | --- |
@@ -97,22 +98,24 @@ on every command, limits which programs running as you can read that memory:
 | macOS | Not written | Decided by the code signature: a notarized build refuses them |
 | iOS, Android | Governed by the operating system | Governed by the operating system |
 
-On Linux this also blocks debuggers you run yourself, so applications leave it
-out only while they are being debugged. It does not help against:
+This holds for release and profile builds. Debug builds, such as `dart run` or
+`flutter run`, leave Linux processes dumpable so developers can attach a
+debugger. An application can also turn hardening off in its build, which removes
+these protections; it can report what applied through `Keybay.processHardening`.
+Hardening does not help against:
 
 - root or the kernel;
 - code injected when the application starts: by whatever launches it, by shell
   startup files, or by replacing an application installed in your own files;
 - programs you run outside a user namespace the application runs in, such as
   a Flatpak app or one in toolbox, distrobox or a rootless container. You own
-  that namespace, so your programs outside it can still attach; the result
+  that namespace, so your programs outside it can still attach; the status
   reports this as a failure;
-- anything that attached before the call. On Linux, Yama `ptrace_scope` 1 or
+- anything that attached before hardening. On Linux, Yama `ptrace_scope` 1 or
   higher narrows that to, at most, the programs that started the application;
-  the result reports the scope so an application can warn at 0;
+  the status reports the scope;
 - keystrokes read under X11, where any program in the session can read what you
-  type into another. The Keybay CLI and TUI warn before a passphrase or PIN
-  prompt in an X11 session.
+  type into another, including a passphrase or a security key's PIN.
 
 ## Never protected
 

@@ -329,15 +329,13 @@ unmentioned parent environment bytes, overlays manifest entries and resolves
 all references before launch. It restores shell-default signal behavior for
 the child.
 
-Every command first applies the SDK's `Keybay.hardenProcess()`: no core files,
-and on Linux a non-dumpable process that other programs running as you cannot
-attach to or read through `/proc/<pid>/mem`. Failure stops the command. On
-Linux that includes a debugger or tracer such as `strace` already attached, and
-running in any user namespace: in toolbox, distrobox or a rootless container
-your programs outside it can still attach, and Keybay cannot tell those apart
-from root-owned ones such as LXD, Incus or userns-remapped Docker. The child receives the caller's
-original core-file limit. In an X11 session, passphrase and PIN prompts first
-warn that other programs can read keystrokes.
+Every command first applies the SDK's process hardening: no core files, and on
+Linux a non-dumpable process that other programs running as you cannot attach to
+or read through `/proc/<pid>/mem`. A command stops if core files stay enabled.
+In toolbox, distrobox or a rootless container, your programs outside the
+container can still attach; Keybay keeps working there and reports it under
+Settings, Security in `keybay open` ("Hardening: Partial"). The child receives
+the caller's original core-file limit.
 
 Injected values are ordinary child environment variables:
 child code, descendants, process inspection and dumps may expose them. Trust

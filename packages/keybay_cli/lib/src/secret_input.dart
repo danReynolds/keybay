@@ -368,11 +368,10 @@ final class _HardwarePrompt implements HardwarePrompt {
   }
 
   @override
-  Future<Uint8List> readPin({String? warning}) async {
+  Future<Uint8List> readPin() async {
     await _waiting?.cancel();
     _waiting = null;
     check();
-    if (warning != null) attachment.writeNewline(warning);
     final pin = await owner._readHidden(
       input: attachment.input(owner.lifetime),
       terminal: attachment.terminal,

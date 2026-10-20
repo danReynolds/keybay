@@ -26,8 +26,9 @@ Future<int> runKeybay(
   KeybayProcessHardening Function() hardenProcess = ProcessHardening.apply,
 }) async {
   final hardening = hardenProcess();
-  if (hardening.failed) {
-    ProcessHardening.failureLines(hardening).forEach(stderr.writeln);
+  final refusal = ProcessHardening.refusal(hardening);
+  if (refusal != null) {
+    stderr.writeln(refusal);
     return exitFailure;
   }
   final lifetime = CommandLifetime();
@@ -42,7 +43,7 @@ Future<int> runKeybay(
         idleWarning: idleWarning,
         unlockPreference: unlockPreference,
         hardwareConnected: hardwareConnected,
-        x11Session: hardening.x11Session,
+        processHardening: hardening,
       );
     }
     lifetime.start();
@@ -71,7 +72,6 @@ Future<int> runKeybay(
       stdout: stdout,
       stderr: stderr,
       showLaunchSummary: input.showSummary,
-      x11Session: hardening.x11Session,
     );
     return await application.execute(command);
   } on CommandInterrupted catch (error) {

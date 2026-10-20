@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:fleury/fleury_core.dart';
 
 import '../display_safety.dart';
-import '../auth_terminal.dart' show x11Warning;
 import 'chrome.dart';
 import 'forms.dart';
 import 'model.dart';
@@ -236,10 +235,8 @@ final class _HardwareFormState extends State<HardwareForm>
   Widget build(BuildContext context) {
     if (widget.tooSmall) return ResizePrompt(model: model, draft: true);
     final waiting = model.busy;
-    final warnX11 = model.x11Session && model.hardwareNeedsPin && !waiting;
     return FormShell(
       title: enrolling ? 'Add hardware key' : 'Unlock Keybay',
-      subtitle: warnX11 ? const X11Warning() : null,
       bindings: [KeyBinding(KeyCode.escape, onTrigger: (_) => _back())],
       actions: ActionGrid(
         actions: [
@@ -344,12 +341,10 @@ final class _HardwareFormState extends State<HardwareForm>
         ],
         const SizedBox(height: 1),
         SizedBox(
-          height:
-              (rows -
-                      actionRows -
-                      (model.hardwareNeedsPin ? 9 : 8) -
-                      (warnX11 ? (cols < x11Warning.length ? 2 : 1) : 0))
-                  .clamp(2, 5),
+          height: (rows - actionRows - (model.hardwareNeedsPin ? 9 : 8)).clamp(
+            2,
+            5,
+          ),
           child: Text(
             _validation ?? model.hardwareError ?? '',
             style: context.theme.errorStyle,

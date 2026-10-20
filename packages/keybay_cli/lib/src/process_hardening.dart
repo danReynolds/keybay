@@ -8,23 +8,38 @@ import 'package:keybay/keybay.dart';
 ///
 /// A session holds its store key, and the TUI may hold revealed plaintext, so a
 /// core file would outlive the operation that authorized them. Every command
-/// applies the SDK's [Keybay.hardenProcess] before anything else. This class
-/// adds only the `keybay run` hand-off: the SDK leaves the hard core limit
-/// unchanged, so the program gets the caller's original soft limit immediately
-/// before `execve`, which itself restores dumpability.
+/// reads [Keybay.processHardening] before anything else, which applies the
+/// SDK's hardening before a passphrase or PIN is read. This class adds only
+/// the `keybay run` hand-off: the SDK leaves the hard core limit unchanged, so
+/// the program gets the caller's original soft limit immediately before
+/// `execve`, which itself restores dumpability.
 abstract final class ProcessHardening {
   static int? _callerSoftCoreLimit;
 
   /// Remembers the caller's soft core limit once, then hardens the process.
-  /// Callers must not handle secrets when the result has failed.
   static KeybayProcessHardening apply() {
     _callerSoftCoreLimit ??= _softCoreLimit();
-    return Keybay.hardenProcess();
+    return Keybay.processHardening;
   }
 
+  /// The error that stops a command, or null. Only core files are fatal, as
+  /// before hardening moved into the SDK: a failed debugger protection, such
+  /// as in toolbox or a rootless container, is reported in the TUI's Security
+  /// settings instead.
+  static String? refusal(KeybayProcessHardening hardening) =>
+      hardening.coreDumps.status == KeybayHardeningStatus.failed
+      ? 'error: could not disable core dumps for this process: '
+            '${hardening.coreDumps.detail}.'
+      : null;
+
   /// Gives an exec'd program the caller's original soft core limit.
-  static void restoreForExec() {
-    final soft = _callerSoftCoreLimit;
+  static void restoreForExec() => _setSoftCoreLimit(_callerSoftCoreLimit);
+
+  /// Reinstates the zero soft limit when `execve` fails and Keybay continues.
+  /// Dumpability is unchanged by a failed exec.
+  static void reapplyAfterFailedExec() => _setSoftCoreLimit(0);
+
+  static void _setSoftCoreLimit(int? soft) {
     if (soft == null) return;
     final limit = calloc<_Rlimit>();
     try {
@@ -35,20 +50,6 @@ abstract final class ProcessHardening {
       calloc.free(limit);
     }
   }
-
-  /// Reinstates the policy when `execve` fails and Keybay continues.
-  static void reapplyAfterFailedExec() => Keybay.hardenProcess();
-
-  /// The error a command prints before refusing a failed [hardening].
-  static List<String> failureLines(KeybayProcessHardening hardening) => [
-    'error: could not harden this process.',
-    for (final (name, measure) in [
-      ('core dumps', hardening.coreDumps),
-      ('debugger attach', hardening.debuggerAttach),
-    ])
-      if (measure.status == KeybayHardeningStatus.failed)
-        '  $name: ${measure.detail}.',
-  ];
 
   static int? _softCoreLimit() {
     if (!Platform.isMacOS && !Platform.isLinux) return null;

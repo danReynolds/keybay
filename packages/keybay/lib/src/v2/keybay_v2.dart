@@ -47,42 +47,54 @@ abstract final class Keybay {
   /// Trusted operating-system/provider UI may participate in unlocking it.
   /// [methodId] selects an enrollment when several match the credential.
   /// [cancellation] cancels a passkey attempt; await the operation to settle.
+  ///
+  /// Before anything else, it applies Keybay's process hardening; see
+  /// [processHardening].
   static Future<KeybaySession> open({
     KeybayCredential? credential,
     String? methodId,
     PasskeyCancellation? cancellation,
-  }) => _withCredential(
-    credential,
-    _productionRuntime._open,
-    methodId: methodId,
-    cancellation: cancellation,
-  );
+  }) {
+    applyProcessHardening();
+    return _withCredential(
+      credential,
+      _productionRuntime._open,
+      methodId: methodId,
+      cancellation: cancellation,
+    );
+  }
 
   /// Removes the encrypted store and resets Keybay-owned provider state.
   /// Nonsecret coordination files and provider-owned roots may remain.
   /// Trusted operating-system/provider UI may participate in this operation.
   static Future<void> reset() => _future(_productionRuntime.reset);
 
-  /// Hardens the current process before it handles secrets. Call it first in
-  /// `main`, before any other Keybay call, in every build you ship; on Linux
-  /// it stops debuggers attaching, so leave it out only while you attach one.
+  /// What Keybay's process hardening applied, and why anything was not.
   ///
-  /// On Linux the process becomes non-dumpable (`PR_SET_DUMPABLE` 0) and its
-  /// soft `RLIMIT_CORE` becomes 0, so a crash writes no core file and other
-  /// programs running as the same user can neither attach a debugger nor read
-  /// `/proc/<pid>/mem`. On macOS the soft `RLIMIT_CORE` becomes 0. On iOS and
-  /// Android it changes nothing. It also reports the Linux Yama ptrace scope
-  /// and whether the session is X11.
+  /// Keybay hardens the process automatically at every [open], before any
+  /// secret loads, so applications need not call anything. Reading this
+  /// status also applies it, so an application that collects a passphrase or
+  /// PIN before opening can read it first in `main` to harden earlier.
   ///
-  /// It never throws and never substitutes a weaker policy: check
-  /// [KeybayProcessHardening.failed] and decide whether to continue. On Linux
-  /// the debugger protection fails when a tracer is already attached, and in
-  /// a user namespace such as Flatpak's, whose owner keeps ptrace access from
-  /// outside it. It does not protect against root or the kernel, against code
-  /// injected at launch through a launcher, shell startup files or a per-user
-  /// install, or during the window before it runs. Calling it again is
-  /// harmless.
-  static KeybayProcessHardening hardenProcess() => applyProcessHardening();
+  /// In release and profile builds on Linux the process becomes non-dumpable
+  /// (`PR_SET_DUMPABLE` 0) and its soft `RLIMIT_CORE` becomes 0: a crash
+  /// writes no core file, and other programs running as the same user can
+  /// neither attach a debugger nor read `/proc/<pid>/mem`. On macOS the soft
+  /// `RLIMIT_CORE` becomes 0. Debug builds set only the core-file limit, so
+  /// development debuggers keep working. iOS and Android are unchanged.
+  ///
+  /// A failure is reported here, never fatal and never replaced by a weaker
+  /// policy: check [KeybayProcessHardening.failed] and decide what to hold.
+  /// On Linux the debugger protection fails when a tracer is already
+  /// attached, and in a user namespace such as Flatpak's, whose owner keeps
+  /// ptrace access from outside it. Hardening does not protect against root
+  /// or the kernel, against code injected at launch through a launcher,
+  /// shell startup files or a per-user install, or before it first runs.
+  ///
+  /// A build can turn it off with
+  /// `--dart-define=keybay.process_hardening=false`, which leaves core files
+  /// and same-user debuggers able to read the secrets this process holds.
+  static KeybayProcessHardening get processHardening => applyProcessHardening();
 }
 
 /// Public limits callers may need before submitting plaintext to Keybay.

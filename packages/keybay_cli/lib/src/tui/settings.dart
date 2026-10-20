@@ -352,6 +352,13 @@ final class _SettingsScreenState extends State<SettingsScreen> {
               'Idle exit: ${_idleExitLabel(model.idleTimeout)}',
               style: context.theme.mutedStyle,
             ),
+            if (model.processHardening case final hardening?)
+              Text(
+                'Hardening: ${hardening.label}',
+                style: hardening.complete
+                    ? context.theme.mutedStyle
+                    : context.accents.attention,
+              ),
             const SizedBox(height: 1),
           ],
           SizedBox(

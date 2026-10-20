@@ -13,7 +13,7 @@ import 'package:test/test.dart';
 typedef C = KeybayHardeningCause;
 
 void main() {
-  test('hardenProcess disables core files and, on Linux, dumpability', () {
+  test('a release build disables core files and, on Linux, dumpability', () {
     // Start from a caller that allows core files and, on Linux, is dumpable;
     // a default limit of 0 would let every expectation pass even if nothing
     // were changed.
@@ -32,8 +32,9 @@ void main() {
       expect(_childReads('/proc/$pid/environ'), isTrue);
     }
 
-    final result = Keybay.hardenProcess();
+    final result = applyProcessHardening(release: true);
 
+    expect(result.debugBuild, isFalse);
     expect(result.coreDumps.status, KeybayHardeningStatus.applied);
     expect(softCoreLimit, 0);
     expect(_coreLimits().$2, hard, reason: 'the hard limit is unchanged');
@@ -62,30 +63,96 @@ void main() {
     }
 
     // Repeating the call is harmless and reports the same policy.
-    final again = Keybay.hardenProcess();
+    final again = applyProcessHardening(release: true);
     expect(again.coreDumps.status, result.coreDumps.status);
     expect(again.debuggerAttach.status, result.debuggerAttach.status);
   }, testOn: 'mac-os || linux');
 
-  test('the result reports Yama and X11 only on Linux', () {
-    _preserveProcessState();
-    final result = Keybay.hardenProcess();
+  test('this debug test run leaves debuggers allowed', () {
+    expect(releaseBuild, isFalse, reason: 'dart test runs JIT');
+    expect(hardeningEnabled, isTrue);
+    final hard = _preserveProcessState();
+    if (hard == 0) {
+      markTestSkipped('the hard core-file limit is 0 here');
+      return;
+    }
+    _setSoftCoreLimit(hard > 0 && hard < 1 << 20 ? hard : 1 << 20);
+    if (Platform.isLinux) expect(_prctl(_prSetDumpable, 1, 0, 0, 0), 0);
+
+    final result = Keybay.processHardening;
+
+    expect(result.debugBuild, isTrue);
+    expect(result.disabled, isFalse);
+    expect(result.failed, isFalse, reason: '$result');
+    expect(softCoreLimit, 0);
+    expect(result.debuggerAttach.status, KeybayHardeningStatus.notAttempted);
     if (Platform.isLinux) {
+      expect(linuxDumpable, 1, reason: 'debuggers can still attach');
+      expect(result.coreDumps.status, KeybayHardeningStatus.notAttempted);
       expect(result.ptraceScope, linuxPtraceScope());
       expect(
         result.yamaUnrestricted,
         result.ptraceScope == null || result.ptraceScope == 0,
       );
-      expect(result.x11Session, isX11Session(Platform.environment));
     } else {
+      expect(result.coreDumps.status, KeybayHardeningStatus.applied);
       expect(result.ptraceScope, isNull);
       expect(result.yamaUnrestricted, isFalse);
-      expect(result.x11Session, isFalse);
     }
     // The logged form carries each measure's reason.
     expect(result.toString(), contains(result.coreDumps.detail));
     expect(result.toString(), contains(result.debuggerAttach.detail));
-    expect(result.toString(), contains('yamaUnrestricted: '));
+  }, testOn: 'mac-os || linux');
+
+  test('open hardens the process before anything else', () async {
+    final hard = _preserveProcessState();
+    if (hard == 0) {
+      markTestSkipped('the hard core-file limit is 0 here');
+      return;
+    }
+    _setSoftCoreLimit(hard > 0 && hard < 1 << 20 ? hard : 1 << 20);
+    // A method ID without a credential fails before any platform access.
+    await expectLater(
+      Keybay.open(methodId: 'not-a-method'),
+      throwsA(
+        isA<KeybayException>().having(
+          (error) => error.code,
+          'code',
+          KeybayErrorCode.invalidAuthInput,
+        ),
+      ),
+    );
+    expect(softCoreLimit, 0);
+  }, testOn: 'mac-os || linux');
+
+  test('a build that turns hardening off changes nothing', () {
+    final hard = _preserveProcessState();
+    final caller = hard == 0
+        ? 0
+        : (hard > 0 && hard < 1 << 20 ? hard : 1 << 20);
+    _setSoftCoreLimit(caller);
+    final dumpable = linuxDumpable;
+
+    for (final release in [false, true]) {
+      final result = applyProcessHardening(release: release, enabled: false);
+      expect(result.disabled, isTrue);
+      expect(result.failed, isFalse);
+      expect(result.coreDumps.status, KeybayHardeningStatus.notAttempted);
+      expect(result.debuggerAttach.status, KeybayHardeningStatus.notAttempted);
+      expect(result.coreDumps.detail, contains('keybay.process_hardening'));
+    }
+    if (Platform.isMacOS || Platform.isLinux) expect(softCoreLimit, caller);
+    expect(linuxDumpable, dumpable);
+  });
+
+  test('a Linux debug build reports both protections not attempted', () {
+    final result = linuxDebugResult(ptraceScope: 0);
+    expect(result.debugBuild, isTrue);
+    expect(result.failed, isFalse);
+    expect(result.coreDumps.status, KeybayHardeningStatus.notAttempted);
+    expect(result.coreDumps.detail, contains('stays dumpable'));
+    expect(result.debuggerAttach.status, KeybayHardeningStatus.notAttempted);
+    expect(result.yamaUnrestricted, isTrue);
   });
 
   test('the Linux result fails each protection it cannot confirm', () {
@@ -110,7 +177,6 @@ void main() {
         initialUserNamespace: initial,
         tracer: tracer,
         ptraceScope: 1,
-        environment: const {},
       );
       final label = '$dumpable/$initial/$tracer';
       expect(result.coreDumps.status.name, core, reason: label);
@@ -149,7 +215,6 @@ void main() {
           initialUserNamespace: true,
           tracer: 0,
           ptraceScope: scope,
-          environment: const {},
         ).yamaUnrestricted,
         unrestricted,
       );
@@ -209,29 +274,6 @@ void main() {
         ..free(name);
     }
   }, testOn: 'linux');
-
-  test('an X11 session is XDG_SESSION_TYPE x11 or DISPLAY without Wayland', () {
-    for (final (environment, x11) in <(Map<String, String>, bool)>[
-      ({'XDG_SESSION_TYPE': 'x11'}, true),
-      ({'XDG_SESSION_TYPE': 'x11', 'WAYLAND_DISPLAY': 'wayland-0'}, true),
-      ({'DISPLAY': ':0'}, true),
-      ({'XDG_SESSION_TYPE': 'wayland', 'DISPLAY': ':0'}, true),
-      ({'DISPLAY': ':0', 'WAYLAND_DISPLAY': 'wayland-0'}, false),
-      (
-        {
-          'XDG_SESSION_TYPE': 'wayland',
-          'DISPLAY': ':0',
-          'WAYLAND_DISPLAY': 'wayland-0',
-        },
-        false,
-      ),
-      ({'XDG_SESSION_TYPE': 'tty'}, false),
-      ({'DISPLAY': ''}, false),
-      ({}, false),
-    ]) {
-      expect(isX11Session(environment), x11, reason: '$environment');
-    }
-  });
 }
 
 /// Restores this test runner's soft core limit and, on Linux, dumpability

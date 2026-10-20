@@ -2,16 +2,19 @@
 
 ## Unreleased
 
-- Add `Keybay.hardenProcess()`, for applications to call first in `main`. It
-  sets the soft core-file limit to 0 on macOS and Linux, and on Linux makes the
-  process non-dumpable, which also refuses same-user debuggers and
-  `/proc/<pid>/mem` reads. It changes nothing on iOS and Android. The result
-  reports each protection as applied, failed or not attempted, with a detail
-  and, when failed, a cause; Keybay never falls back to a weaker policy. On Linux the debugger protection
-  fails when a debugger or tracer is already attached to any thread, since it
-  stays attached, and in a user namespace such as Flatpak's, whose owner's
-  programs outside it keep ptrace access. It also reports the Linux Yama ptrace
-  scope and whether the session is X11.
+- Harden the process automatically at every `open()`, before any secret loads.
+  In release and profile builds on Linux the process becomes non-dumpable, which
+  stops core files and refuses same-user debuggers and `/proc/<pid>/mem` reads;
+  macOS and Linux set the soft core-file limit to 0. Debug builds keep debuggers
+  working. iOS and Android are unchanged.
+- Add `Keybay.processHardening`, a status of what applied: each protection is
+  applied, failed or not attempted, with a detail and, when failed, a cause.
+  Reading it applies hardening early. A failure is reported, never fatal, and
+  never replaced by a weaker policy. On Linux the debugger protection fails
+  when a tracer is already attached to any thread, and in a user namespace
+  such as Flatpak's. The status also reports the Linux Yama ptrace scope.
+- A build can opt out with `--dart-define=keybay.process_hardening=false`,
+  which removes these protections.
 
 ## 0.3.2
 

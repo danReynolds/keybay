@@ -10,6 +10,7 @@ import 'package:characters/characters.dart';
 import 'package:fleury/fleury_core.dart';
 import 'package:fleury/fleury_test_support.dart';
 import 'package:keybay/keybay.dart';
+import 'package:keybay/src/process_hardening.dart' show linuxHardeningResult;
 import 'package:keybay_cli/src/display_safety.dart';
 import 'package:keybay_cli/src/tui/clipboard.dart';
 import 'package:keybay_cli/src/tui/model.dart';
@@ -405,68 +406,6 @@ void main() {
   });
 
   for (final size in [const CellSize(40, 24), const CellSize(80, 20)]) {
-    for (final x11Session in [false, true]) {
-      test(
-        'passphrase forms warn under X11 only (X11: $x11Session) at $size',
-        () async {
-          final warned = createNativeTuiModel(
-            openSession: store.open,
-            resetStore: store.reset,
-            authorize: () {},
-            onExit: () {},
-            x11Session: x11Session,
-          );
-          addTearDown(() async {
-            await warned.close();
-            warned.dispose();
-          });
-          final tester = FleuryTester(viewportSize: size);
-          addTearDown(tester.dispose);
-          String screen() => tester.renderToString(emptyMark: ' ');
-          void expectWarning() {
-            expect(screen().contains('Warning: under X11'), x11Session);
-            expect(screen().contains('read what you type.'), x11Session);
-          }
-
-          await warned.open();
-          warned.navigate(TuiView.passphrase);
-          tester.pumpWidget(KeybayTui(model: warned));
-          await tester.settle();
-          expect(screen(), contains('No recovery for a lost passphrase.'));
-          expectWarning();
-          expectFormActions(tester);
-          await warned.close();
-
-          final session = await store.open();
-          await session.auth.add(PassphraseCredential(phrase: bytes('good')));
-          await session.close();
-          final unlocking = createNativeTuiModel(
-            openSession: store.open,
-            resetStore: store.reset,
-            authorize: () {},
-            onExit: () {},
-            x11Session: x11Session,
-          );
-          addTearDown(() async {
-            await unlocking.close();
-            unlocking.dispose();
-          });
-          await unlocking.open();
-          tester.pumpWidget(KeybayTui(model: unlocking));
-          await tester.settle();
-          expect(unlocking.view, TuiView.unlock);
-          expectWarning();
-          for (final visible in [
-            'Passphrase',
-            '[Enter] Unlock',
-            'Forgot passphrase?',
-          ]) {
-            expect(screen(), contains(visible));
-          }
-        },
-      );
-    }
-
     test(
       'unlock offers a compact recovery link before reset at $size',
       () async {
@@ -1697,6 +1636,41 @@ void main() {
       tester.pumpWidget(KeybayTui(model: model));
       await tester.settle();
       expect(tester.renderToString(), contains('Idle exit: ${policy.value}'));
+    });
+  }
+
+  for (final size in [const CellSize(40, 24), const CellSize(80, 20)]) {
+    test('settings report process hardening at $size', () async {
+      await model.close();
+      model.dispose();
+      model = createNativeTuiModel(
+        openSession: store.open,
+        resetStore: store.reset,
+        authorize: () {},
+        onExit: () {},
+        processHardening: linuxHardeningResult(
+          dumpable: 0,
+          initialUserNamespace: false,
+          tracer: 0,
+          ptraceScope: 1,
+        ),
+      );
+      await model.open();
+      model.navigate(TuiView.settings);
+      final tester = FleuryTester(viewportSize: size);
+      addTearDown(tester.dispose);
+      tester.pumpWidget(KeybayTui(model: model));
+      await tester.settle();
+      final screen = tester.renderToString();
+      for (final line in [
+        'Passphrase: Off',
+        'Idle exit: 5 minutes',
+        'Hardening: Partial',
+        '[p] Add',
+        '[h] Add hardware',
+      ]) {
+        expect(screen, contains(line));
+      }
     });
   }
 

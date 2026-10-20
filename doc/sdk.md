@@ -58,57 +58,55 @@ Reset does not initialize a replacement. The next open creates a fresh store key
 Flatpak retains its portal secret; restoring an old complete snapshot can restore
 access under that snapshot's policy.
 
-## Harden the process
+## Process hardening
 
 An open session holds its store key in memory, and values the application reads
-are ordinary data there. Call `Keybay.hardenProcess()` first in `main`, before
-any other Keybay call. It keeps that memory out of core files and, on Linux,
-away from other programs running as the same user:
+are ordinary data there. Keybay hardens the process automatically at every
+`open()`, before any secret loads; the application calls nothing. Read
+`Keybay.processHardening` for what it applied:
 
 ```dart
-import 'dart:io';
-
-import 'package:keybay/keybay.dart';
-
-Future<void> main() async {
-  final hardening = Keybay.hardenProcess();
-  if (hardening.failed) {
-    stderr.writeln('Not handling secrets: $hardening');
-    exit(1);
-  }
-  // ... Keybay.open() and the rest of the application.
+final hardening = Keybay.processHardening;
+if (hardening.failed) {
+  // Decide what this application holds; see below.
+  stderr.writeln('Process hardening: $hardening');
 }
 ```
 
-| Platform | Core files | Same-user debugger attach and `/proc/<pid>/mem` |
+| Build and platform | Core files | Same-user debugger attach and `/proc/<pid>/mem` |
 | --- | --- | --- |
-| Linux | Never written: non-dumpable (`PR_SET_DUMPABLE` 0), soft `RLIMIT_CORE` 0 | Refused unless the reader has `CAP_SYS_PTRACE`, which you hold over a user namespace you own: see below |
+| Linux, release or profile | Never written: non-dumpable (`PR_SET_DUMPABLE` 0), soft `RLIMIT_CORE` 0 | Refused unless the reader has `CAP_SYS_PTRACE`, which you hold over a user namespace you own: see below |
+| Linux, debug | Soft `RLIMIT_CORE` 0 only; the process stays dumpable, so a core-pattern pipe may still receive a dump | Allowed, so development debuggers work |
 | macOS | Not written: soft `RLIMIT_CORE` 0 | Unchanged. The code signature decides: a Hardened Runtime build without `get-task-allow`, such as a notarized one, refuses them. |
 | iOS, Android | Unchanged; the operating system governs app processes | Unchanged |
 
-- **Every build you ship.** On Linux it also stops debuggers, profilers and
-  crash reporters that read the process's memory. Call it in every build you
-  ship, including tools run with `dart run` or `dart pub global activate`, which
-  are never product builds; leave it out only while you attach a debugger.
-- **Check the result.** It never throws and never substitutes a weaker policy.
-  `coreDumps` and `debuggerAttach` each report `applied`, `failed` or
-  `notAttempted`, with a `detail` for logs and, when failed, a `cause` to
-  branch on. `failed` is true when a protection Keybay attempted is not
-  confirmed in effect. Keybay leaves the decision to the application; the
-  sample stops, as the Keybay CLI does.
+- **Debug builds.** A build is release or profile when `dart.vm.product` or
+  `dart.vm.profile` is set: Flutter release and profile builds, and
+  `dart compile exe` or `keybay_compile` output. JIT runs are debug builds:
+  `dart run`, `flutter run` in debug mode, `dart test`, and tools installed with
+  `dart pub global activate`. Ship an AOT build for the full protection.
+- **Earlier hardening.** Hardening starts at the first `open()`. An application
+  that collects a passphrase or PIN before opening can read
+  `Keybay.processHardening` first in `main`, which applies it then.
+- **Check the status.** Hardening never throws, never stops `open()` and never
+  substitutes a weaker policy. `coreDumps` and `debuggerAttach` each report
+  `applied`, `failed` or `notAttempted`, with a `detail` for logs and, when
+  failed, a `cause` to branch on. `failed` is true when a protection Keybay
+  attempted is not confirmed in effect. The application decides what it holds;
+  the Keybay CLI stops only when core files cannot be disabled, and its TUI
+  shows the status under Settings, Security.
 - **When `debuggerAttach` fails on Linux.** Its `cause` is `settingRejected`
   when the process stays dumpable, `traced` when a debugger or tracer such as
-  `strace` was already attached to any thread (that attachment survives the
-  call), `unreadable` when `/proc` cannot confirm either, and `userNamespace`
-  when nothing else failed but the process runs in a user namespace. That
+  `strace` was already attached to any thread (that attachment survives),
+  `unreadable` when `/proc` cannot confirm either, and `userNamespace` when
+  nothing else failed but the process runs in a user namespace. That
   namespace's owner keeps `CAP_SYS_PTRACE` over the application from outside
   it. In Flatpak, toolbox, distrobox or a rootless container the owner is the
   user, so programs they run can still attach or read its memory; in LXD,
   Incus or userns-remapped Docker it is root. Keybay cannot tell which. Core
   files stay off either way.
 - **Flatpak apps.** A Flatpak app always runs in a user namespace. To accept
-  that knowingly while still stopping for everything else, check the cause
-  instead of `failed`:
+  that knowingly while still acting on everything else, check the cause:
 
   ```dart
   bool usable(KeybayHardeningMeasure measure) =>
@@ -117,36 +115,39 @@ Future<void> main() async {
   final usableHere =
       usable(hardening.coreDumps) && usable(hardening.debuggerAttach);
   ```
-
 - **Child programs.** Programs the application starts, including through
   `Process.run`, inherit a soft core limit of 0. The hard limit is unchanged, so
   a child can raise its own. Restoring the caller's limit before `execve` means
-  reading it before the call, as the Keybay CLI does for `run`. `execve`
+  reading it before Keybay hardens, as the Keybay CLI does for `run`. `execve`
   restores dumpability for the new program.
 - **No `PT_DENY_ATTACH`.** On macOS Keybay does not use it: it leaves task-port
   memory reads open, a debugger that launches the process can step around it,
   and it terminates a process that is already being debugged.
-
-It also reports two facts about the session for the application to act on:
-
-- `ptraceScope` is Linux Yama's `kernel.yama.ptrace_scope`, and
+- **Yama.** `ptraceScope` is Linux Yama's `kernel.yama.ptrace_scope`, and
   `yamaUnrestricted` is true at scope 0 or when Yama is absent or unreadable.
-  Then any program running as the user can attach before the call, and an
-  attachment made then survives it. Scope 1 limits that to the application's
+  Then any program running as the user can attach before Keybay hardens, and an
+  attachment made then survives. Scope 1 limits that to the application's
   ancestors, except in a user namespace, where the owner's programs outside it
-  are not limited. Consider warning or refusing when it is unrestricted.
-- `x11Session` is true in a Linux X11 session: `XDG_SESSION_TYPE` is `x11`, or
-  `DISPLAY` is set without `WAYLAND_DISPLAY`. Any X client can read keystrokes
-  typed into another, so warn before asking for a passphrase or a security
-  key's PIN. The Keybay CLI and TUI do.
+  are not limited.
 
-It does not protect against root or the kernel; code running in the process
-from launch, injected by a launcher, shell startup files (such as `LD_PRELOAD`)
-or a replaced per-user install; or anything done in the window before the call,
-including a debugger or a `/proc/<pid>/mem` descriptor attached or opened then.
-It does not keep secrets out of the Dart heap, or out of anything the
-application passes to other processes, files or the clipboard. Calling it again
-is harmless.
+**Turning it off.** A build can opt out with
+`--dart-define=keybay.process_hardening=false` (for example
+`flutter build linux --dart-define=keybay.process_hardening=false`, or `-D` with
+`dart compile exe`). This weakens protection: crashes can write the store key
+and read values to core files, and on Linux other programs running as the user
+can attach a debugger and read them. It is a build setting rather than an API,
+like the embedded `keybay.application_id`, so a library cannot change it at run
+time, and it is in effect before the first open. `Keybay.processHardening`
+then reports `disabled`. Only the exact value `false` turns it off.
+
+Hardening does not protect against root or the kernel; code running in the
+process from launch, injected by a launcher, shell startup files (such as
+`LD_PRELOAD`) or a replaced per-user install; or anything done before it first
+runs, including a debugger or a `/proc/<pid>/mem` descriptor attached or opened
+then. It does not keep secrets out of the Dart heap, or out of anything the
+application passes to other processes, files or the clipboard. Under X11 any
+program in the session can read the keystrokes typed into another, including a
+passphrase or a security key's PIN.
 
 ## Application identity
 

@@ -9,6 +9,7 @@ import 'package:ffi/ffi.dart';
 import 'package:keybay/src/process_hardening.dart';
 import 'package:keybay_cli/src/entrypoint.dart';
 import 'package:keybay_cli/src/process_hardening.dart';
+import 'package:keybay_cli/src/tui/native_model.dart' show tuiHardeningStatus;
 import 'package:test/test.dart';
 
 void main() {
@@ -21,16 +22,19 @@ void main() {
     _allowDumping();
 
     final result = ProcessHardening.apply();
-    expect(result.coreDumps.status, KeybayHardeningStatus.applied);
+    // This JIT test run is a debug build: only the soft limit is set, and on
+    // Linux the process stays dumpable so debuggers work. Release builds of
+    // the CLI are checked by tool/test_cli_tui.py and test_cli_exec.py.
+    expect(result.debugBuild, isTrue);
+    expect(ProcessHardening.refusal(result), isNull, reason: '$result');
     expect(softCoreLimit, 0);
-    if (Platform.isLinux) expect(linuxDumpable, 0);
+    if (Platform.isLinux) expect(linuxDumpable, 1);
 
     ProcessHardening.restoreForExec();
     expect(softCoreLimit, caller);
 
     ProcessHardening.reapplyAfterFailedExec();
     expect(softCoreLimit, 0);
-    if (Platform.isLinux) expect(linuxDumpable, 0);
   });
 
   test('every command hardens the process before it runs', () async {
@@ -39,70 +43,70 @@ void main() {
       return;
     }
     expect(softCoreLimit, isNot(0));
-    _allowDumping();
-    // Pass the real hardening through, so a user namespace (toolbox, a
-    // rootless container), where the CLI refuses, still checks the policy.
     KeybayProcessHardening? result;
 
     final exitCode = await runKeybay([
       '--version',
     ], hardenProcess: () => result = ProcessHardening.apply());
 
+    expect(exitCode, 0, reason: '$result');
     expect(result, isNotNull);
-    expect(exitCode, result!.failed ? 1 : 0, reason: '$result');
     expect(softCoreLimit, 0);
-    if (Platform.isLinux) expect(linuxDumpable, 0);
   });
 
-  test('a command stops when hardening fails', () async {
-    var hardened = 0;
-    for (final (dumpable, tracer) in [(1, 0), (0, 4242)]) {
+  test('only core files that stay enabled stop a command', () async {
+    KeybayProcessHardening linux({
+      int dumpable = 0,
+      bool initial = true,
+      int tracer = 0,
+    }) => linuxHardeningResult(
+      dumpable: dumpable,
+      initialUserNamespace: initial,
+      tracer: tracer,
+      ptraceScope: 1,
+    );
+    for (final (hardening, exitCode) in [
+      (linux(dumpable: 1), 1),
+      // Toolbox, distrobox and rootless containers keep working.
+      (linux(initial: false), 0),
+      (linux(tracer: 4242), 0),
+      (linux(), 0),
+    ]) {
       expect(
-        await runKeybay(
-          ['--version'],
-          hardenProcess: () {
-            hardened++;
-            return linuxHardeningResult(
-              dumpable: dumpable,
-              initialUserNamespace: true,
-              tracer: tracer,
-              ptraceScope: 1,
-              environment: const {},
-            );
-          },
-        ),
-        1,
+        await runKeybay(['--version'], hardenProcess: () => hardening),
+        exitCode,
+        reason: '$hardening',
       );
     }
-    expect(hardened, 2);
     expect(
-      ProcessHardening.failureLines(
+      ProcessHardening.refusal(linux(dumpable: 1)),
+      startsWith(
+        'error: could not disable core dumps for this process: '
+        'PR_SET_DUMPABLE 0 did not take effect',
+      ),
+    );
+    expect(ProcessHardening.refusal(linux(initial: false)), isNull);
+  });
+
+  test('the Security settings summarize the hardening status', () {
+    KeybayProcessHardening linux({bool initial = true, int tracer = 0}) =>
         linuxHardeningResult(
           dumpable: 0,
-          initialUserNamespace: true,
-          tracer: 4242,
+          initialUserNamespace: initial,
+          tracer: tracer,
           ptraceScope: 1,
-          environment: const {},
-        ),
-      ),
-      [
-        'error: could not harden this process.',
-        '  debugger attach: process 4242 was already tracing a thread of this '
-            'process and stays attached.',
-      ],
-    );
-    final dumpable = ProcessHardening.failureLines(
-      linuxHardeningResult(
-        dumpable: 1,
-        initialUserNamespace: true,
-        tracer: 0,
-        ptraceScope: 1,
-        environment: const {},
-      ),
-    );
-    expect(dumpable, hasLength(3));
-    expect(dumpable[1], startsWith('  core dumps: PR_SET_DUMPABLE 0'));
-    expect(dumpable[2], startsWith('  debugger attach: the process is still'));
+        );
+    for (final (hardening, label, complete) in [
+      (linux(), 'On', true),
+      (linux(initial: false), 'Partial', false),
+      (linux(tracer: 4242), 'Partial', false),
+      (linuxDebugResult(ptraceScope: 1), 'Debug build', false),
+      (applyProcessHardening(enabled: false), 'Off', false),
+    ]) {
+      final status = tuiHardeningStatus(hardening);
+      expect(status.label, label);
+      expect(status.complete, complete);
+    }
   });
 }
 

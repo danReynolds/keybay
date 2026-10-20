@@ -2,16 +2,14 @@
 
 ## Unreleased
 
-- Process hardening now comes from the SDK's `Keybay.hardenProcess()`, with the
-  same policy as before: no core files, and non-dumpable on Linux. `run` still
-  gives its program the caller's core-file limit. On Linux a command now also
-  stops when a debugger or tracer, such as `strace`, is already attached, since
-  that attachment could read its secrets, and when it runs in any user
-  namespace: in toolbox, distrobox or a rootless container the user's programs
-  outside it can still attach, and Keybay cannot tell those from root-owned
-  ones such as LXD, Incus or userns-remapped Docker.
-- In an X11 session, passphrase and PIN prompts, in commands and the terminal
-  UI, first warn that other programs can read what you type.
+- Process hardening now comes from the SDK, with the same policy as before: no
+  core files, and non-dumpable on Linux. A command still stops if core files
+  stay enabled, and `run` still gives its program the caller's core-file limit.
+- `keybay open` shows the hardening status under Settings, Security. In
+  toolbox, distrobox or a rootless container it reads "Hardening: Partial",
+  because the user's programs outside the container can still attach.
+- Development runs through `dart run`, such as `tool/keybay-dev`, are debug
+  builds: the process stays dumpable so a debugger can attach.
 
 ## 0.3.2
 

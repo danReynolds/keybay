@@ -3,6 +3,7 @@ import 'dart:developer' show Service;
 import 'dart:io';
 
 import 'package:fleury/fleury.dart';
+import 'package:keybay/keybay.dart' show KeybayProcessHardening;
 
 import '../application.dart' show SessionOpener, exitFailure;
 import '../appearance_file.dart';
@@ -36,7 +37,7 @@ Future<int> runTui({
   Duration idleWarning = tuiIdleWarning,
   UnlockPreference? unlockPreference,
   Future<bool> Function(TuiCancellation)? hardwareConnected,
-  bool x11Session = false,
+  KeybayProcessHardening? processHardening,
 }) async {
   authorizeTui();
   if (Platform.environment.entries.any(
@@ -84,7 +85,7 @@ Future<int> runTui({
     appearance: appearance,
     saveAppearance: appearancePreference?.write,
     hardwareConnected: hardwareConnected,
-    x11Session: x11Session,
+    processHardening: processHardening,
   );
   bool accept(TuiEvent event) {
     if (!tuiForeground()) {

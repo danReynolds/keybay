@@ -4,7 +4,23 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 
-/// Whether one protection is in effect after `Keybay.hardenProcess()`.
+/// Whether this build blocks debuggers: a Flutter release or profile build, or
+/// a `dart compile` AOT build. JIT runs are debug builds: `dart run`,
+/// `flutter run` in debug mode, `dart test` and tools installed with
+/// `dart pub global activate`.
+const bool releaseBuild =
+    bool.fromEnvironment('dart.vm.product') ||
+    bool.fromEnvironment('dart.vm.profile');
+
+/// False only when the build sets
+/// `--dart-define=keybay.process_hardening=false`.
+const bool hardeningEnabled = bool.fromEnvironment(
+  'keybay.process_hardening',
+  defaultValue: true,
+);
+
+/// Whether one protection is in effect, as reported by
+/// `Keybay.processHardening`.
 enum KeybayHardeningStatus {
   /// Keybay applied the protection and confirmed that it is in effect.
   applied,
@@ -13,8 +29,9 @@ enum KeybayHardeningStatus {
   /// effect. Do not handle secrets as though it were.
   failed,
 
-  /// Keybay does not attempt this protection on this platform. The detail
-  /// says what governs it instead.
+  /// Keybay does not attempt this protection here: on this platform, in a
+  /// debug build, or in a build that turned hardening off. The detail says
+  /// which, and what governs it instead.
   notAttempted,
 }
 
@@ -50,43 +67,48 @@ final class KeybayHardeningMeasure {
   final KeybayHardeningCause? cause;
 
   /// What Keybay did, or why the protection is not confirmed in effect. For
-  /// logs and diagnostics; branch on [status].
+  /// logs and diagnostics; branch on [status] and [cause].
   final String detail;
 
   @override
   String toString() => '${status.name} ($detail)';
 }
 
-/// What `Keybay.hardenProcess()` changed in the current process, and what it
-/// observed about the session around it.
+/// What Keybay's process hardening applied to the current process, and what
+/// it observed about the session around it. Read it from
+/// `Keybay.processHardening`.
 ///
-/// Keybay reports a failure and never substitutes a weaker policy. The
-/// application decides whether to continue; [failed] is true when it should
-/// not handle secrets.
+/// Keybay reports a failure and never substitutes a weaker policy. It does not
+/// refuse to open on a failure: the application decides what it holds, and
+/// [failed] is true when a protection Keybay attempted is not confirmed.
 final class KeybayProcessHardening {
   const KeybayProcessHardening._({
     required this.coreDumps,
     required this.debuggerAttach,
     required this.ptraceScope,
     required this.yamaUnrestricted,
-    required this.x11Session,
+    required this.debugBuild,
+    required this.disabled,
   });
 
   /// Whether a crash can write this process's memory to a core file.
   ///
-  /// Applied on macOS (soft `RLIMIT_CORE` 0) and on Linux (non-dumpable plus
-  /// soft `RLIMIT_CORE` 0). The hard limit is unchanged.
+  /// Applied on macOS (soft `RLIMIT_CORE` 0) and, in release and profile
+  /// builds, on Linux (non-dumpable plus soft `RLIMIT_CORE` 0). The hard limit
+  /// is unchanged. A Linux debug build stays dumpable, so a core-pattern pipe
+  /// may still receive a dump; it reports [KeybayHardeningStatus.notAttempted].
   final KeybayHardeningMeasure coreDumps;
 
   /// Whether other programs running as the same user can attach a debugger
   /// or read this process's memory through `/proc/<pid>/mem`.
   ///
-  /// Applied on Linux only, by `prctl(PR_SET_DUMPABLE, 0)`. Failed when a
-  /// process was already tracing one of this process's threads, since that
-  /// attachment survives, and in a user namespace such as Flatpak's, whose
-  /// owner's programs outside it keep `CAP_SYS_PTRACE` over this process. Not
-  /// attempted on macOS, where the code signature's Hardened Runtime decides
-  /// debugger access.
+  /// Applied on Linux in release and profile builds, by
+  /// `prctl(PR_SET_DUMPABLE, 0)`. Failed when a process was already tracing
+  /// one of this process's threads, since that attachment survives, and in a
+  /// user namespace such as Flatpak's, whose owner's programs outside it keep
+  /// `CAP_SYS_PTRACE` over this process. Not attempted in debug builds, so
+  /// development debuggers keep working, or on macOS, where the code
+  /// signature's Hardened Runtime decides debugger access.
   final KeybayHardeningMeasure debuggerAttach;
 
   /// Linux Yama `kernel.yama.ptrace_scope`: 0 lets any program running as the
@@ -98,22 +120,23 @@ final class KeybayProcessHardening {
 
   /// On Linux, true unless Yama is confirmed to restrict ptrace (scope 1 or
   /// higher). Without that restriction, any program running as the same user
-  /// can attach to this process before `hardenProcess` runs, and an
-  /// attachment made then survives the call. Inside a user namespace Yama
-  /// does not restrict its owner's programs outside it; see [debuggerAttach].
-  /// Always false off Linux.
+  /// can attach to this process before Keybay hardens it, and an attachment
+  /// made then survives. Inside a user namespace Yama does not restrict its
+  /// owner's programs outside it; see [debuggerAttach]. Always false off
+  /// Linux.
   final bool yamaUnrestricted;
 
-  /// Whether this is a Linux X11 session, where any X client can read the
-  /// keystrokes typed into another. Warn before asking for a passphrase or a
-  /// security key's PIN.
-  ///
-  /// True when `XDG_SESSION_TYPE` is `x11`, or `DISPLAY` is set and
-  /// `WAYLAND_DISPLAY` is not. Always false off Linux.
-  final bool x11Session;
+  /// Whether this is a debug build, where Keybay leaves debuggers allowed: a
+  /// JIT run such as `dart run`, `flutter run` in debug mode, `dart test`, or
+  /// a tool installed with `dart pub global activate`.
+  final bool debugBuild;
 
-  /// Whether a protection Keybay attempted on this platform is not confirmed
-  /// in effect.
+  /// Whether the build turned hardening off with
+  /// `--dart-define=keybay.process_hardening=false`. Keybay then changes
+  /// nothing in the process.
+  final bool disabled;
+
+  /// Whether a protection Keybay attempted is not confirmed in effect.
   bool get failed =>
       coreDumps.status == KeybayHardeningStatus.failed ||
       debuggerAttach.status == KeybayHardeningStatus.failed;
@@ -122,32 +145,50 @@ final class KeybayProcessHardening {
   String toString() =>
       'KeybayProcessHardening(coreDumps: $coreDumps, '
       'debuggerAttach: $debuggerAttach, ptraceScope: $ptraceScope, '
-      'yamaUnrestricted: $yamaUnrestricted, x11Session: $x11Session)';
+      'yamaUnrestricted: $yamaUnrestricted, debugBuild: $debugBuild, '
+      'disabled: $disabled)';
 }
 
-/// Applies Keybay's process policy and reports the result. Never throws.
+/// Applies Keybay's process policy and reports the result. Never throws, and
+/// is harmless to repeat. Keybay calls it at every open and whenever an
+/// application reads `Keybay.processHardening`.
 ///
-/// macOS: soft `RLIMIT_CORE` 0. Linux: `prctl(PR_SET_DUMPABLE, 0)` and soft
+/// Release and profile builds: on Linux, `prctl(PR_SET_DUMPABLE, 0)` and soft
 /// `RLIMIT_CORE` 0; a non-dumpable process is never dumped, even through a
 /// core-pattern pipe, which ignores the size limit, and same-user ptrace and
-/// `/proc/<pid>/mem` need `CAP_SYS_PTRACE`. iOS and Android: nothing; the
-/// operating system governs app processes. The hard core limit is left
+/// `/proc/<pid>/mem` need `CAP_SYS_PTRACE`. On macOS, soft `RLIMIT_CORE` 0.
+/// Debug builds set only the soft core-file limit, so debuggers keep working.
+/// iOS and Android: nothing; the operating system governs app processes. A
+/// build with [enabled] false changes nothing. The hard core limit is left
 /// unchanged, so a host that execs another program can restore its soft limit.
-KeybayProcessHardening applyProcessHardening() {
+KeybayProcessHardening applyProcessHardening({
+  bool release = releaseBuild,
+  bool enabled = hardeningEnabled,
+}) {
+  final scope = Platform.isLinux ? linuxPtraceScope() : null;
+  if (!enabled) {
+    const off = KeybayHardeningMeasure._(
+      KeybayHardeningStatus.notAttempted,
+      'turned off by this build (--dart-define=keybay.process_hardening=false)',
+    );
+    return _result(off, off, scope, release: release, disabled: true);
+  }
   if (Platform.isLinux) {
-    final dumpable = _attempt(() {
-      _prctl(_prSetDumpable, 0, 0, 0, 0);
-      return _prctl(_prGetDumpable, 0, 0, 0, 0);
-    });
+    final dumpable = release
+        ? _attempt(() {
+            _prctl(_prSetDumpable, 0, 0, 0, 0);
+            return _prctl(_prGetDumpable, 0, 0, 0, 0);
+          })
+        : null;
     // Belt and braces for the file core pattern; dumpability is decisive.
     _attempt(() => _setSoftCoreLimit(0));
+    if (!release) return linuxDebugResult(ptraceScope: scope);
     // Read after the process is non-dumpable, so no new tracer can slip in.
     return linuxHardeningResult(
       dumpable: dumpable,
       initialUserNamespace: linuxInitialUserNamespace(),
       tracer: linuxTracerPid(),
-      ptraceScope: linuxPtraceScope(),
-      environment: Platform.environment,
+      ptraceScope: scope,
     );
   }
   if (Platform.isMacOS) {
@@ -155,8 +196,8 @@ KeybayProcessHardening applyProcessHardening() {
       _setSoftCoreLimit(0);
       return softCoreLimit;
     });
-    return KeybayProcessHardening._(
-      coreDumps: soft == 0
+    return _result(
+      soft == 0
           ? const KeybayHardeningMeasure._(
               KeybayHardeningStatus.applied,
               'soft RLIMIT_CORE 0',
@@ -168,47 +209,70 @@ KeybayProcessHardening applyProcessHardening() {
                   ? KeybayHardeningCause.unreadable
                   : KeybayHardeningCause.settingRejected,
             ),
-      debuggerAttach: const KeybayHardeningMeasure._(
+      const KeybayHardeningMeasure._(
         KeybayHardeningStatus.notAttempted,
         'on macOS the code signature decides debugger access: a Hardened '
         'Runtime build without get-task-allow refuses same-user debuggers. '
         'Keybay does not use PT_DENY_ATTACH, which does not stop task-port '
         'memory reads',
       ),
-      ptraceScope: null,
-      yamaUnrestricted: false,
-      x11Session: false,
+      null,
+      release: release,
     );
   }
-  final platform = Platform.isIOS || Platform.isAndroid
-      ? 'the operating system governs app processes on '
-            '${Platform.operatingSystem}; Keybay changes nothing'
-      : 'Keybay does not support ${Platform.operatingSystem}';
-  return KeybayProcessHardening._(
-    coreDumps: KeybayHardeningMeasure._(
-      KeybayHardeningStatus.notAttempted,
-      platform,
-    ),
-    debuggerAttach: KeybayHardeningMeasure._(
-      KeybayHardeningStatus.notAttempted,
-      platform,
-    ),
-    ptraceScope: null,
-    yamaUnrestricted: false,
-    x11Session: false,
+  final platform = KeybayHardeningMeasure._(
+    KeybayHardeningStatus.notAttempted,
+    Platform.isIOS || Platform.isAndroid
+        ? 'the operating system governs app processes on '
+              '${Platform.operatingSystem}; Keybay changes nothing'
+        : 'Keybay does not support ${Platform.operatingSystem}',
   );
+  return _result(platform, platform, null, release: release);
 }
+
+KeybayProcessHardening _result(
+  KeybayHardeningMeasure coreDumps,
+  KeybayHardeningMeasure debuggerAttach,
+  int? ptraceScope, {
+  required bool release,
+  bool disabled = false,
+}) => KeybayProcessHardening._(
+  coreDumps: coreDumps,
+  debuggerAttach: debuggerAttach,
+  ptraceScope: ptraceScope,
+  yamaUnrestricted:
+      Platform.isLinux && (ptraceScope == null || ptraceScope == 0),
+  debugBuild: !release,
+  disabled: disabled,
+);
+
+/// The Linux result in a debug build, which sets only the soft core limit.
+KeybayProcessHardening linuxDebugResult({required int? ptraceScope}) =>
+    KeybayProcessHardening._(
+      coreDumps: const KeybayHardeningMeasure._(
+        KeybayHardeningStatus.notAttempted,
+        'debug build: the process stays dumpable so debuggers can attach; '
+        'only the soft RLIMIT_CORE is 0, which a core-pattern pipe may ignore',
+      ),
+      debuggerAttach: const KeybayHardeningMeasure._(
+        KeybayHardeningStatus.notAttempted,
+        'debug build: debuggers stay allowed',
+      ),
+      ptraceScope: ptraceScope,
+      yamaUnrestricted: ptraceScope == null || ptraceScope == 0,
+      debugBuild: true,
+      disabled: false,
+    );
 
 /// The Linux result for what the process observed after `PR_SET_DUMPABLE`:
 /// its [dumpable] value, whether it is in the [initialUserNamespace], the
-/// first nonzero [tracer] of any of its threads, Yama's [ptraceScope] and its
-/// [environment]. Null means unreadable.
+/// first nonzero [tracer] of any of its threads and Yama's [ptraceScope]. Null
+/// means unreadable. Release and profile builds only.
 KeybayProcessHardening linuxHardeningResult({
   required int? dumpable,
   required bool? initialUserNamespace,
   required int? tracer,
   required int? ptraceScope,
-  required Map<String, String> environment,
 }) {
   final nonDumpable = dumpable == 0;
   final dumpableCause = dumpable == null
@@ -266,15 +330,9 @@ KeybayProcessHardening linuxHardeningResult({
           ),
     ptraceScope: ptraceScope,
     yamaUnrestricted: ptraceScope == null || ptraceScope == 0,
-    x11Session: isX11Session(environment),
+    debugBuild: false,
+    disabled: false,
   );
-}
-
-/// Whether [environment] describes an X11 session. Linux callers only.
-bool isX11Session(Map<String, String> environment) {
-  bool present(String name) => (environment[name] ?? '').isNotEmpty;
-  return environment['XDG_SESSION_TYPE'] == 'x11' ||
-      present('DISPLAY') && !present('WAYLAND_DISPLAY');
 }
 
 /// Yama's `ptrace_scope` as returned by [read], or null if it is absent,

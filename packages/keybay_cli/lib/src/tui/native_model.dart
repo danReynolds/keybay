@@ -16,6 +16,21 @@ const cliHardwareRpId = String.fromEnvironment(
 
 /// Connects the shared TUI to the native SDK. Mutable inputs reach the SDK
 /// synchronously, before the model clears its borrowed buffer.
+/// Summarizes [hardening] for the Security settings.
+TuiHardeningStatus tuiHardeningStatus(KeybayProcessHardening hardening) {
+  if (hardening.disabled) {
+    return const TuiHardeningStatus('Off', complete: false);
+  }
+  // One short word fits the narrowest settings panel; the docs explain why.
+  if (hardening.failed) {
+    return const TuiHardeningStatus('Partial', complete: false);
+  }
+  if (hardening.debugBuild) {
+    return const TuiHardeningStatus('Debug build', complete: false);
+  }
+  return const TuiHardeningStatus('On', complete: true);
+}
+
 TuiModel createNativeTuiModel({
   required SessionOpener openSession,
   required Future<void> Function() resetStore,
@@ -30,10 +45,12 @@ TuiModel createNativeTuiModel({
   Future<bool> Function(TuiCancellation)? hardwareConnected,
   Duration hardwarePollInterval = const Duration(milliseconds: 500),
   Duration hardwareConnectionTimeout = const Duration(minutes: 2),
-  bool x11Session = false,
+  KeybayProcessHardening? processHardening,
 }) => TuiModel(
   supportsHardware: true,
-  x11Session: x11Session,
+  processHardening: processHardening == null
+      ? null
+      : tuiHardeningStatus(processHardening),
   appearance: appearance,
   saveAppearance: saveAppearance,
   unlockPreference: unlockPreference,

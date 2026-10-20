@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:fleury/fleury_core.dart';
-import '../auth_terminal.dart' show x11Warning;
 import 'chrome.dart';
 import 'model.dart';
 import 'secret_draft.dart';
@@ -67,16 +66,6 @@ final class FormShell extends StatelessWidget {
   );
 }
 
-/// Shown above a passphrase or PIN field in an X11 session, where any client
-/// can read keystrokes typed into another.
-final class X11Warning extends StatelessWidget {
-  const X11Warning({super.key});
-
-  @override
-  Widget build(BuildContext context) =>
-      Text(x11Warning, style: context.accents.attention, maxLines: 2);
-}
-
 /// Unlock an existing protected store, or return to its other usable methods.
 final class UnlockForm extends StatefulWidget {
   const UnlockForm({super.key, required this.model, this.tooSmall = false});
@@ -140,7 +129,6 @@ final class _UnlockFormState extends State<UnlockForm>
     }
     return FormShell(
       title: 'Unlock Keybay',
-      subtitle: model.x11Session ? const X11Warning() : null,
       bindings: [
         KeyBinding(KeyCode.escape, onTrigger: (_) => _back()),
         KeyBinding(KeySequence.ctrl.r, onTrigger: (_) => toggleReveal()),
@@ -516,17 +504,10 @@ final class _PassphraseFormState extends State<PassphraseForm>
     }
     return FormShell(
       title: 'Add passphrase',
-      subtitle: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'No recovery for a lost passphrase.',
-            style: context.accents.attention,
-            maxLines: 3,
-          ),
-          if (model.x11Session) const X11Warning(),
-        ],
+      subtitle: Text(
+        'No recovery for a lost passphrase.',
+        style: context.accents.attention,
+        maxLines: 3,
       ),
       bindings: [
         KeyBinding(KeyCode.escape, onTrigger: (_) => _back()),

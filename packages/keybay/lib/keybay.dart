@@ -10,14 +10,15 @@
 /// }
 /// ```
 ///
-/// The public surface is deliberately limited to hardening the host process,
-/// opening the resolved application's store, operating through an
-/// authenticated session, and resetting that same store. Platform selection,
-/// paths, providers, and application identity remain internal and cannot be
-/// supplied at runtime.
+/// The public surface is deliberately limited to opening the resolved
+/// application's store, operating through an authenticated session, resetting
+/// that same store, and reporting the process hardening applied on the way.
+/// Platform selection, paths, providers, and application identity remain
+/// internal and cannot be supplied at runtime.
 ///
-/// Call [Keybay.hardenProcess] first in `main` to keep core files, and on
-/// Linux same-user debuggers, away from the secrets this process holds.
+/// Keybay hardens the host process at the first open, keeping core files and,
+/// on Linux, same-user debuggers away from the secrets it holds; read
+/// [Keybay.processHardening] for what it applied.
 ///
 /// To require a passphrase or passkey, enroll one with
 /// [KeybayAuthManager.add] and open later sessions with

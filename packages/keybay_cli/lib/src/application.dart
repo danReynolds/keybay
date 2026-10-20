@@ -47,7 +47,6 @@ final class CliApplication {
     required this.stderr,
     required this.showLaunchSummary,
     this.authTerminal,
-    this.x11Session = false,
   }) : parentEnvironment = Map<String, String>.unmodifiable(parentEnvironment);
 
   final ManifestLoader loadManifest;
@@ -66,10 +65,6 @@ final class CliApplication {
   /// Shows a platform-only `run` its summary on the controlling terminal, if
   /// one is attached. It is visibility, not approval: nothing is awaited.
   final LaunchSummaryWriter showLaunchSummary;
-
-  /// Whether passphrase and PIN prompts first warn that, under X11, other
-  /// programs can read keystrokes.
-  final bool x11Session;
 
   Future<int> execute(CliCommand command) async {
     try {
@@ -296,9 +291,7 @@ final class CliApplication {
     if (selected is PasskeyMethod) {
       return _openHardware(selected, summary: summary);
     }
-    final passphrase = await readPassphrase(
-      summary: x11Session ? '${summary ?? ''}$x11Warning\n' : summary,
-    );
+    final passphrase = await readPassphrase(summary: summary);
     try {
       lifetime.check();
       final opening = openSession(
@@ -335,9 +328,7 @@ final class CliApplication {
             error.passkeyCode != PasskeyErrorCode.pinRequired) {
           rethrow;
         }
-        final pin = await prompt.readPin(
-          warning: x11Session ? x11Warning : null,
-        );
+        final pin = await prompt.readPin();
         try {
           prompt.check();
           lifetime.check();
