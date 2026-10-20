@@ -14,6 +14,21 @@ const cliHardwareRpId = String.fromEnvironment(
   defaultValue: 'io.github.danreynolds.keybay.cli',
 );
 
+/// Summarizes [hardening] for the Security settings in one word, which fits
+/// the narrowest panel; the docs explain each state.
+TuiHardeningStatus tuiHardeningStatus(KeybayProcessHardening hardening) {
+  if (hardening.disabled) {
+    return const TuiHardeningStatus('Off', complete: false);
+  }
+  if (hardening.failed) {
+    return const TuiHardeningStatus('Partial', complete: false);
+  }
+  if (hardening.debugBuild) {
+    return const TuiHardeningStatus('Debug', complete: false);
+  }
+  return const TuiHardeningStatus('On', complete: true);
+}
+
 /// Connects the shared TUI to the native SDK. Mutable inputs reach the SDK
 /// synchronously, before the model clears its borrowed buffer.
 TuiModel createNativeTuiModel({
@@ -30,8 +45,12 @@ TuiModel createNativeTuiModel({
   Future<bool> Function(TuiCancellation)? hardwareConnected,
   Duration hardwarePollInterval = const Duration(milliseconds: 500),
   Duration hardwareConnectionTimeout = const Duration(minutes: 2),
+  KeybayProcessHardening? processHardening,
 }) => TuiModel(
   supportsHardware: true,
+  processHardening: processHardening == null
+      ? null
+      : tuiHardeningStatus(processHardening),
   appearance: appearance,
   saveAppearance: saveAppearance,
   unlockPreference: unlockPreference,

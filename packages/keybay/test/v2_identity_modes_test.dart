@@ -42,13 +42,14 @@ keybay:
       final entrypoint = File('${bin.path}${Platform.pathSeparator}main.dart')
         ..writeAsStringSync('''
 import 'dart:io';
+import 'package:keybay/src/process_hardening.dart';
 import 'package:keybay/src/v2/application_identity.dart';
 
 Future<void> main() async {
   try {
     final identity =
         await DartApplicationIdentityResolver.resolveCurrentProcess();
-    stdout.write(identity.stableValue);
+    stdout.write('\${identity.stableValue}|\$releaseBuild|\$hardeningEnabled');
   } on ApplicationIdentityFailure catch (error) {
     stderr.write(error);
     exitCode = 2;
@@ -63,7 +64,9 @@ Future<void> main() async {
         entrypoint.path,
       ]);
       expect(source.exitCode, 0, reason: source.stderr as String?);
-      expect(source.stdout, 'dev.example.mode-fixture');
+      // A source run is a debug build; the compiled outputs below are release
+      // builds, so Keybay applies its full process hardening to them.
+      expect(source.stdout, 'dev.example.mode-fixture|false|true');
 
       final output = File(
         '${fixture.path}${Platform.pathSeparator}'
@@ -84,7 +87,7 @@ Future<void> main() async {
 
       final compiled = await Process.run(output.path, const <String>[]);
       expect(compiled.exitCode, 0, reason: compiled.stderr as String?);
-      expect(compiled.stdout, source.stdout);
+      expect(compiled.stdout, 'dev.example.mode-fixture|true|true');
 
       if (Platform.isMacOS || Platform.isLinux) {
         final module = File('${fixture.path}/application.aot');
@@ -92,6 +95,7 @@ Future<void> main() async {
           packagesArgument,
           compileHelper.path,
           '--aot-snapshot',
+          '--no-process-hardening',
           entrypoint.path,
           '-o',
           module.path,
@@ -102,7 +106,7 @@ Future<void> main() async {
         ).parent.uri.resolve('dartaotruntime');
         final aot = await Process.run(runtime.toFilePath(), [module.path]);
         expect(aot.exitCode, 0, reason: '${aot.stderr}');
-        expect(aot.stdout, source.stdout);
+        expect(aot.stdout, 'dev.example.mode-fixture|true|false');
       }
     },
     timeout: const Timeout(Duration(minutes: 2)),

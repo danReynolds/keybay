@@ -90,8 +90,18 @@ restoring an old complete snapshot can restore its former access policy.
 Buffer clearing is best-effort, not proof of erasure of VM/OS/dependency copies.
 Keybay wipes its native Argon2 workspace before freeing it. The pinned HKDF
 wrapper discards its immutable backing bytes without overwriting them.
-The CLI disables core files and becomes non-dumpable on Linux before opening;
-SDK hosts must choose their own process-wide dump policy.
+Keybay hardens the process at its first open, before any secret loads. In
+release and profile builds, core files are off and, on Linux, the process is
+non-dumpable, so same-user debuggers and `/proc/<pid>/mem` reads are refused.
+Debug builds keep debuggers working. `Keybay.processHardening` reports what
+applied and never falls back; a failure is reported, not fatal. The CLI hardens
+before every command; release builds stop only if core files stay enabled. A
+build can opt out with `--dart-define=keybay.process_hardening=false`, which
+removes these protections ([SDK guide](doc/sdk.md#process-hardening)).
+Hardening cannot help against root, code injected at launch, anything attached
+before it runs, or keystrokes read under X11. In a user namespace (Flatpak,
+toolbox, rootless containers) the user's programs outside it keep ptrace
+access, and the status reports the debugger protection as failed.
 
 CLI `get` rejects captured/redirected output, but that disclosure guard is not
 authorization. `run` gives referenced secrets to its child. Copy releases a
