@@ -65,7 +65,9 @@ dart pub global activate --source path packages/keybay_cli
 Keep the checkout and put `$HOME/.pub-cache/bin` before older installations in
 `PATH`. With RK, use `rk use local -p keybay_cli` from the repo.
 
-Source/Pub activation is a development installation. On macOS it trusts the
+Source/Pub activation is a development installation. It runs JIT, so Keybay
+treats it as a debug build: on Linux the process stays dumpable for debuggers,
+and `keybay open` shows "Hardening: Debug". On macOS it trusts the
 shared Dart VM for Keychain access, so another Dart program can read the platform
 root. Use an additional credential for real secrets. Activation may also print
 Pub resolution messages; use the native build when exact CLI output matters.
@@ -329,9 +331,11 @@ unmentioned parent environment bytes, overlays manifest entries and resolves
 all references before launch. It restores shell-default signal behavior for
 the child.
 
-Every command first applies the SDK's process hardening: no core files, and on
+Every command first applies the SDK's process hardening. In release builds
+(Homebrew, release archives, `keybay_compile`) that means no core files, and on
 Linux a non-dumpable process that other programs running as you cannot attach to
-or read through `/proc/<pid>/mem`. A command stops if core files stay enabled.
+or read through `/proc/<pid>/mem`; a command stops if core files stay enabled.
+Source and Pub installs are debug builds, which only set the core-file limit.
 In toolbox, distrobox or a rootless container, your programs outside the
 container can still attach; Keybay keeps working there and reports it under
 Settings, Security in `keybay open` ("Hardening: Partial"). The child receives

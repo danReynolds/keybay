@@ -314,6 +314,197 @@ with its heading moved down one level.
 5. **Error lines: tested.** `ProcessHardening.failureLines` builds the CLI's
    error, `runKeybay` writes it, and a test asserts its lines.
 
+## Automatic hardening rework
+
+After `6e11521`, the maintainer asked for these changes:
+
+- **Automatic.** Hardening becomes the default: Keybay applies it at the first
+  open, in release and profile builds, and skips debugger blocking in debug
+  builds.
+- **One rarely used opt-out.**
+- **A read-only status** apps can check.
+- **No X11 warnings,** and no X11 signal in the API. X11 stays a documented
+  limit.
+- **Containers keep working.** The CLI and TUI run in containers, and the
+  status shows in an existing surface rather than as a warning on every run.
+
+`658d9d8` made those changes, and the fixes below answer its re-check.
+
+### Choices
+
+- **Opt-out.** The opt-out is the build define
+  `--dart-define=keybay.process_hardening=false`. `keybay_compile` gets a
+  `--no-process-hardening` flag for it. It is fixed at build time, it is in
+  effect before the first open, and no dependency can change it at run time.
+  It is the mechanism already used to embed `keybay.application_id`.
+  - Not a pubspec key: the `keybay:` block is read at run time only for source
+    runs, and Flutter builds never read it.
+  - Not `Keybay.configure`: it would be Keybay's first run-time knob.
+- **Status.** `Keybay.processHardening` is the status.
+  - `open` applies hardening every time and records the result. A failure
+    stays recorded.
+  - The getter applies hardening only when no open has run yet. That lets the
+    CLI harden before it reads a passphrase.
+- **CLI.** The CLI stops only when core files stay enabled, as it did before
+  this branch. Neither keybay has a status or doctor command, so the TUI's
+  Settings, Security screen shows "Hardening: On", "Partial", "Debug" or
+  "Off".
+- **X11.** The X11 prompt warnings are reverted to main, and `x11Session` is
+  gone.
+
+### Verification after the fixes
+
+- **Analyzer:** `dart analyze --fatal-infos` is clean for both packages.
+- **Formatting:** changed files pass `dart format` under Dart 3.13.5.
+- **macOS suites:** the SDK suite passed 613 tests with 3 skipped; the CLI suite
+  passed 284.
+- **Repo checks:** the invariant, CI-impact and site-demo checks pass, and the
+  browser demo still compiles to JavaScript.
+- **Compiled fixture:** the AOT identity fixture now prints `releaseBuild` and
+  `hardeningEnabled`. Its source run is a debug build, its `keybay_compile`
+  output a release build, and its `--no-process-hardening` module has hardening
+  off.
+- **Linux probe** in Docker (Dart 3.13.5, arm64):
+  - A JIT run stays dumpable, with soft limit 0, and reports `debugBuild`.
+  - A `dart compile exe` build goes non-dumpable and denies same-user reads of
+    `environ` and `mem`.
+  - A build with the opt-out changes nothing.
+  - The user-namespace and tracer cases report `failed` with causes
+    `userNamespace` and `traced`.
+- **Two-step build:** a kernel-then-exe build with `-D` defines, like
+  `keybay_compile`, reported a release build on Dart 3.12.2 and 3.13.5.
+
+### Re-check of 658d9d8
+
+A fresh reviewer (Claude Opus, xhigh effort, reading only git objects) checked
+`658d9d8`. Its text follows verbatim, with headings moved down three levels.
+
+#### Re-check of 658d9d8: automatic process hardening
+
+**Verdict: Ready after fixes.**
+
+The commit meets the five points: hardening is automatic, there is one opt-out, the status is readable, the X11 warnings are gone, and containers keep working. One defect in the build helper very likely leaves `keybay_compile` output unhardened on Linux, and no test can catch it. I read git objects only and ran no builds, so finding 1 is inferred from the code (see its verification step).
+
+##### Findings
+
+1. **High: `keybay_compile` output very likely hardens as a debug build.** `packages/keybay/bin/keybay_compile.dart:47-76`, `packages/keybay/lib/src/process_hardening.dart:11-13`, `doc/sdk.md:83-87`
+   - **What is wrong.** The helper compiles in two steps:
+     - `dart compile kernel -Dkeybay.application_id=…`
+     - then `dart compile exe application.dill`, with no `-D` at all.
+   - **Why that matters for `releaseBuild`.** `v2_identity_modes_test.dart` shows the compiled fixture still resolves `keybay.application_id`, so the kernel step must already fold every `fromEnvironment` constant. Nothing defines `dart.vm.product` or `dart.vm.profile` in that step, so both fold to false, and `releaseBuild` is false in the AOT binary.
+   - **Who it affects.**
+     - Linux apps built the way `doc/sdk.md:168-172` tells AOT Dart apps to build. They stay dumpable and attachable by same-user programs and report `debugBuild: true`, while sdk.md:85 promises the full policy.
+     - The CLI binaries built by `tool/build_cli_test_bundle.sh` and `tool/test_cli_core.sh`, and the CLI README's development build.
+     - Probably not the shipped CLI: rk's release compiles from source with the define. Confirm this.
+   - **How to verify.** Build with the README's `keybay_compile` command on Linux and open Settings → Security. I expect "Hardening: Debug build".
+   - **Fix.**
+     - Add `-Ddart.vm.product=true` to the kernel step. This is what `dart compile exe` passes when it compiles from source.
+     - Have the `v2_identity_modes` fixture also print `Keybay.processHardening.debugBuild`, and expect `false` for both compiled outputs.
+
+2. **Medium: no test catches an AOT build classified as debug.** `packages/keybay_cli/test/process_hardening_test.dart:25-27`, `packages/keybay/test/process_hardening_test.dart:72`
+   - **What is wrong.** The SDK tests check `releaseBuild == false` only under `dart test`, and test the release path only through `applyProcessHardening(release: true)`.
+   - **The CLI test's comment is wrong.** It says `tool/test_cli_tui.py` and `test_cli_exec.py` check release builds, but neither looks at dumpability:
+     - The TUI core check runs only when the core pattern is a plain `core` file. There, soft `RLIMIT_CORE` 0 alone prevents the file, so dumpability is never tested.
+     - The exec check reads only the child's soft limit.
+   - **Why it matters.** Finding 1 passes every suite.
+   - **Fix.**
+     - Add the fixture assertion from finding 1.
+     - On Linux, have `test_cli_tui.py` assert that a same-user child cannot read `/proc/<tui pid>/environ` while the TUI is open.
+     - Correct the comment.
+
+3. **Low: the CLI docs promise non-dumpable and a refusal in JIT runs, where neither holds.** `packages/keybay_cli/README.md:332-334`, `packages/keybay_cli/CHANGELOG.md:5-7`, `SECURITY.md:97-98`, `packages/keybay/README.md:39`
+   - **What changed.** On main the CLI always made itself non-dumpable and refused to run otherwise. Now a JIT CLI stays dumpable on Linux, for example the README's `dart pub global activate --source path` install or `tool/keybay-dev`.
+   - **What happens there.** `coreDumps` is `notAttempted`, so `refusal` lets the command run, and a core-pattern pipe may still receive a dump.
+   - **Why it matters.** This follows the debug-build direction. But "same policy as before" and "stops if core files stay enabled" are false for that install path. The CHANGELOG entry at lines 11-12 mentions only `dart run`.
+   - **Fix.**
+     - In the CLI README, say that source and Pub installs are debug builds: dumpable on Linux, and shown as "Hardening: Debug build".
+     - Limit the CHANGELOG, SECURITY.md and SDK README sentences to release builds.
+
+4. **Low: the status is a fresh re-application, not what applied at open.** `packages/keybay/lib/src/v2/keybay_v2.dart:58, 97`
+   - **What is wrong.** `open` throws away the result of `applyProcessHardening()`, and the getter re-applies and re-observes on every read.
+   - **Why it matters.** Suppose a tracer is attached during `open` and detaches before the app reads the status. The app then sees `applied` and never learns the store key loaded under a tracer. A getter that changes process state also conflicts with "read-only".
+   - **Fix.** Record the most severe result seen by any application (per isolate is enough) and return it. Apply from the getter only when nothing has been applied yet.
+
+5. **Low: the opt-out reasoning misreads RFC 0001, and `keybay_compile` builds cannot opt out.** `doc/sdk.md:133-141`, the commit message, `keybay_compile.dart:12-19, 49-53`
+   - **RFC 0001.** Line 483 rules out a separate `create()`/`configure()` step for initializing a store, not configuration in general.
+   - **The define itself is sound.** It is fixed at build time, it is in effect before the first open, and no dependency can flip it at run time.
+   - **The gap.** `keybay_compile` accepts exactly three arguments and forwards no defines. Its users therefore have no opt-out, and sdk.md names only `flutter build` and `dart compile exe`.
+   - **Fix.**
+     - Justify the define on the grounds above.
+     - Either have `keybay_compile` read an optional `keybay: process_hardening: false` from the owning pubspec, as it reads `application_id`, and pass the define; or document that `keybay_compile` builds cannot opt out.
+
+6. **Low: the new Security line overflows the narrowest layout.** `packages/keybay_cli/lib/src/tui/settings.dart:355-361`, `native_model.dart:24`
+   - **What is wrong.** At 40×24 the settings content column is 20 columns by 16 rows.
+     - Before this commit, a store with a passkey and no passphrase filled it exactly: heading, spacer, 3 status lines, spacer, 3 actions of 2 rows each, spacer and a 3-line description make 16 rows.
+     - The new line makes 17, which clips the description.
+     - "Hardening: Debug build" is 22 characters, so it wraps to a second row, despite the code's "one short word" comment.
+   - **The test misses it.** It checks only "Partial", with no passkeys.
+   - **Fix.** Use one-word labels (for example "Debug"). Test every label at 40×24 with a passkey and no passphrase.
+
+7. **Low: an unrelated test now changes the shared test process.** `packages/keybay/test/v2_keybay_test.dart:61`
+   - **What is wrong.** That test's `Keybay.open()` now sets the test runner's soft core limit to 0 and never restores it.
+   - **Why it matters.** `dart test` runs test files at the same time, as isolates in one process. The call can land between `_setSoftCoreLimit(caller)` and `expect(softCoreLimit, caller)` in the opt-out test (`process_hardening_test.dart:128-146`). That failure would be rare but random.
+   - **Fix.** Restore the limit in that test's teardown, or tag the hardening tests to run alone.
+
+8. **Nit: misplaced doc comment.** `native_model.dart:17-19`. The doc for `createNativeTuiModel` now sits above `tuiHardeningStatus`, so `tuiHardeningStatus` has two comments and `createNativeTuiModel` has none.
+
+##### Checked and fine
+
+- **Ordering.** `open` hardens synchronously before `_withCredential` copies the credential. The CLI hardens before it parses a command or reads a passphrase. The "Earlier hardening" bullet covers a passphrase collected before `open`. `Keybay.reset()` does not harden, but it decrypts nothing.
+- **Repeat calls and isolates.** Hardening keeps no Dart state, and `prctl` and `rlimit` are process-wide, so calling it again from any isolate is safe. `ProcessHardening.apply` records the caller's soft limit before the SDK sets it to 0.
+- **Debug detection.** `dart.vm.product || dart.vm.profile` matches Flutter's release and profile modes and `dart compile exe` from source. Only the exact value `false` turns hardening off, as sdk.md says.
+- **Status values.**
+  - Linux debug: `notAttempted`, and the detail says a core-pattern pipe may still receive a dump.
+  - Opt-out: `notAttempted` with `disabled` set, and the process is left untouched.
+  - macOS debug: core files `applied`; debugger `notAttempted`, with the code-signature detail.
+  - `failed` is never true in a debug build or with the opt-out.
+- **`keybay run`.** The caller's soft limit is restored right before `execve`, and set back to 0 after a failed exec. A failed exec leaves dumpability unchanged, and a successful one restores it for the new program.
+- **CLI gate and TUI.** Only failed core-file protection stops a command. User-namespace and tracer failures let it run, and both are tested. The label order (Off, Partial, Debug build, On) is correct.
+- **X11.** The CLI and TUI files the warnings touched are identical to main (283ef5d). No `x11Session`, `isX11Session`, `x11Warning` or `hardenProcess` remains. X11 is still listed as a limit in sdk.md, security-levels.md and SECURITY.md.
+- **Browser demo.** `model.dart` and `settings.dart` do not import `package:keybay`. The mapping from the SDK status lives in `native_model.dart`.
+- **Docs.** They state every limit: root and the kernel, code injected at launch, the window before hardening, X11, user namespaces, debug builds, and the opt-out weakening protection.
+- **Hardening tests.** They restore the soft limit and dumpability in teardown. The `open` test fails at `invalidAuthInput` before any platform access.
+
+### Responses to the re-check
+
+1. **`keybay_compile` and release detection — not reproduced, guarded.**
+   - On Dart 3.12.2 and 3.13.5, a kernel step with `-D` defines followed by
+     `dart compile exe` produced `releaseBuild` true. The kernel step leaves
+     `dart.vm.product` unevaluated, and the AOT step sets it.
+   - `keybay_compile` now passes `-Ddart.vm.product=true` anyway, so detection
+     no longer depends on when constants are folded.
+   - The identity fixture asserts that its output is a release build.
+2. **No AOT test — fixed.**
+   - The compiled-fixture assertion is that test.
+   - The misleading CLI test comment is corrected.
+   - The proposed `/proc/<tui pid>/environ` check in `tool/test_cli_tui.py` was
+     not added. It can run only in Linux CI, which this worker could not run
+     locally.
+3. **JIT CLI docs — fixed.** The CLI README, CHANGELOG, `SECURITY.md` and the
+   SDK README now limit the full policy and the refusal to release builds. They
+   say source and Pub installs are debug builds that show "Hardening: Debug".
+4. **Re-applied status — fixed.**
+   - `open` records each application. A failure stays recorded
+     (`worseHardening`).
+   - The getter applies hardening only before the first open.
+   - The two live CLI tests now run in fresh isolates, since each command is
+     its own process.
+5. **Opt-out reasoning and `keybay_compile` — fixed.**
+   - The define is justified on its own merits, as above.
+   - `keybay_compile --no-process-hardening` passes it on. The fixture's AOT
+     module uses that flag and checks that hardening is off.
+6. **Security line overflow — fixed.**
+   - The labels are one word: On, Partial, Debug, Off.
+   - In the narrow layout, the hardening line takes the blank row before the
+     actions.
+   - A test renders every label at 40×24 and 80×20 with a passkey and no
+     passphrase, and checks the description's last word.
+7. **Shared test process — fixed.**
+   - `v2_keybay_test` restores the soft limit after its real `open`.
+   - The opt-out test sets and reads the limit back-to-back, which leaves the
+     smallest window another isolate could hit.
+8. **Doc comment — fixed.**
+
 ## Not covered here
 
 - The package suites did not run on Linux locally, and nothing ran on Linux
@@ -322,5 +513,5 @@ with its heading moved down one level.
   TUI tester, not by a PTY run in a real X11 session.
 - No Flatpak, toolbox or Yama 1 host was used. The user-namespace case used
   `unshare` in Docker, with seccomp unconfined.
-- The follow-up changes after `b1b5b67` (the failure cause, error lines, test
-  guard and wording) were not reviewed again.
+- The follow-up changes after `b1b5b67` were not reviewed again, and neither
+  were the fixes after `658d9d8`'s re-check.

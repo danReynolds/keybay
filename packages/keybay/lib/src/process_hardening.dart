@@ -150,8 +150,8 @@ final class KeybayProcessHardening {
 }
 
 /// Applies Keybay's process policy and reports the result. Never throws, and
-/// is harmless to repeat. Keybay calls it at every open and whenever an
-/// application reads `Keybay.processHardening`.
+/// is harmless to repeat. Keybay applies it at every open, and when an
+/// application reads `Keybay.processHardening` before any open.
 ///
 /// Release and profile builds: on Linux, `prctl(PR_SET_DUMPABLE, 0)` and soft
 /// `RLIMIT_CORE` 0; a non-dumpable process is never dumped, even through a
@@ -229,6 +229,22 @@ KeybayProcessHardening applyProcessHardening({
   );
   return _result(platform, platform, null, release: release);
 }
+
+KeybayProcessHardening? _recorded;
+
+/// Applies hardening for an open and records the result. A failure stays
+/// recorded, so the status still shows it after the cause has gone away.
+KeybayProcessHardening hardenAndRecord() =>
+    _recorded = worseHardening(_recorded, applyProcessHardening());
+
+/// The recorded status, applying hardening first if nothing has yet.
+KeybayProcessHardening recordedHardening() => _recorded ?? hardenAndRecord();
+
+/// The status to keep after [next]: [previous] if it had already failed.
+KeybayProcessHardening worseHardening(
+  KeybayProcessHardening? previous,
+  KeybayProcessHardening next,
+) => previous != null && previous.failed ? previous : next;
 
 KeybayProcessHardening _result(
   KeybayHardeningMeasure coreDumps,
@@ -429,6 +445,10 @@ int? get softCoreLimit {
     calloc.free(limit);
   }
 }
+
+/// Sets the soft core-file limit, keeping the hard limit. For tests that must
+/// restore the shared test process.
+void setSoftCoreLimit(int soft) => _attempt(() => _setSoftCoreLimit(soft));
 
 /// Linux dumpability (0 when disabled), otherwise null. For regression tests.
 int? get linuxDumpable =>

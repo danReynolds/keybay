@@ -79,7 +79,8 @@ void main() {
     _setSoftCoreLimit(hard > 0 && hard < 1 << 20 ? hard : 1 << 20);
     if (Platform.isLinux) expect(_prctl(_prSetDumpable, 1, 0, 0, 0), 0);
 
-    final result = Keybay.processHardening;
+    // The defaults are this build's: a JIT test run is a debug build.
+    final result = applyProcessHardening();
 
     expect(result.debugBuild, isTrue);
     expect(result.disabled, isFalse);
@@ -130,19 +131,38 @@ void main() {
     final caller = hard == 0
         ? 0
         : (hard > 0 && hard < 1 << 20 ? hard : 1 << 20);
-    _setSoftCoreLimit(caller);
-    final dumpable = linuxDumpable;
-
     for (final release in [false, true]) {
+      // Other test files share this process and may open, which sets the soft
+      // limit, so read it back immediately.
+      _setSoftCoreLimit(caller);
+      final dumpable = linuxDumpable;
       final result = applyProcessHardening(release: release, enabled: false);
+      if (Platform.isMacOS || Platform.isLinux) expect(softCoreLimit, caller);
+      expect(linuxDumpable, dumpable);
       expect(result.disabled, isTrue);
       expect(result.failed, isFalse);
       expect(result.coreDumps.status, KeybayHardeningStatus.notAttempted);
       expect(result.debuggerAttach.status, KeybayHardeningStatus.notAttempted);
       expect(result.coreDumps.detail, contains('keybay.process_hardening'));
     }
-    if (Platform.isMacOS || Platform.isLinux) expect(softCoreLimit, caller);
-    expect(linuxDumpable, dumpable);
+  });
+
+  test('the status is recorded, and a failure stays recorded', () {
+    _preserveProcessState();
+    final first = Keybay.processHardening;
+    expect(identical(Keybay.processHardening, first), isTrue);
+
+    KeybayProcessHardening linux({int tracer = 0}) => linuxHardeningResult(
+      dumpable: 0,
+      initialUserNamespace: true,
+      tracer: tracer,
+      ptraceScope: 1,
+    );
+    final applied = linux();
+    final traced = linux(tracer: 4242);
+    expect(worseHardening(null, applied), same(applied));
+    expect(worseHardening(applied, traced), same(traced));
+    expect(worseHardening(traced, applied), same(traced));
   });
 
   test('a Linux debug build reports both protections not attempted', () {

@@ -359,7 +359,10 @@ final class _SettingsScreenState extends State<SettingsScreen> {
                     ? context.theme.mutedStyle
                     : context.accents.attention,
               ),
-            const SizedBox(height: 1),
+            // The narrowest panel spends its spacer on the hardening line, so
+            // a passkey-only store's full description still fits.
+            if (!narrow || model.processHardening == null)
+              const SizedBox(height: 1),
           ],
           SizedBox(
             // A stable key keeps the shared focus node attached as the

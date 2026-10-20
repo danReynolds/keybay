@@ -36,9 +36,9 @@ operations and `auth.list()` never prompt; opening, changing authentication and
 resetting may invoke provider UI. Binary access uses `getBytes`, `setBytes` and
 `getManyBytes`; `listKeys` returns names without decrypting values.
 
-Keybay hardens the process automatically at the first `open()`: core files off
-and, on Linux release and profile builds, a non-dumpable process that other
-programs running as the user cannot attach a debugger to or read through
+Keybay hardens the process automatically at the first `open()`. In release and
+profile builds, core files are off and, on Linux, the process is non-dumpable,
+so other programs running as the user cannot attach a debugger or read
 `/proc/<pid>/mem`. Debug builds keep debuggers working.
 `Keybay.processHardening` reports what applied, including a failure such as
 running inside Flatpak or another user namespace. A build can opt out with

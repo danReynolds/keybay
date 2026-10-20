@@ -2,14 +2,17 @@
 
 ## Unreleased
 
-- Process hardening now comes from the SDK, with the same policy as before: no
-  core files, and non-dumpable on Linux. A command still stops if core files
-  stay enabled, and `run` still gives its program the caller's core-file limit.
+- Process hardening now comes from the SDK. Release builds keep the policy
+  they had: no core files, and non-dumpable on Linux. A command still stops if
+  core files stay enabled, and `run` still gives its program the caller's
+  core-file limit.
 - `keybay open` shows the hardening status under Settings, Security. In
   toolbox, distrobox or a rootless container it reads "Hardening: Partial",
   because the user's programs outside the container can still attach.
-- Development runs through `dart run`, such as `tool/keybay-dev`, are debug
-  builds: the process stays dumpable so a debugger can attach.
+- Source and Pub installs, and development runs such as `tool/keybay-dev`,
+  run JIT and are now debug builds: on Linux the process stays dumpable so a
+  debugger can attach, and only the core-file limit is set. They show
+  "Hardening: Debug".
 
 ## 0.3.2
 

@@ -14,23 +14,23 @@ const cliHardwareRpId = String.fromEnvironment(
   defaultValue: 'io.github.danreynolds.keybay.cli',
 );
 
-/// Connects the shared TUI to the native SDK. Mutable inputs reach the SDK
-/// synchronously, before the model clears its borrowed buffer.
-/// Summarizes [hardening] for the Security settings.
+/// Summarizes [hardening] for the Security settings in one word, which fits
+/// the narrowest panel; the docs explain each state.
 TuiHardeningStatus tuiHardeningStatus(KeybayProcessHardening hardening) {
   if (hardening.disabled) {
     return const TuiHardeningStatus('Off', complete: false);
   }
-  // One short word fits the narrowest settings panel; the docs explain why.
   if (hardening.failed) {
     return const TuiHardeningStatus('Partial', complete: false);
   }
   if (hardening.debugBuild) {
-    return const TuiHardeningStatus('Debug build', complete: false);
+    return const TuiHardeningStatus('Debug', complete: false);
   }
   return const TuiHardeningStatus('On', complete: true);
 }
 
+/// Connects the shared TUI to the native SDK. Mutable inputs reach the SDK
+/// synchronously, before the model clears its borrowed buffer.
 TuiModel createNativeTuiModel({
   required SessionOpener openSession,
   required Future<void> Function() resetStore,

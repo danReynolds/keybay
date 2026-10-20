@@ -55,7 +55,7 @@ abstract final class Keybay {
     String? methodId,
     PasskeyCancellation? cancellation,
   }) {
-    applyProcessHardening();
+    hardenAndRecord();
     return _withCredential(
       credential,
       _productionRuntime._open,
@@ -72,9 +72,11 @@ abstract final class Keybay {
   /// What Keybay's process hardening applied, and why anything was not.
   ///
   /// Keybay hardens the process automatically at every [open], before any
-  /// secret loads, so applications need not call anything. Reading this
-  /// status also applies it, so an application that collects a passphrase or
-  /// PIN before opening can read it first in `main` to harden earlier.
+  /// secret loads, so applications need not call anything. This status is
+  /// what those opens applied; once one fails, it keeps reporting that
+  /// failure. Read before any open, it applies hardening then, so an
+  /// application that collects a passphrase or PIN before opening can read it
+  /// first in `main` to harden earlier.
   ///
   /// In release and profile builds on Linux the process becomes non-dumpable
   /// (`PR_SET_DUMPABLE` 0) and its soft `RLIMIT_CORE` becomes 0: a crash
@@ -94,7 +96,7 @@ abstract final class Keybay {
   /// A build can turn it off with
   /// `--dart-define=keybay.process_hardening=false`, which leaves core files
   /// and same-user debuggers able to read the secrets this process holds.
-  static KeybayProcessHardening get processHardening => applyProcessHardening();
+  static KeybayProcessHardening get processHardening => recordedHardening();
 }
 
 /// Public limits callers may need before submitting plaintext to Keybay.

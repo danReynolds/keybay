@@ -131,9 +131,10 @@ if (hardening.failed) {
   are not limited.
 
 **Turning it off.** A build can opt out with
-`--dart-define=keybay.process_hardening=false` (for example
-`flutter build linux --dart-define=keybay.process_hardening=false`, or `-D` with
-`dart compile exe`). This weakens protection: crashes can write the store key
+`--dart-define=keybay.process_hardening=false`: for example
+`flutter build linux --dart-define=keybay.process_hardening=false`, `-D` with
+`dart compile exe`, or `keybay_compile --no-process-hardening`. This weakens
+protection: crashes can write the store key
 and read values to core files, and on Linux other programs running as the user
 can attach a debugger and read them. It is a build setting rather than an API,
 like the embedded `keybay.application_id`, so a library cannot change it at run
@@ -171,7 +172,8 @@ insufficient.
 dart run keybay:keybay_compile bin/app.dart -o build/app
 ```
 
-Use `--aot-snapshot` before the entrypoint for a separate AOT module. Hardened
+Use `--aot-snapshot` before the entrypoint for a separate AOT module, and
+`--no-process-hardening` only to opt out of [process hardening](#process-hardening). Hardened
 macOS distribution signs that module and a dedicated `dartaotruntime` with the
 same team; see [macOS packaging](platforms/macos.md#hardened-aot-packaging).
 Recognized `dart install` bundles retain their declaration, checked against any

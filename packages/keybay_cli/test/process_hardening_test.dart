@@ -4,6 +4,7 @@ library;
 
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 import 'package:keybay/src/process_hardening.dart';
@@ -13,7 +14,9 @@ import 'package:keybay_cli/src/tui/native_model.dart' show tuiHardeningStatus;
 import 'package:test/test.dart';
 
 void main() {
-  test('commands disable core files and restore them only for exec', () {
+  // Keybay records its hardening status once per isolate, as each command is
+  // its own process, so these run in fresh isolates of this shared process.
+  test('commands disable core files and restore them only for exec', () async {
     final caller = _allowCoreFiles();
     if (caller == null) {
       markTestSkipped('the hard core-file limit is 0 here');
@@ -21,20 +24,39 @@ void main() {
     }
     _allowDumping();
 
-    final result = ProcessHardening.apply();
+    final (
+      debugBuild,
+      refusal,
+      applied,
+      restored,
+      reapplied,
+      dumpable,
+    ) = await Isolate.run(() {
+      final result = ProcessHardening.apply();
+      final applied = softCoreLimit;
+      ProcessHardening.restoreForExec();
+      final restored = softCoreLimit;
+      ProcessHardening.reapplyAfterFailedExec();
+      return (
+        result.debugBuild,
+        ProcessHardening.refusal(result),
+        applied,
+        restored,
+        softCoreLimit,
+        linuxDumpable,
+      );
+    });
+
     // This JIT test run is a debug build: only the soft limit is set, and on
-    // Linux the process stays dumpable so debuggers work. Release builds of
-    // the CLI are checked by tool/test_cli_tui.py and test_cli_exec.py.
-    expect(result.debugBuild, isTrue);
-    expect(ProcessHardening.refusal(result), isNull, reason: '$result');
-    expect(softCoreLimit, 0);
-    if (Platform.isLinux) expect(linuxDumpable, 1);
-
-    ProcessHardening.restoreForExec();
-    expect(softCoreLimit, caller);
-
-    ProcessHardening.reapplyAfterFailedExec();
-    expect(softCoreLimit, 0);
+    // Linux the process stays dumpable so debuggers work. The SDK tests the
+    // release policy, and v2_identity_modes_test that keybay_compile output
+    // is a release build.
+    expect(debugBuild, isTrue);
+    expect(refusal, isNull);
+    expect(applied, 0);
+    expect(restored, caller);
+    expect(reapplied, 0);
+    if (Platform.isLinux) expect(dumpable, 1);
   });
 
   test('every command hardens the process before it runs', () async {
@@ -43,14 +65,10 @@ void main() {
       return;
     }
     expect(softCoreLimit, isNot(0));
-    KeybayProcessHardening? result;
 
-    final exitCode = await runKeybay([
-      '--version',
-    ], hardenProcess: () => result = ProcessHardening.apply());
+    final exitCode = await Isolate.run(() => runKeybay(['--version']));
 
-    expect(exitCode, 0, reason: '$result');
-    expect(result, isNotNull);
+    expect(exitCode, 0);
     expect(softCoreLimit, 0);
   });
 
@@ -100,7 +118,7 @@ void main() {
       (linux(), 'On', true),
       (linux(initial: false), 'Partial', false),
       (linux(tracer: 4242), 'Partial', false),
-      (linuxDebugResult(ptraceScope: 1), 'Debug build', false),
+      (linuxDebugResult(ptraceScope: 1), 'Debug', false),
       (applyProcessHardening(enabled: false), 'Off', false),
     ]) {
       final status = tuiHardeningStatus(hardening);

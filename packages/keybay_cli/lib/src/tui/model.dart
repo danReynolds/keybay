@@ -47,7 +47,7 @@ enum _RecordAction { reveal, edit, copy }
 final class TuiHardeningStatus {
   const TuiHardeningStatus(this.label, {required this.complete});
 
-  /// "On", "Partial", "Debug build" or "Off".
+  /// "On", "Partial", "Debug" or "Off".
   final String label;
 
   /// False when something Keybay hardens is not in effect here.
