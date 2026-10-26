@@ -9,6 +9,7 @@ import 'package:fleury/fleury_core.dart';
 import 'package:fleury/fleury_test_support.dart';
 import 'package:keybay/keybay.dart';
 import 'package:keybay/src/v2/keybay_v2.dart' show V2StoreEngineTestProbe;
+import 'package:keybay/src/process_hardening.dart';
 import 'package:keybay/src/v2/store_files.dart';
 import 'package:keybay_cli/src/tui/clipboard.dart';
 import 'package:keybay_cli/src/tui/model.dart';
@@ -50,6 +51,7 @@ void main() {
     UnlockPreference? preference,
     Future<bool> Function(TuiCancellation)? connected,
     Duration connectionTimeout = const Duration(minutes: 2),
+    KeybayProcessHardening? processHardening,
   }) {
     final value = createNativeTuiModel(
       openSession: store.open,
@@ -60,6 +62,7 @@ void main() {
       hardwareConnected: connected,
       hardwarePollInterval: const Duration(milliseconds: 10),
       hardwareConnectionTimeout: connectionTimeout,
+      processHardening: processHardening,
     );
     models.add(value);
     return value;
@@ -629,6 +632,49 @@ void main() {
         expect(m.view, TuiView.browse);
       },
     );
+
+    test('every hardening label fits the Security settings at $size', () async {
+      KeybayProcessHardening linux({bool initial = true}) =>
+          linuxHardeningResult(
+            dumpable: 0,
+            initialUserNamespace: initial,
+            tracer: 0,
+            ptraceScope: 1,
+          );
+      for (final (hardening, label) in [
+        (linux(), 'On'),
+        (linux(initial: false), 'Partial'),
+        (linuxDebugResult(ptraceScope: 1), 'Debug'),
+        (applyProcessHardening(enabled: false), 'Off'),
+      ]) {
+        // A passkey and no passphrase fill the most status rows.
+        final m = model(processHardening: hardening);
+        await m.open();
+        m.navigate(TuiView.hardware);
+        await m.hardwareAttempt(label: 'Primary key');
+        expect(m.hasPassphrase, isFalse);
+        m.navigate(TuiView.settings);
+        final tester = FleuryTester(viewportSize: size);
+        addTearDown(tester.dispose);
+        tester.pumpWidget(KeybayTui(model: m));
+        await tester.settle();
+        final screen = tester.renderToString();
+        for (final line in [
+          'Passkeys: 1',
+          'Hardening: $label',
+          'Idle exit:',
+          'store.',
+          '[Esc] Back',
+        ]) {
+          expect(screen, contains(line), reason: '$label at $size\n$screen');
+        }
+        await m.close();
+        await store.reset();
+        final seed = await store.open();
+        await seed.set('test/marker', 'retained');
+        await seed.close();
+      }
+    });
 
     test('hardware form keeps PIN and undo state private at $size', () async {
       final m = model();

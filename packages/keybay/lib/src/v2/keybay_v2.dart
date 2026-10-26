@@ -9,6 +9,7 @@ import 'dart:typed_data';
 import 'package:cryptography/dart.dart';
 import 'package:keypass/keypass.dart';
 
+import '../process_hardening.dart';
 import 'android_host_platform.dart';
 import 'apple_data_protection_host_platform.dart';
 import 'application_identity.dart';
@@ -46,21 +47,56 @@ abstract final class Keybay {
   /// Trusted operating-system/provider UI may participate in unlocking it.
   /// [methodId] selects an enrollment when several match the credential.
   /// [cancellation] cancels a passkey attempt; await the operation to settle.
+  ///
+  /// Before anything else, it applies Keybay's process hardening; see
+  /// [processHardening].
   static Future<KeybaySession> open({
     KeybayCredential? credential,
     String? methodId,
     PasskeyCancellation? cancellation,
-  }) => _withCredential(
-    credential,
-    _productionRuntime._open,
-    methodId: methodId,
-    cancellation: cancellation,
-  );
+  }) {
+    hardenAndRecord();
+    return _withCredential(
+      credential,
+      _productionRuntime._open,
+      methodId: methodId,
+      cancellation: cancellation,
+    );
+  }
 
   /// Removes the encrypted store and resets Keybay-owned provider state.
   /// Nonsecret coordination files and provider-owned roots may remain.
   /// Trusted operating-system/provider UI may participate in this operation.
   static Future<void> reset() => _future(_productionRuntime.reset);
+
+  /// What Keybay's process hardening applied, and why anything was not.
+  ///
+  /// Keybay hardens the process automatically at every [open], before any
+  /// secret loads, so applications need not call anything. This status is
+  /// what those opens applied; once one fails, it keeps reporting that
+  /// failure. Read before any open, it applies hardening then, so an
+  /// application that collects a passphrase or PIN before opening can read it
+  /// first in `main` to harden earlier.
+  ///
+  /// In release and profile builds on Linux the process becomes non-dumpable
+  /// (`PR_SET_DUMPABLE` 0) and its soft `RLIMIT_CORE` becomes 0: a crash
+  /// writes no core file, and other programs running as the same user can
+  /// neither attach a debugger nor read `/proc/<pid>/mem`. On macOS the soft
+  /// `RLIMIT_CORE` becomes 0. Debug builds set only the core-file limit, so
+  /// development debuggers keep working. iOS and Android are unchanged.
+  ///
+  /// A failure is reported here, never fatal and never replaced by a weaker
+  /// policy: check [KeybayProcessHardening.failed] and decide what to hold.
+  /// On Linux the debugger protection fails when a tracer is already
+  /// attached, and in a user namespace such as Flatpak's, whose owner keeps
+  /// ptrace access from outside it. Hardening does not protect against root
+  /// or the kernel, against code injected at launch through a launcher,
+  /// shell startup files or a per-user install, or before it first runs.
+  ///
+  /// A build can turn it off with
+  /// `--dart-define=keybay.process_hardening=false`, which leaves core files
+  /// and same-user debuggers able to read the secrets this process holds.
+  static KeybayProcessHardening get processHardening => recordedHardening();
 }
 
 /// Public limits callers may need before submitting plaintext to Keybay.
