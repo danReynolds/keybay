@@ -165,6 +165,7 @@ jobs:
             architecture: x64
             artifact: sdk-regression-macos-x64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
@@ -174,6 +175,7 @@ jobs:
       - run: dart pub get --enforce-lockfile
       # Exercise the actual x64 SDK/FFI boundary, including descriptor metadata.
       - if: matrix.architecture == 'x64'
+        timeout-minutes: 30
         run: ./tool/test_e2e.sh core
       # A disposable Keychain also exercises locked record operations. The
       # public facade separately resolves the runner's genuine account home.

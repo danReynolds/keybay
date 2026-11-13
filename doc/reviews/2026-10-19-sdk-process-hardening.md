@@ -533,6 +533,13 @@ no system packages or tracked build settings changed. Linux native checks and
 fresh CI after the base refresh remain outstanding. An independent review of the stable source/test changes found no actionable
 issues; it did not repeat tests or Linux qualification.
 
+The November 13 PR #126 Intel CI core run exceeded 30 minutes after native
+setup; the cause remains undiagnosed. The follow-up limits the existing x64
+core step to 30 minutes and both macOS matrix jobs to 120 minutes. Test commands,
+coverage, and the provider gate remain unchanged: a selected macOS provider must
+succeed, so a timeout cannot satisfy the gate. These bounds are not qualification
+of the affected CI run.
+
 ## Not covered here
 
 - The package suites did not run on Linux locally, and nothing ran on Linux
