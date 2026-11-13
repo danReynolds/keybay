@@ -27,6 +27,8 @@ void main() {
         interaction: PlatformInteraction.forbidden,
       );
       expect(created.disposition, RootCreationDisposition.created);
+      expect(keystore.keyLookupCount, 1);
+      expect(keystore.containsCount, 1);
       expect(created.lease.providerState.length, 60);
       expect(keystore.aliases, <String>{
         'keybay.v2.${binding.providerAddress}',
@@ -158,6 +160,158 @@ void main() {
         throwsA(_failure(PlatformProtectorFailureCode.operationFailed)),
       );
       expect(keystore.aliases, hasLength(1));
+    },
+  );
+
+  test(
+    'adopts an existing AES root despite an ambiguous false alias probe',
+    () async {
+      final keystore = _MemoryAndroidKeystore();
+      final protector = AndroidKeystoreProtector(
+        binding: _binding('/android/no-backup/keybay'),
+        keystore: keystore,
+      );
+      final first = await protector.createOnly(
+        interaction: PlatformInteraction.forbidden,
+      );
+      final state = ProviderState(first.lease.providerState.copyBytes());
+      await first.lease.close();
+      final containsBefore = keystore.containsCount;
+      keystore.containsResult = false;
+
+      final adopted = await protector.createOnly(
+        interaction: PlatformInteraction.forbidden,
+      );
+      expect(adopted.disposition, RootCreationDisposition.adopted);
+      expect(keystore.keyGeneration, 1);
+      expect(keystore.containsCount, containsBefore);
+      expect(keystore.deletedAliases, isEmpty);
+      await adopted.lease.close();
+
+      keystore.containsResult = null;
+      final reopened = await protector.openExisting(
+        state,
+        interaction: PlatformInteraction.forbidden,
+      );
+      expect(reopened, isNotNull, reason: 'the original root must survive');
+      await reopened!.close();
+    },
+  );
+
+  for (final code in <PlatformProtectorFailureCode>[
+    PlatformProtectorFailureCode.operationFailed,
+    PlatformProtectorFailureCode.invalidated,
+  ]) {
+    test('creation never generates after a $code key lookup failure', () async {
+      final keystore = _MemoryAndroidKeystore();
+      final protector = AndroidKeystoreProtector(
+        binding: _binding('/android/no-backup/keybay'),
+        keystore: keystore,
+      );
+      final first = await protector.createOnly(
+        interaction: PlatformInteraction.forbidden,
+      );
+      final state = ProviderState(first.lease.providerState.copyBytes());
+      await first.lease.close();
+      final containsBefore = keystore.containsCount;
+      keystore
+        ..containsResult = false
+        ..keyLookupFailure = PlatformProtectorFailure(code);
+
+      await expectLater(
+        protector.createOnly(interaction: PlatformInteraction.forbidden),
+        throwsA(_failure(code)),
+      );
+      expect(keystore.keyGeneration, 1);
+      expect(keystore.containsCount, containsBefore);
+      expect(keystore.deletedAliases, isEmpty);
+
+      keystore
+        ..containsResult = null
+        ..keyLookupFailure = null;
+      final reopened = await protector.openExisting(
+        state,
+        interaction: PlatformInteraction.forbidden,
+      );
+      expect(reopened, isNotNull);
+      await reopened!.close();
+    });
+  }
+
+  test('creation rejects an observable non-key alias conflict', () async {
+    final keystore = _MemoryAndroidKeystore()..containsResult = true;
+    final protector = AndroidKeystoreProtector(
+      binding: _binding('/android/no-backup/keybay'),
+      keystore: keystore,
+    );
+
+    await expectLater(
+      protector.createOnly(interaction: PlatformInteraction.forbidden),
+      throwsA(_failure(PlatformProtectorFailureCode.stateConflict)),
+    );
+    expect(keystore.keyLookupCount, 1);
+    expect(keystore.containsCount, 1);
+    expect(keystore.createdAliases, isEmpty);
+    expect(keystore.deletedAliases, isEmpty);
+  });
+
+  test(
+    'an unusable adopted root reports state conflict without mutation',
+    () async {
+      final keystore = _MemoryAndroidKeystore();
+      final protector = AndroidKeystoreProtector(
+        binding: _binding('/android/no-backup/keybay'),
+        keystore: keystore,
+      );
+      final first = await protector.createOnly(
+        interaction: PlatformInteraction.forbidden,
+      );
+      await first.lease.close();
+      keystore.cryptoFailure = const PlatformProtectorFailure(
+        PlatformProtectorFailureCode.invalidated,
+      );
+
+      await expectLater(
+        protector.createOnly(interaction: PlatformInteraction.forbidden),
+        throwsA(_failure(PlatformProtectorFailureCode.stateConflict)),
+      );
+      expect(keystore.keyGeneration, 1);
+      expect(keystore.deletedAliases, isEmpty);
+    },
+  );
+
+  test(
+    'live-store missing or unavailable probes never create a root',
+    () async {
+      final keystore = _MemoryAndroidKeystore();
+      final protector = AndroidKeystoreProtector(
+        binding: _binding('/android/no-backup/keybay'),
+        keystore: keystore,
+      );
+      final first = await protector.createOnly(
+        interaction: PlatformInteraction.forbidden,
+      );
+      final state = ProviderState(first.lease.providerState.copyBytes());
+      await first.lease.close();
+      keystore.containsResult = false;
+      expect(
+        await protector.openExisting(
+          state,
+          interaction: PlatformInteraction.forbidden,
+        ),
+        isNull,
+      );
+      keystore.failure = const KeystoreUnreachable('redacted');
+      await expectLater(
+        protector.openExisting(
+          state,
+          interaction: PlatformInteraction.forbidden,
+        ),
+        throwsA(_failure(PlatformProtectorFailureCode.unavailable)),
+      );
+      expect(keystore.keyGeneration, 1);
+      expect(keystore.keyLookupCount, 1);
+      expect(keystore.deletedAliases, isEmpty);
     },
   );
 
@@ -416,7 +570,10 @@ final class _MemoryAndroidKeystore implements AndroidKeystoreAead {
 
   Exception? failure;
   Exception? cryptoFailure;
+  Exception? keyLookupFailure;
+  bool? containsResult;
   int containsCount = 0;
+  int keyLookupCount = 0;
   int openCount = 0;
   int keyGeneration = 0;
   int _nonceCounter = 0;
@@ -428,19 +585,33 @@ final class _MemoryAndroidKeystore implements AndroidKeystoreAead {
   Future<bool> contains(String alias) async {
     containsCount++;
     _throwFailure();
-    return _keys.containsKey(alias);
+    return containsResult ?? _keys.containsKey(alias);
   }
 
   @override
   Future<bool> createUnderExclusiveLock(String alias) async {
     _throwFailure();
-    if (_keys.containsKey(alias)) return false;
-    keyGeneration++;
-    createdAliases.add(alias);
-    _keys[alias] = Uint8List.fromList(
-      List<int>.generate(32, (index) => (keyGeneration + index) & 0xff),
+    // Exercise the production guard, with deterministic stand-ins for the JNI
+    // getKey/containsAlias calls. Native lookup semantics need device evidence.
+    return createAndroidKeystoreKeyUnderExclusiveLock(
+      hasKey: () {
+        keyLookupCount++;
+        final failure = keyLookupFailure;
+        if (failure != null) throw failure;
+        return _keys.containsKey(alias);
+      },
+      containsAlias: () {
+        containsCount++;
+        return containsResult ?? _keys.containsKey(alias);
+      },
+      generateAndVerify: () {
+        keyGeneration++;
+        createdAliases.add(alias);
+        _keys[alias] = Uint8List.fromList(
+          List<int>.generate(32, (index) => (keyGeneration + index) & 0xff),
+        );
+      },
     );
-    return true;
   }
 
   @override
