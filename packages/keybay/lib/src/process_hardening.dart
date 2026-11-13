@@ -240,11 +240,42 @@ KeybayProcessHardening hardenAndRecord() =>
 /// The recorded status, applying hardening first if nothing has yet.
 KeybayProcessHardening recordedHardening() => _recorded ?? hardenAndRecord();
 
-/// The status to keep after [next]: [previous] if it had already failed.
+/// Keeps each failed protection, preferring a stronger cause when one is seen.
+///
+/// A namespace limitation must not hide a later tracer, unreadable check or
+/// rejected setting from applications that knowingly accept only that limit.
 KeybayProcessHardening worseHardening(
   KeybayProcessHardening? previous,
   KeybayProcessHardening next,
-) => previous != null && previous.failed ? previous : next;
+) {
+  if (previous == null || !previous.failed) return next;
+  return KeybayProcessHardening._(
+    coreDumps: _worseMeasure(previous.coreDumps, next.coreDumps),
+    debuggerAttach: _worseMeasure(previous.debuggerAttach, next.debuggerAttach),
+    ptraceScope: next.ptraceScope,
+    yamaUnrestricted: next.yamaUnrestricted,
+    debugBuild: next.debugBuild,
+    disabled: next.disabled,
+  );
+}
+
+KeybayHardeningMeasure _worseMeasure(
+  KeybayHardeningMeasure previous,
+  KeybayHardeningMeasure next,
+) {
+  if (previous.status != KeybayHardeningStatus.failed) return next;
+  if (next.status != KeybayHardeningStatus.failed) return previous;
+  // Keep positive evidence of an attached tracer or a rejected setting over
+  // uncertainty. All three must override the separately acceptable namespace
+  // limitation. Equal causes keep the earlier evidence, even after recovery.
+  int priority(KeybayHardeningCause? cause) => switch (cause) {
+    KeybayHardeningCause.traced => 3,
+    KeybayHardeningCause.settingRejected => 2,
+    KeybayHardeningCause.unreadable || null => 1,
+    KeybayHardeningCause.userNamespace => 0,
+  };
+  return priority(previous.cause) >= priority(next.cause) ? previous : next;
+}
 
 KeybayProcessHardening _result(
   KeybayHardeningMeasure coreDumps,

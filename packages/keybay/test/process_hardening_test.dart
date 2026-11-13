@@ -1,8 +1,11 @@
 @Tags(['unit'])
 library;
 
+import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -13,62 +16,69 @@ import 'package:test/test.dart';
 typedef C = KeybayHardeningCause;
 
 void main() {
-  test('a release build disables core files and, on Linux, dumpability', () {
-    // Start from a caller that allows core files and, on Linux, is dumpable;
-    // a default limit of 0 would let every expectation pass even if nothing
-    // were changed.
-    final hard = _preserveProcessState();
-    if (hard == 0) {
-      markTestSkipped('the hard core-file limit is 0 here');
-      return;
-    }
-    final caller = hard > 0 && hard < 1 << 20 ? hard : 1 << 20;
-    _setSoftCoreLimit(caller);
-    if (Platform.isLinux) {
-      expect(_prctl(_prSetDumpable, 1, 0, 0, 0), 0);
-      expect(linuxDumpable, 1);
-      // A child running as the same user reads a dumpable parent's /proc
-      // entries; that read is the positive control for the one below.
-      expect(_childReads('/proc/$pid/environ'), isTrue);
-    }
-
-    final result = applyProcessHardening(release: true);
-
-    expect(result.debugBuild, isFalse);
-    expect(result.coreDumps.status, KeybayHardeningStatus.applied);
-    expect(softCoreLimit, 0);
-    expect(_coreLimits().$2, hard, reason: 'the hard limit is unchanged');
-    if (Platform.isLinux) {
-      expect(linuxDumpable, 0);
-      // A user namespace's root keeps CAP_SYS_PTRACE over its processes, so
-      // the denials hold only in the initial one.
-      if (linuxInitialUserNamespace() == true) {
-        expect(_childReads('/proc/$pid/environ'), isFalse);
-        // Opening mem needs attach rights, which Yama may already refuse a
-        // child, so only the denial is asserted.
-        expect(_childOpens('/proc/$pid/mem'), isFalse);
+  _isolatedTest(
+    'a release build disables core files and, on Linux, dumpability',
+    () {
+      // Start from a caller that allows core files and, on Linux, is dumpable;
+      // a default limit of 0 would let every expectation pass even if nothing
+      // were changed.
+      final hard = _preserveProcessState();
+      if (hard == 0) {
+        markTestSkipped('the hard core-file limit is 0 here');
+        return;
       }
-      // A user namespace (toolbox, a rootless container) cannot confirm it.
-      expect(
-        result.debuggerAttach.status,
-        linuxInitialUserNamespace() == true
-            ? KeybayHardeningStatus.applied
-            : KeybayHardeningStatus.failed,
-        reason: '$result',
-      );
-    } else {
-      expect(result.failed, isFalse, reason: '$result');
-      expect(result.debuggerAttach.status, KeybayHardeningStatus.notAttempted);
-      expect(result.debuggerAttach.detail, contains('PT_DENY_ATTACH'));
-    }
+      final caller = hard > 0 && hard < 1 << 20 ? hard : 1 << 20;
+      _setSoftCoreLimit(caller);
+      if (Platform.isLinux) {
+        expect(_prctl(_prSetDumpable, 1, 0, 0, 0), 0);
+        expect(linuxDumpable, 1);
+        // A child running as the same user reads a dumpable parent's /proc
+        // entries; that read is the positive control for the one below.
+        expect(_childReads('/proc/$pid/environ'), isTrue);
+      }
 
-    // Repeating the call is harmless and reports the same policy.
-    final again = applyProcessHardening(release: true);
-    expect(again.coreDumps.status, result.coreDumps.status);
-    expect(again.debuggerAttach.status, result.debuggerAttach.status);
-  }, testOn: 'mac-os || linux');
+      final result = applyProcessHardening(release: true);
 
-  test('this debug test run leaves debuggers allowed', () {
+      expect(result.debugBuild, isFalse);
+      expect(result.coreDumps.status, KeybayHardeningStatus.applied);
+      expect(softCoreLimit, 0);
+      expect(_coreLimits().$2, hard, reason: 'the hard limit is unchanged');
+      if (Platform.isLinux) {
+        expect(linuxDumpable, 0);
+        // A user namespace's root keeps CAP_SYS_PTRACE over its processes, so
+        // the denials hold only in the initial one.
+        if (linuxInitialUserNamespace() == true) {
+          expect(_childReads('/proc/$pid/environ'), isFalse);
+          // Opening mem needs attach rights, which Yama may already refuse a
+          // child, so only the denial is asserted.
+          expect(_childOpens('/proc/$pid/mem'), isFalse);
+        }
+        // A user namespace (toolbox, a rootless container) cannot confirm it.
+        expect(
+          result.debuggerAttach.status,
+          linuxInitialUserNamespace() == true
+              ? KeybayHardeningStatus.applied
+              : KeybayHardeningStatus.failed,
+          reason: '$result',
+        );
+      } else {
+        expect(result.failed, isFalse, reason: '$result');
+        expect(
+          result.debuggerAttach.status,
+          KeybayHardeningStatus.notAttempted,
+        );
+        expect(result.debuggerAttach.detail, contains('PT_DENY_ATTACH'));
+      }
+
+      // Repeating the call is harmless and reports the same policy.
+      final again = applyProcessHardening(release: true);
+      expect(again.coreDumps.status, result.coreDumps.status);
+      expect(again.debuggerAttach.status, result.debuggerAttach.status);
+    },
+    testOn: 'mac-os || linux',
+  );
+
+  _isolatedTest('this debug test run leaves debuggers allowed', () {
     expect(releaseBuild, isFalse, reason: 'dart test runs JIT');
     expect(hardeningEnabled, isTrue);
     final hard = _preserveProcessState();
@@ -105,7 +115,7 @@ void main() {
     expect(result.toString(), contains(result.debuggerAttach.detail));
   }, testOn: 'mac-os || linux');
 
-  test('open hardens the process before anything else', () async {
+  _isolatedTest('open hardens the process before anything else', () async {
     final hard = _preserveProcessState();
     if (hard == 0) {
       markTestSkipped('the hard core-file limit is 0 here');
@@ -126,14 +136,12 @@ void main() {
     expect(softCoreLimit, 0);
   }, testOn: 'mac-os || linux');
 
-  test('a build that turns hardening off changes nothing', () {
+  _isolatedTest('a build that turns hardening off changes nothing', () {
     final hard = _preserveProcessState();
     final caller = hard == 0
         ? 0
         : (hard > 0 && hard < 1 << 20 ? hard : 1 << 20);
     for (final release in [false, true]) {
-      // Other test files share this process and may open, which sets the soft
-      // limit, so read it back immediately.
       _setSoftCoreLimit(caller);
       final dumpable = linuxDumpable;
       final result = applyProcessHardening(release: release, enabled: false);
@@ -147,7 +155,7 @@ void main() {
     }
   });
 
-  test('the status is recorded, and a failure stays recorded', () {
+  _isolatedTest('the status is recorded, and a failure stays recorded', () {
     _preserveProcessState();
     final first = Keybay.processHardening;
     expect(identical(Keybay.processHardening, first), isTrue);
@@ -162,7 +170,71 @@ void main() {
     final traced = linux(tracer: 4242);
     expect(worseHardening(null, applied), same(applied));
     expect(worseHardening(applied, traced), same(traced));
-    expect(worseHardening(traced, applied), same(traced));
+    final retained = worseHardening(traced, applied);
+    expect(retained.debuggerAttach, same(traced.debuggerAttach));
+    expect(retained.coreDumps, same(applied.coreDumps));
+  });
+
+  test('namespace failures never mask stronger later failures', () {
+    final namespace = linuxHardeningResult(
+      dumpable: 0,
+      initialUserNamespace: false,
+      tracer: 0,
+      ptraceScope: 1,
+    );
+    final laterFailures = [
+      linuxHardeningResult(
+        dumpable: 0,
+        initialUserNamespace: false,
+        tracer: 4242,
+        ptraceScope: 1,
+      ),
+      linuxHardeningResult(
+        dumpable: 0,
+        initialUserNamespace: false,
+        tracer: null,
+        ptraceScope: 1,
+      ),
+      linuxHardeningResult(
+        dumpable: 1,
+        initialUserNamespace: false,
+        tracer: 0,
+        ptraceScope: 1,
+      ),
+    ];
+    for (final later in laterFailures) {
+      final accumulated = worseHardening(namespace, later);
+      expect(accumulated.coreDumps.status, later.coreDumps.status);
+      expect(accumulated.debuggerAttach, same(later.debuggerAttach));
+      expect(accumulated.debuggerAttach.cause, isNot(C.userNamespace));
+      final afterNamespace = worseHardening(accumulated, namespace);
+      expect(afterNamespace.debuggerAttach, same(later.debuggerAttach));
+      expect(afterNamespace.coreDumps.status, later.coreDumps.status);
+    }
+  });
+
+  test('failure recording keeps each measure and confirmed causes', () {
+    KeybayProcessHardening linux({int? dumpable = 0, int? tracer = 0}) =>
+        linuxHardeningResult(
+          dumpable: dumpable,
+          initialUserNamespace: true,
+          tracer: tracer,
+          ptraceScope: 1,
+        );
+    final traced = linux(tracer: 4242);
+    final rejected = linux(dumpable: 1);
+    final unreadable = linux(dumpable: null);
+    for (final (first, next) in [(traced, rejected), (rejected, traced)]) {
+      final accumulated = worseHardening(first, next);
+      expect(accumulated.coreDumps.cause, C.settingRejected);
+      expect(accumulated.debuggerAttach.cause, C.traced);
+      final afterUncertainty = worseHardening(accumulated, unreadable);
+      expect(afterUncertainty.coreDumps.cause, C.settingRejected);
+      expect(afterUncertainty.debuggerAttach.cause, C.traced);
+      final recovered = worseHardening(afterUncertainty, linux());
+      expect(recovered.coreDumps.cause, C.settingRejected);
+      expect(recovered.debuggerAttach.cause, C.traced);
+    }
   });
 
   test('a Linux debug build reports both protections not attempted', () {
@@ -278,27 +350,29 @@ void main() {
     );
   });
 
-  test('a thread name that is not UTF-8 does not hide the tracer state', () {
-    // The kernel cuts Name at 15 bytes regardless of character boundaries.
-    final previous = calloc<Uint8>(16);
-    final name = calloc<Uint8>(16);
-    try {
-      expect(_prctl(_prGetName, previous.address, 0, 0, 0), 0);
-      name.asTypedList(16).setAll(0, Uint8List.fromList([0x6b, 0xe6, 0x97]));
-      expect(_prctl(_prSetName, name.address, 0, 0, 0), 0);
-      expect(linuxTracerPid(), 0);
-    } finally {
-      _prctl(_prSetName, previous.address, 0, 0, 0);
-      calloc
-        ..free(previous)
-        ..free(name);
-    }
-  }, testOn: 'linux');
+  _isolatedTest(
+    'a thread name that is not UTF-8 does not hide the tracer state',
+    () {
+      // The kernel cuts Name at 15 bytes regardless of character boundaries.
+      final previous = calloc<Uint8>(16);
+      final name = calloc<Uint8>(16);
+      try {
+        expect(_prctl(_prGetName, previous.address, 0, 0, 0), 0);
+        name.asTypedList(16).setAll(0, Uint8List.fromList([0x6b, 0xe6, 0x97]));
+        expect(_prctl(_prSetName, name.address, 0, 0, 0), 0);
+        expect(linuxTracerPid(), 0);
+      } finally {
+        _prctl(_prSetName, previous.address, 0, 0, 0);
+        calloc
+          ..free(previous)
+          ..free(name);
+      }
+    },
+    testOn: 'linux',
+  );
 }
 
-/// Restores this test runner's soft core limit and, on Linux, dumpability
-/// after the test, since other test files share the process. Returns the
-/// hard core limit.
+/// Restores the isolated child's original state after the check.
 int _preserveProcessState() {
   final (soft, hard) = _coreLimits();
   addTearDown(() => _setSoftCoreLimit(soft));
@@ -376,4 +450,50 @@ void _setSoftCoreLimit(int soft) {
   } finally {
     calloc.free(limit);
   }
+}
+
+/// A new OS process isolates process-wide limits and dumpability from suites
+/// running concurrently in the parent. An isolate would still share them.
+void _isolatedTest(
+  String name,
+  FutureOr<void> Function() body, {
+  String? testOn,
+}) {
+  test(
+    name,
+    () async {
+      if (Platform.environment['KEYBAY_HARDENING_CHILD'] == name) {
+        await body();
+        return;
+      }
+      final library = await Isolate.resolvePackageUri(
+        Uri.parse('package:keybay/src/process_hardening.dart'),
+      );
+      expect(library, isNotNull);
+      final packageRoot = File.fromUri(library!).parent.parent.parent;
+      final child = await Process.run(
+        Platform.resolvedExecutable,
+        [
+          'test',
+          'test/process_hardening_test.dart',
+          '--name',
+          '^${RegExp.escape(name)}\$',
+          '--reporter',
+          'json',
+        ],
+        workingDirectory: packageRoot.path,
+        environment: {'KEYBAY_HARDENING_CHILD': name},
+      );
+      expect(child.exitCode, 0, reason: '${child.stdout}\n${child.stderr}');
+      for (final line in const LineSplitter().convert(child.stdout as String)) {
+        if (!line.startsWith('{')) continue;
+        final event = jsonDecode(line);
+        if (event case {'type': 'testDone', 'skipped': true}) {
+          markTestSkipped('the isolated check was skipped: ${child.stdout}');
+        }
+      }
+    },
+    testOn: testOn,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
 }

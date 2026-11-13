@@ -505,6 +505,34 @@ The commit meets the five points: hardening is automatic, there is one opt-out, 
      smallest window another isolate could hit.
 8. **Doc comment — fixed.**
 
+## Independent follow-up — November 13, 2026
+
+A bounded review of the final `a8f331f` diff found two remaining issues:
+
+- **Failure accumulation.** Keeping the first failed snapshot hid later,
+  different failures. In particular, an application accepting only
+  `userNamespace` could miss an attached tracer or a rejected setting on a
+  later open. Recording now retains failures independently for core dumps and
+  debugger attach. Confirmed tracer and rejected-setting evidence takes
+  precedence over unreadable checks, which take precedence over the namespace
+  limitation; later recovery does not clear an observed failure. Other session
+  observations come from the latest application. Regressions cover both
+  transition orders, namespace-to-tracer/unreadable/core failures, and recovery.
+- **Process-state test isolation.** Teardown and adjacent set/read calls did
+  not prevent another suite from changing the shared process's limits in
+  between. SDK and CLI tests that mutate native process state now execute in
+  separate child processes. They retain their positive controls and propagate
+  skipped checks and failures. Fresh Dart isolates alone do not isolate native
+  process state.
+
+Focused validation on macOS arm64 with Dart 3.14.0: the SDK and CLI process
+hardening suites, run together with `v2_keybay_test.dart`, passed 41 tests.
+Scoped analysis and `git diff --check` passed. The temporary CMake wrapper
+selected the installed OpenSSL 3 libraries for the existing Keypass native hook;
+no system packages or tracked build settings changed. Linux native checks and
+fresh CI after the base refresh remain outstanding. An independent review of the stable source/test changes found no actionable
+issues; it did not repeat tests or Linux qualification.
+
 ## Not covered here
 
 - The package suites did not run on Linux locally, and nothing ran on Linux
@@ -513,5 +541,5 @@ The commit meets the five points: hardening is automatic, there is one opt-out, 
   TUI tester, not by a PTY run in a real X11 session.
 - No Flatpak, toolbox or Yama 1 host was used. The user-namespace case used
   `unshare` in Docker, with seccomp unconfined.
-- The follow-up changes after `b1b5b67` were not reviewed again, and neither
-  were the fixes after `658d9d8`'s re-check.
+- The historical review rounds ended before their final fixes. The November 13
+  follow-up above reviews that remaining scope and records the additional repairs.
