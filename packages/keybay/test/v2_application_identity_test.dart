@@ -376,16 +376,30 @@ void main() {
 
   group('dart install identity', () {
     for (final source in <String>['local', 'hosted', 'git']) {
-      test('resolves the retained pubspec from a $source app bundle', () {
-        final fixture = _DartInstallFixture.create(source: source);
-        addTearDown(fixture.dispose);
+      for (final separateAotImage in [false, true]) {
+        test(
+          'resolves a $source app bundle (separate AOT: $separateAotImage)',
+          () {
+            final fixture = _DartInstallFixture.create(
+              source: source,
+              separateAotImage: separateAotImage,
+            );
+            addTearDown(fixture.dispose);
 
-        final identity = fixture.resolver().resolve();
+            final identity = fixture.resolver().resolve();
 
-        expect(identity.stableValue, 'dev.installed');
-        expect(identity.source, ApplicationIdentitySource.dartInstallPubspec);
-        expect(identity.assurance, ApplicationIdentityAssurance.namespaceOnly);
-      });
+            expect(identity.stableValue, 'dev.installed');
+            expect(
+              identity.source,
+              ApplicationIdentitySource.dartInstallPubspec,
+            );
+            expect(
+              identity.assurance,
+              ApplicationIdentityAssurance.namespaceOnly,
+            );
+          },
+        );
+      }
     }
 
     test('requires embedded and installed declarations to agree', () {
@@ -443,6 +457,63 @@ void main() {
       expect(
         fixture.resolver().resolve,
         throwsA(_failure(ApplicationIdentityFailureCode.unavailable)),
+      );
+    });
+
+    test('separate installed AOT image requires its own bundle runtime', () {
+      final fixture = _DartInstallFixture.create(
+        source: 'local',
+        separateAotImage: true,
+      );
+      final other = _DartInstallFixture.create(source: 'local');
+      addTearDown(fixture.dispose);
+      addTearDown(other.dispose);
+
+      expect(
+        DartApplicationIdentityResolver(
+          DartRuntimeIdentityInputs(
+            script: fixture.image.uri,
+            packageConfig: null,
+            resolvedExecutable: other.executable.uri,
+            embeddedApplicationId: '',
+          ),
+        ).resolve,
+        throwsA(_failure(ApplicationIdentityFailureCode.unavailable)),
+      );
+      final unrelatedImage = fixture.image.renameSync(
+        '${fixture.image.parent.path}/unrelated.so',
+      );
+      expect(
+        DartApplicationIdentityResolver(
+          DartRuntimeIdentityInputs(
+            script: unrelatedImage.uri,
+            packageConfig: null,
+            resolvedExecutable: fixture.executable.uri,
+            embeddedApplicationId: '',
+          ),
+        ).resolve,
+        throwsA(_failure(ApplicationIdentityFailureCode.unavailable)),
+      );
+    });
+
+    test('separate installed AOT retains declaration and metadata checks', () {
+      final fixture = _DartInstallFixture.create(
+        source: 'local',
+        separateAotImage: true,
+      );
+      addTearDown(fixture.dispose);
+      expect(
+        fixture.resolver(embeddedApplicationId: 'dev.other').resolve,
+        throwsA(
+          _failure(ApplicationIdentityFailureCode.conflictingDeclarations),
+        ),
+      );
+      File(
+        '${fixture.image.parent.parent.parent.path}/pubspec.lock',
+      ).deleteSync();
+      expect(
+        fixture.resolver(embeddedApplicationId: 'dev.installed').resolve,
+        throwsA(_failure(ApplicationIdentityFailureCode.metadataUnreadable)),
       );
     });
   });
@@ -707,11 +778,16 @@ final class _ActivationFixture {
 }
 
 final class _DartInstallFixture {
-  _DartInstallFixture._({required this.root, required this.executable});
+  _DartInstallFixture._({
+    required this.root,
+    required this.executable,
+    required this.image,
+  });
 
   factory _DartInstallFixture.create({
     required String source,
     bool includeLock = true,
+    bool separateAotImage = false,
     String installDirectoryName = 'install',
     String appBundlesDirectoryName = 'app-bundles',
   }) {
@@ -735,6 +811,11 @@ final class _DartInstallFixture {
       '${bin.path}${Platform.pathSeparator}example'
       '${Platform.isWindows ? '.exe' : ''}',
     )..writeAsBytesSync(const <int>[]);
+    final image = separateAotImage
+        ? (File('${appBundle.path}/bundle/lib/libdartaotexample.so')
+            ..parent.createSync(recursive: true)
+            ..writeAsBytesSync([0x7f, 0x45, 0x4c, 0x46]))
+        : executable;
     File(
       '${appBundle.path}${Platform.pathSeparator}pubspec.yaml',
     ).writeAsStringSync(
@@ -745,17 +826,22 @@ final class _DartInstallFixture {
         '${appBundle.path}${Platform.pathSeparator}pubspec.lock',
       ).writeAsStringSync('packages: {}\n');
     }
-    return _DartInstallFixture._(root: root, executable: executable);
+    return _DartInstallFixture._(
+      root: root,
+      executable: executable,
+      image: image,
+    );
   }
 
   final Directory root;
   final File executable;
+  final File image;
 
   DartApplicationIdentityResolver resolver({
     String embeddedApplicationId = '',
   }) => DartApplicationIdentityResolver(
     DartRuntimeIdentityInputs(
-      script: executable.uri,
+      script: image.uri,
       packageConfig: null,
       resolvedExecutable: executable.uri,
       embeddedApplicationId: embeddedApplicationId,

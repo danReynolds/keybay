@@ -6,7 +6,7 @@ plugins {
 
 dependencies {
     constraints {
-        implementation("com.google.guava:guava:33.7.1-android") {
+        implementation("com.google.guava:guava:33.7.2-android") {
             because("Flutter integration_test otherwise resolves vulnerable Guava 28.1")
         }
         implementation("junit:junit:4.13.2") {

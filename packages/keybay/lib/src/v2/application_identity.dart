@@ -199,12 +199,28 @@ final class DartApplicationIdentityResolver {
     }
   }
 
-  _LocalDeclaration? _resolveDartInstallDeclaration(File executable) {
+  _LocalDeclaration? _resolveDartInstallDeclaration(File image) {
     try {
-      final binDirectory = executable.parent;
-      if (_basename(binDirectory) != 'bin') return null;
-      final bundleDirectory = binDirectory.parent;
+      final imageDirectory = image.parent;
+      final bundleDirectory = imageDirectory.parent;
       if (_basename(bundleDirectory) != 'bundle') return null;
+      if (_basename(imageDirectory) == 'lib') {
+        // Linux dart install uses a CLI runtime in bundle/bin and an ELF AOT
+        // image in bundle/lib. Platform.script names that image. Both process
+        // facts must point into the same canonical bundle; a nearby pubspec or
+        // an unrelated runtime cannot establish this image's installed owner.
+        final imageName = image.uri.pathSegments.last;
+        if (!RegExp(r'^libdartaot.+\.so$').hasMatch(imageName)) return null;
+        final runtime = File(
+          File.fromUri(_inputs.resolvedExecutable).resolveSymbolicLinksSync(),
+        );
+        if (_basename(runtime.parent) != 'bin' ||
+            runtime.parent.parent.path != bundleDirectory.path) {
+          return null;
+        }
+      } else if (_basename(imageDirectory) != 'bin') {
+        return null;
+      }
       final appBundleDirectory = bundleDirectory.parent;
       if (!_hasDartInstallBundleShape(appBundleDirectory)) return null;
 

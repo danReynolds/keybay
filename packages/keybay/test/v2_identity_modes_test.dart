@@ -1,6 +1,7 @@
 @Tags(['unit'])
 library;
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -162,12 +163,17 @@ keybay:
           '${executableDirectory.path}${Platform.pathSeparator}probe.dart',
         ).writeAsStringSync('''
 import 'dart:io';
+import 'dart:convert';
 import 'package:keybay_v2_activation_fixture/src/v2/application_identity.dart';
 
 Future<void> main() async {
-  final identity =
-      await DartApplicationIdentityResolver.resolveCurrentProcess();
-  stdout.write('\${identity.stableValue}|\${identity.source.name}');
+  final inputs = await DartRuntimeIdentityInputs.currentProcess();
+  final identity = DartApplicationIdentityResolver(inputs).resolve();
+  stdout.write(jsonEncode({
+    'value': identity.stableValue,
+    'source': identity.source.name,
+    'script': inputs.script.toString(),
+  }));
 }
 ''');
         final cache = Directory(
@@ -201,10 +207,31 @@ Future<void> main() async {
           workingDirectory: Directory.systemTemp.path,
         );
         expect(activated.exitCode, 0, reason: '${activated.stderr}');
-        expect(
-          '${activated.stdout}',
-          endsWith('dev.example.activated-fixture|activatedPubspec'),
-        );
+        final result =
+            jsonDecode('${activated.stdout}'.trim().split('\n').last)
+                as Map<String, dynamic>;
+        expect(result['value'], 'dev.example.activated-fixture');
+        final script = File.fromUri(
+          Uri.parse(result['script'] as String),
+        ).resolveSymbolicLinksSync();
+        final sourceScript = File(
+          '${executableDirectory.path}/probe.dart',
+        ).resolveSymbolicLinksSync();
+        // Pub used cached snapshots before Dart 3.14. Newer SDKs can execute
+        // the original source instead, with the same process evidence as a
+        // direct source launch. Assert the evidence actually used, while both
+        // modes must retain the member's declaration over the workspace decoy.
+        if (script == sourceScript) {
+          expect(result['source'], 'sourcePubspec');
+        } else {
+          final snapshotRoot = Directory(
+            '${workspace ? fixture.path : application.path}'
+            '/.dart_tool/pub/bin/keybay_v2_activation_fixture',
+          ).resolveSymbolicLinksSync();
+          expect(script, startsWith('$snapshotRoot${Platform.pathSeparator}'));
+          expect(script, endsWith('.snapshot'));
+          expect(result['source'], 'activatedPubspec');
+        }
       },
       timeout: const Timeout(Duration(minutes: 2)),
     );
