@@ -540,6 +540,15 @@ coverage, and the provider gate remain unchanged: a selected macOS provider must
 succeed, so a timeout cannot satisfy the gate. These bounds are not qualification
 of the affected CI run.
 
+The combined follow-up at `02ae9d71283e4ae96f8237d5293f75e94e22495c` passed
+repository analysis and the full local core runners on macOS arm64/Dart 3.14.0:
+626 SDK tests (3 existing skips); 284 CLI unit tests; 39 TUI, 19 simulated
+hardware TUI, 13 simulated hardware command and 22 hidden-input cases. AOT,
+exec, private clipboard, signing verification, native bundle and relocation
+checks also passed. These clean-source results include the dependency/identity
+remediation, Actions refresh and installer changes. They do not replace fresh
+Linux/x64/provider CI or physical-device qualification.
+
 ## Not covered here
 
 - The package suites did not run on Linux locally, and nothing ran on Linux
