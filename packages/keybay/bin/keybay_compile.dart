@@ -6,9 +6,19 @@ import 'package:keybay/src/v2/application_identity.dart';
 const int _usageExitCode = 64;
 
 Future<void> main(List<String> arguments) async {
-  final separateModule =
-      arguments.isNotEmpty && arguments.first == '--aot-snapshot';
-  if (separateModule) arguments = arguments.sublist(1);
+  var separateModule = false;
+  var processHardening = true;
+  while (arguments.isNotEmpty && arguments.first.startsWith('--')) {
+    if (arguments.first == '--aot-snapshot' && !separateModule) {
+      separateModule = true;
+    } else if (arguments.first == '--no-process-hardening' &&
+        processHardening) {
+      processHardening = false;
+    } else {
+      break;
+    }
+    arguments = arguments.sublist(1);
+  }
   if (arguments.length != 3 ||
       (arguments[1] != '-o' && arguments[1] != '--output') ||
       arguments[0].isEmpty ||
@@ -51,6 +61,10 @@ Future<void> main(List<String> arguments) async {
           'kernel',
           '-Dkeybay.application_id=${identity.stableValue}',
           '-Dkeypass.hardware.manual_bundle=true',
+          // The output is a product AOT build. Say so here, so Keybay's
+          // release detection never depends on when constants are folded.
+          '-Ddart.vm.product=true',
+          if (!processHardening) '-Dkeybay.process_hardening=false',
           if (packageConfig != null)
             '--packages=${File.fromUri(packageConfig).path}',
           '-o',
@@ -98,6 +112,11 @@ Future<void> main(List<String> arguments) async {
 
 void _printUsage() {
   stderr.writeln(
-    'Usage: dart run keybay:keybay_compile [--aot-snapshot] <entrypoint.dart> -o <output>',
+    'Usage: dart run keybay:keybay_compile [--aot-snapshot] '
+    '[--no-process-hardening] <entrypoint.dart> -o <output>',
+  );
+  stderr.writeln(
+    '--no-process-hardening builds with keybay.process_hardening=false, which '
+    'weakens protection: see doc/sdk.md#process-hardening.',
   );
 }

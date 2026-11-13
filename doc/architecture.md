@@ -199,6 +199,7 @@ platform boundaries
   Apple Security/CoreFoundation FFI
   Android Keystore through the existing JNI FFI boundary
   Linux Secret Service and XDG Secret Portal through typed D-Bus
+  process hardening (setrlimit, Linux prctl) at open
 ```
 
 The engine acquires platform protection through `HostPlatform` and passkey

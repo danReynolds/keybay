@@ -42,6 +42,18 @@ enum TuiView {
 
 enum _RecordAction { reveal, edit, copy }
 
+/// The Security settings' one-line summary of the SDK's process hardening.
+/// The model stays free of the SDK so the browser demo can share it.
+final class TuiHardeningStatus {
+  const TuiHardeningStatus(this.label, {required this.complete});
+
+  /// "On", "Partial", "Debug" or "Off".
+  final String label;
+
+  /// False when something Keybay hardens is not in effect here.
+  final bool complete;
+}
+
 enum HardwarePhase { checking, connecting, verifying }
 
 const resetConfirmation = 'RESET';
@@ -75,6 +87,7 @@ final class TuiModel extends Notifier {
     this.hardwareConnected,
     this.hardwarePollInterval = const Duration(milliseconds: 500),
     this.hardwareConnectionTimeout = const Duration(minutes: 2),
+    this.processHardening,
   }) : _appearance = appearance;
 
   TuiAppearance _appearance;
@@ -114,6 +127,10 @@ final class TuiModel extends Notifier {
   final Future<bool> Function(TuiCancellation)? hardwareConnected;
   final Duration hardwarePollInterval;
   final Duration hardwareConnectionTimeout;
+
+  /// What the SDK's process hardening applied, for the Security settings.
+  /// Null in hosts that do not report it, such as the site demo.
+  final TuiHardeningStatus? processHardening;
   String? _preferredMethodId;
   List<TuiAuthMethod> methods = const [];
   List<TuiAuthMethod> unlockMethods = const [];

@@ -85,6 +85,38 @@ enrolled, any one of them opens the vault.
 | Hardware passkey | The key, plus its PIN or touch | On Linux, a program running as you can ask your key directly and needs only your touch and PIN. On a key with a fingerprint sensor, your fingerprint replaces the PIN. |
 | System passkey | Your OS passkey provider and its verification | Needs a supported app host and domain association. A synced passkey follows your platform account but never replaces the device's platform root. |
 
+## While an application runs
+
+An open vault's key, and any value the application has read, are in its memory.
+Keybay hardens every application process at its first open, including the
+Keybay CLI on every command, which limits which programs running as you can read
+that memory:
+
+| Platform | Crash core files | Debuggers and memory reads by programs running as you |
+| --- | --- | --- |
+| Linux | Never written | Refused, including `/proc/<pid>/mem`, except inside Flatpak or another user namespace |
+| macOS | Not written | Decided by the code signature: a notarized build refuses them |
+| iOS, Android | Governed by the operating system | Governed by the operating system |
+
+This holds for release and profile builds. Debug builds, such as `dart run` or
+`flutter run`, leave Linux processes dumpable so developers can attach a
+debugger. An application can also turn hardening off in its build, which removes
+these protections; it can report what applied through `Keybay.processHardening`.
+Hardening does not help against:
+
+- root or the kernel;
+- code injected when the application starts: by whatever launches it, by shell
+  startup files, or by replacing an application installed in your own files;
+- programs you run outside a user namespace the application runs in, such as
+  a Flatpak app or one in toolbox, distrobox or a rootless container. You own
+  that namespace, so your programs outside it can still attach; the status
+  reports this as a failure;
+- anything that attached before hardening. On Linux, Yama `ptrace_scope` 1 or
+  higher narrows that to, at most, the programs that started the application;
+  the status reports the scope;
+- keystrokes read under X11, where any program in the session can read what you
+  type into another, including a passphrase or a security key's PIN.
+
 ## Never protected
 
 On every platform, with or without a method:

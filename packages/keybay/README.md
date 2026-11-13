@@ -36,6 +36,15 @@ operations and `auth.list()` never prompt; opening, changing authentication and
 resetting may invoke provider UI. Binary access uses `getBytes`, `setBytes` and
 `getManyBytes`; `listKeys` returns names without decrypting values.
 
+Keybay hardens the process automatically at the first `open()`. In release and
+profile builds, core files are off and, on Linux, the process is non-dumpable,
+so other programs running as the user cannot attach a debugger or read
+`/proc/<pid>/mem`. Debug builds keep debuggers working.
+`Keybay.processHardening` reports what applied, including a failure such as
+running inside Flatpak or another user namespace. A build can opt out with
+`--dart-define=keybay.process_hardening=false`, which weakens protection. See
+[process hardening](https://github.com/danReynolds/keybay/blob/main/doc/sdk.md#process-hardening).
+
 `clearAll` keeps protection while removing records. `Keybay.reset()` deletes
 the current store and deletable provider state. Never reset automatically on
 an unlock or state-conflict error; see [recovery](https://github.com/danReynolds/keybay/blob/main/doc/sdk.md#errors-and-limits).

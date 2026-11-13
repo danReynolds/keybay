@@ -18,7 +18,18 @@ if [[ "$(uname -s)" == Darwin ]]; then
   # Homebrew's libfido2 brings the OpenSSL it links; Keypass bundles that one.
   # Refresh first so a runner's cached metadata does not pick an older build.
   brew update --quiet
-  brew install cmake pkg-config libfido2
+  # Runner images already provide these build tools. Naming an installed tool
+  # in `brew install` requests an upgrade and can trigger a lengthy source
+  # build on Intel. Reuse CMake >= 3.22 (Keypass source-hook minimum) and
+  # available pkg-config. Full libfido2 dependency resolution can still upgrade
+  # tools Homebrew considers incompatible.
+  cmake_version="$(cmake --version 2>/dev/null)" || cmake_version=''
+  if [[ ! "$cmake_version" =~ ^cmake\ version\ ([0-9]+)\.([0-9]+) ]] ||
+      (( BASH_REMATCH[1] < 3 || (BASH_REMATCH[1] == 3 && BASH_REMATCH[2] < 22) )); then
+    brew install cmake
+  fi
+  if ! command -v pkg-config > /dev/null 2>&1; then brew install pkg-config; fi
+  brew install libfido2
   otool -L "$(brew --prefix libfido2)/lib/libfido2.1.dylib" | grep libcrypto
   exit
 fi

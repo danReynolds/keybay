@@ -83,3 +83,28 @@ are authorized by this plan.
 - Apple qualification remains blocked on an explicitly selected patched
   physical host. Existing receipts are not broadened. The maintained-patched-OS
   policy is already present in SECURITY.md.
+- PR #126 merged as `1f22a4c1fc74702cea0490fbb65d5e9ace6530b1`, with a tree
+  identical to reviewed head `fc9e59b7d224c1cce201c9b74b7fa8b7e7a0958d`.
+  Required CI and the supply-chain gate passed. The initial Flatpak prompt
+  timeout and Intel core stall did not reproduce on one unchanged-head retry;
+  the stalled Intel run was cancelled after 30 minutes in core and had no
+  downloadable job log. Their causes remain unresolved, not attributed to a
+  proven code defect. CI run: 43449453052 (attempt 2); supply-chain: 43449452959.
+  Linux installed identity and Intel native/CLI checks passed in hosted CI.
+- #120 and #75 are closed with their acceptance criteria satisfied; the visible,
+  unreachable OpenPGP warning remains. Dependency PRs #122–125 were closed as
+  superseded by #126. Android #117 and Apple #76 remain open for the explicitly
+  scoped qualification/assurance work above.
+- November 2 and November 9 assessments reached main through verified,
+  report-only PRs #121 and #127, oldest first, with green applicable checks.
+  Both immutable raw blobs were preserved. The read-only watcher health check
+  is healthy after `8882df82e447f95af61ab763901ac8fc4888c0c5`; the serialized
+  health workflow owns reconciliation of #82.
+- The PR #116 follow-up independently reviewed the final process-hardening
+  changes and repaired failure accumulation and shared native-process test
+  state. It includes the reviewed Actions updates from #119, reuse of supported
+  preinstalled macOS build tools, and bounded macOS CI execution. The combined
+  source passed repository analysis, 626 SDK tests (3 skips), 284 CLI unit
+  tests, interaction suites, and AOT/native-bundle checks locally. Fresh
+  hosted CI remains a required merge gate. See the November 13 follow-up in
+  `2026-10-19-sdk-process-hardening.md` for detailed evidence and limits.

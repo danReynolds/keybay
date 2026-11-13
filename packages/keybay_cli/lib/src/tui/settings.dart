@@ -352,7 +352,17 @@ final class _SettingsScreenState extends State<SettingsScreen> {
               'Idle exit: ${_idleExitLabel(model.idleTimeout)}',
               style: context.theme.mutedStyle,
             ),
-            const SizedBox(height: 1),
+            if (model.processHardening case final hardening?)
+              Text(
+                'Hardening: ${hardening.label}',
+                style: hardening.complete
+                    ? context.theme.mutedStyle
+                    : context.accents.attention,
+              ),
+            // The narrowest panel spends its spacer on the hardening line, so
+            // a passkey-only store's full description still fits.
+            if (!narrow || model.processHardening == null)
+              const SizedBox(height: 1),
           ],
           SizedBox(
             // A stable key keeps the shared focus node attached as the

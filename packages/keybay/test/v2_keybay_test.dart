@@ -6,6 +6,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:keybay/keybay.dart';
+import 'package:keybay/src/process_hardening.dart'
+    show setSoftCoreLimit, softCoreLimit;
 import 'package:keybay/src/v2/format/store_format.dart' show V2StoreLimits;
 import 'package:keybay/src/v2/host_platform.dart';
 import 'package:keybay/src/v2/keybay_v2.dart' show V2StoreEngine;
@@ -57,6 +59,11 @@ void main() {
         final expected = Platform.isMacOS || Platform.isLinux
             ? KeybayErrorCode.applicationIdentityUnavailable
             : KeybayErrorCode.platformProtectorUnavailable;
+        // Opening hardens this shared test process; put its limit back.
+        final soft = softCoreLimit;
+        addTearDown(() {
+          if (soft != null) setSoftCoreLimit(soft);
+        });
         late Future<KeybaySession> opening;
         expect(() => opening = Keybay.open(), returnsNormally);
         await expectLater(opening, throwsA(_failure(expected)));

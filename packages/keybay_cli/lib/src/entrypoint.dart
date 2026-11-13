@@ -23,9 +23,12 @@ Future<int> runKeybay(
   Duration idleWarning = tuiIdleWarning,
   UnlockPreference? unlockPreference,
   Future<bool> Function(TuiCancellation)? hardwareConnected,
+  KeybayProcessHardening Function() hardenProcess = ProcessHardening.apply,
 }) async {
-  if (!ProcessHardening.apply()) {
-    stderr.writeln('error: could not disable core dumps for this process.');
+  final hardening = hardenProcess();
+  final refusal = ProcessHardening.refusal(hardening);
+  if (refusal != null) {
+    stderr.writeln(refusal);
     return exitFailure;
   }
   final lifetime = CommandLifetime();
@@ -40,6 +43,7 @@ Future<int> runKeybay(
         idleWarning: idleWarning,
         unlockPreference: unlockPreference,
         hardwareConnected: hardwareConnected,
+        processHardening: hardening,
       );
     }
     lifetime.start();

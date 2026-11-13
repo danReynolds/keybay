@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- Harden the process automatically at every `open()`, before any secret loads.
+  In release and profile builds on Linux the process becomes non-dumpable, which
+  stops core files and refuses same-user debuggers and `/proc/<pid>/mem` reads;
+  macOS and Linux set the soft core-file limit to 0. Debug builds keep debuggers
+  working. iOS and Android are unchanged.
+- Add `Keybay.processHardening`, a status of what applied: each protection is
+  applied, failed or not attempted, with a detail and, when failed, a cause.
+  Reading it applies hardening early. A failure is reported, never fatal, and
+  never replaced by a weaker policy. On Linux the debugger protection fails
+  when a tracer is already attached to any thread, and in a user namespace
+  such as Flatpak's. The status also reports the Linux Yama ptrace scope.
+- A build can opt out with `--dart-define=keybay.process_hardening=false`,
+  which removes these protections.
+
 ## 0.3.2
 
 - Depend on Keypass 0.1.0-dev.3, which builds desktop hardware support against
