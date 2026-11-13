@@ -73,6 +73,30 @@ abstract interface class AndroidKeystoreAead {
   Future<void> delete(String alias);
 }
 
+/// The synchronous create-only guard shared by JNI and provider contract tests.
+///
+/// [hasKey] must use `KeyStore.getKey`, not `containsAlias`: Android 12+
+/// propagates metadata lookup failures from getKey for the AES root, whereas
+/// containsAlias can hide them as false. A null key can also mean a certificate
+/// entry, so a positive [containsAlias] result rejects that observable conflict.
+/// Neither the public API nor this guard proves universal alias absence when a
+/// certificate lookup is itself unavailable. Callers hold the profile store
+/// lock; this is not an atomic Keystore compare-and-create operation.
+bool createAndroidKeystoreKeyUnderExclusiveLock({
+  required bool Function() hasKey,
+  required bool Function() containsAlias,
+  required void Function() generateAndVerify,
+}) {
+  if (hasKey()) return false;
+  if (containsAlias()) {
+    throw const PlatformProtectorFailure(
+      PlatformProtectorFailureCode.stateConflict,
+    );
+  }
+  generateAndVerify();
+  return true;
+}
+
 /// Android's V2 platform protector.
 ///
 /// The application root remains non-exportable in Android Keystore. Provider
@@ -390,16 +414,23 @@ final class JniAndroidKeystoreAead implements AndroidKeystoreAead {
   Future<bool> createUnderExclusiveLock(String alias) async =>
       Jni.instance().withFrame((f) {
         final keystore = _loadKeystore(f);
-        if (_contains(f, keystore, alias)) return false;
-        _generate(f, alias);
-        final reloaded = _loadKeystore(f);
-        if (!_contains(f, reloaded, alias) ||
-            _key(f, reloaded, alias) == nullptr) {
-          throw const PlatformProtectorFailure(
-            PlatformProtectorFailureCode.operationFailed,
-          );
-        }
-        return true;
+        return createAndroidKeystoreKeyUnderExclusiveLock(
+          // AOSP AndroidKeyStoreProvider maps KEY_NOT_FOUND to null and
+          // propagates other key metadata failures through getKey. It also
+          // returns null for pure certificate entries; this is intentionally
+          // an AES-root-specific check, not a raw KEY_NOT_FOUND result.
+          hasKey: () => _key(f, keystore, alias) != nullptr,
+          containsAlias: () => _contains(f, keystore, alias),
+          generateAndVerify: () {
+            _generate(f, alias);
+            final reloaded = _loadKeystore(f);
+            if (_key(f, reloaded, alias) == nullptr) {
+              throw const PlatformProtectorFailure(
+                PlatformProtectorFailureCode.operationFailed,
+              );
+            }
+          },
+        );
       }, capacity: 256);
 
   @override
