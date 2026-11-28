@@ -116,6 +116,9 @@ final class _RecordedSession implements KeybaySession {
   @override
   Future<void> clearAll() => inner.clearAll();
   @override
+  Future<void> setDeviceAccess(KeybayDeviceAccess deviceAccess) =>
+      inner.setDeviceAccess(deviceAccess);
+  @override
   Future<void> close() => inner.close();
 }
 

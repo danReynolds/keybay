@@ -481,19 +481,41 @@ Matcher _platformFailure(PlatformProtectorFailureCode code) =>
 
 final class _MemoryRootStore implements DataProtectionKeychainRootStore {
   final Map<String, Uint8List> _items = <String, Uint8List>{};
+  final Map<String, KeybayDeviceAccess> _access =
+      <String, KeybayDeviceAccess>{};
 
   int get itemCount => _items.length;
 
   @override
-  Future<bool> createIfAbsent(String providerAddress, Uint8List value) async {
+  Future<bool> createIfAbsent(
+    String providerAddress,
+    Uint8List value, {
+    KeybayDeviceAccess deviceAccess = KeybayDeviceAccess.whenUnlocked,
+  }) async {
     if (_items.containsKey(providerAddress)) return false;
     _items[providerAddress] = Uint8List.fromList(value);
+    _access[providerAddress] = deviceAccess;
+    return true;
+  }
+
+  @override
+  Future<KeybayDeviceAccess?> readDeviceAccess(String providerAddress) async =>
+      _access[providerAddress];
+
+  @override
+  Future<bool> updateDeviceAccess(
+    String providerAddress,
+    KeybayDeviceAccess deviceAccess,
+  ) async {
+    if (!_items.containsKey(providerAddress)) return false;
+    _access[providerAddress] = deviceAccess;
     return true;
   }
 
   @override
   Future<void> delete(String providerAddress) async {
     final removed = _items.remove(providerAddress);
+    _access.remove(providerAddress);
     removed?.fillRange(0, removed.length, 0);
   }
 

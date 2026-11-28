@@ -324,7 +324,14 @@ jobs:
           target: default
           disable-animations: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics
-          script: ./tool/test_e2e.sh android
+          # Keybay defaults to KeybayDeviceAccess.whenUnlocked
+          # (setUnlockedDeviceRequired(true)), which on Android 12–14 requires
+          # a configured lock screen credential (LSKF) in Keystore2.
+          script: |
+            adb shell locksettings set-pin 1234
+            adb shell locksettings verify --old 1234
+            adb shell wm dismiss-keyguard
+            ./tool/test_e2e.sh android
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

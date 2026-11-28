@@ -146,6 +146,93 @@ void main() {
     }
     await checkConcurrentMobileUpdates();
   });
+
+  testWidgets(
+    'iOS V2 deviceAccess defaults, opt-in init, and in-place SecItemUpdate',
+    (_) async {
+      if (!Platform.isIOS) {
+        markTestSkipped('iOS-only');
+        return;
+      }
+
+      final api = AppleHostApi.ios();
+      final applicationIdentifier = api.infoString(
+        iosApplicationIdentifierInfoKey,
+      );
+      final resolved = await IOSHostPlatform().resolve();
+      final address = resolved.binding.providerAddress;
+      final roots = AppleDataProtectionKeychainRootStore(
+        exactApplicationIdentifierAccessGroup: applicationIdentifier,
+      );
+
+      await Keybay.reset();
+      KeybaySession? session;
+      try {
+        // 1. Default open initializes with strict whenUnlocked.
+        session = await Keybay.open();
+        expect(session.wasInitialized, isTrue);
+        expect(
+          await roots.readDeviceAccess(address),
+          KeybayDeviceAccess.whenUnlocked,
+        );
+        await session.set('bg/marker', 'ios-real-keychain');
+        final rootBefore = await roots.read(address);
+        expect(rootBefore, isNotNull);
+        await session.close();
+        session = null;
+
+        // 2. Opening existing store with relaxed options never silently downgrades.
+        session = await Keybay.open(
+          options: const KeybayOptions(
+            deviceAccess: KeybayDeviceAccess.afterFirstUnlock,
+          ),
+        );
+        expect(session.wasInitialized, isFalse);
+        expect(
+          await roots.readDeviceAccess(address),
+          KeybayDeviceAccess.whenUnlocked,
+        );
+
+        // 3. Explicit setDeviceAccess updates kSecAttrAccessible in place via SecItemUpdate.
+        await session.setDeviceAccess(KeybayDeviceAccess.afterFirstUnlock);
+        expect(
+          await roots.readDeviceAccess(address),
+          KeybayDeviceAccess.afterFirstUnlock,
+        );
+        expect(await roots.read(address), rootBefore);
+        expect(await session.get('bg/marker'), 'ios-real-keychain');
+
+        // 4. Tightening back to whenUnlocked works in place too.
+        await session.setDeviceAccess(KeybayDeviceAccess.whenUnlocked);
+        expect(
+          await roots.readDeviceAccess(address),
+          KeybayDeviceAccess.whenUnlocked,
+        );
+        expect(await roots.read(address), rootBefore);
+        await session.close();
+        session = null;
+
+        // 5. Fresh initialization with explicit afterFirstUnlock option.
+        await Keybay.reset();
+        session = await Keybay.open(
+          options: const KeybayOptions(
+            deviceAccess: KeybayDeviceAccess.afterFirstUnlock,
+          ),
+        );
+        expect(session.wasInitialized, isTrue);
+        expect(
+          await roots.readDeviceAccess(address),
+          KeybayDeviceAccess.afterFirstUnlock,
+        );
+        await session.set('bg/marker', 'born-after-first-unlock');
+        expect(await session.get('bg/marker'), 'born-after-first-unlock');
+      } finally {
+        await session?.close();
+        await Keybay.reset();
+      }
+      expect(await roots.exists(address), isFalse);
+    },
+  );
 }
 
 Matcher _failure(KeybayErrorCode code) =>

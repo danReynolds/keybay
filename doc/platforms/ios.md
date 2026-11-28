@@ -47,9 +47,15 @@ on update while preserving Library data. Foundation still supplies the current
 physical root, and the usual canonical-path and private-file checks apply.
 See [Apple's update guidance](https://developer.apple.com/library/archive/technotes/tn2285/_index.html).
 
-The root item is non-synchronizing and
+The root item is non-synchronizing and defaults to
 `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. A peer application outside the
-signed group cannot read it.
+signed group cannot read it. Applications that run locked-screen background
+tasks (such as `BGAppRefreshTask`) may explicitly opt into
+`KeybayDeviceAccess.afterFirstUnlock`
+(`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`) via `KeybayOptions` on
+initialization or `session.setDeviceAccess(...)` on an open session; the item
+remains device-only, non-synchronizing, and unreadable before first unlock
+after reboot.
 
 ## Limitations
 
@@ -58,8 +64,10 @@ same-team app into an access group, so the exact claim is signed-group
 isolation—not absolute privacy and not Secure Enclave backing.
 See [Apple's access-group model](https://developer.apple.com/documentation/security/sharing-access-to-keychain-items-among-a-collection-of-apps).
 
-With no additional method, an app can open after the device is currently
-unlocked and the Keychain permits access. With additional methods configured,
+With no additional method, an app can open while the device is unlocked under
+the default `KeybayDeviceAccess.whenUnlocked` policy (or after first unlock
+since reboot when opted into `KeybayDeviceAccess.afterFirstUnlock`) and the
+Keychain permits access. With additional methods configured,
 the Data Protection Keychain root and any one enrolled passphrase/passkey are
 necessary to recover the store key. The platform root itself has no additional per-operation biometric
 requirement. An enrolled passkey separately requires verification through

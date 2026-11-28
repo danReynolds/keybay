@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'apple_data_protection_keychain_root_store.dart';
 import 'apple_keychain_protector_boundary.dart';
+import 'device_access.dart';
 import 'entropy_source.dart';
 import 'exportable_root_protector_core.dart';
 import 'host_binding.dart';
@@ -60,6 +61,7 @@ final class AppleDataProtectionKeychainProtector implements PlatformProtector {
   @override
   Future<PlatformRootCreation> createOnly({
     required PlatformInteraction interaction,
+    KeybayDeviceAccess deviceAccess = KeybayDeviceAccess.whenUnlocked,
   }) => atAppleKeychainProtectorBoundary(() async {
     Uint8List? candidateRoot;
     Uint8List? candidateRecord;
@@ -67,7 +69,11 @@ final class AppleDataProtectionKeychainProtector implements PlatformProtector {
     try {
       candidateRoot = _core.randomRoot();
       candidateRecord = _core.encodeRecord(candidateRoot);
-      final inserted = await _roots.createIfAbsent(_account, candidateRecord);
+      final inserted = await _roots.createIfAbsent(
+        _account,
+        candidateRecord,
+        deviceAccess: deviceAccess,
+      );
 
       // Do not trust add alone. Read the exact item back and either verify
       // our bytes or adopt the already-present same-domain root.
@@ -77,6 +83,14 @@ final class AppleDataProtectionKeychainProtector implements PlatformProtector {
         throw const PlatformProtectorFailure(
           PlatformProtectorFailureCode.stateConflict,
         );
+      }
+      if (inserted) {
+        final actualAccess = await _roots.readDeviceAccess(_account);
+        if (actualAccess != deviceAccess) {
+          throw const PlatformProtectorFailure(
+            PlatformProtectorFailureCode.operationFailed,
+          );
+        }
       }
       return _core.creationFromRecord(
         winnerRecord,
@@ -89,6 +103,55 @@ final class AppleDataProtectionKeychainProtector implements PlatformProtector {
       if (candidateRecord != null) _core.clear(candidateRecord);
       if (winnerRecord != null) _core.clear(winnerRecord);
     }
+  });
+
+  @override
+  Future<PreparedPlatformDeviceAccessChange?> prepareDeviceAccessChange(
+    ProviderState state, {
+    required KeybayDeviceAccess deviceAccess,
+    required PlatformInteraction interaction,
+  }) => atAppleKeychainProtectorBoundary(() async {
+    await _verifyExistingState(state);
+    final current = await _roots.readDeviceAccess(_account);
+    if (current == deviceAccess) return null;
+    return _ApplePreparedDeviceAccessChange(
+      owner: this,
+      expectedState: state,
+      targetAccess: deviceAccess,
+    );
+  });
+
+  Future<void> _verifyExistingState(ProviderState expectedState) async {
+    final lease = await _core.openExisting(
+      expectedState,
+      () => _roots.read(_account),
+    );
+    if (lease == null) {
+      throw const PlatformProtectorFailure(
+        PlatformProtectorFailureCode.invalidated,
+      );
+    }
+    await lease.close();
+  }
+
+  Future<void> _commitDeviceAccessChange(
+    ProviderState expectedState,
+    KeybayDeviceAccess targetAccess,
+  ) => atAppleKeychainProtectorBoundary(() async {
+    await _verifyExistingState(expectedState);
+    final updated = await _roots.updateDeviceAccess(_account, targetAccess);
+    if (!updated) {
+      throw const PlatformProtectorFailure(
+        PlatformProtectorFailureCode.invalidated,
+      );
+    }
+    final verifiedAccess = await _roots.readDeviceAccess(_account);
+    if (verifiedAccess != targetAccess) {
+      throw const PlatformProtectorFailure(
+        PlatformProtectorFailureCode.operationFailed,
+      );
+    }
+    await _verifyExistingState(expectedState);
   });
 
   @override
@@ -127,5 +190,46 @@ final class AppleDataProtectionKeychainProtector implements PlatformProtector {
         PlatformProtectorFailureCode.resetIncomplete,
       );
     }
+  }
+}
+
+final class _ApplePreparedDeviceAccessChange
+    implements PreparedPlatformDeviceAccessChange {
+  _ApplePreparedDeviceAccessChange({
+    required AppleDataProtectionKeychainProtector owner,
+    required ProviderState expectedState,
+    required KeybayDeviceAccess targetAccess,
+  }) : _owner = owner,
+       _expectedState = expectedState,
+       _targetAccess = targetAccess;
+
+  final AppleDataProtectionKeychainProtector _owner;
+  final ProviderState _expectedState;
+  final KeybayDeviceAccess _targetAccess;
+  bool _committed = false;
+  bool _closed = false;
+
+  @override
+  PlatformRootLease? get replacementLease => null;
+
+  @override
+  Future<void> commit() {
+    if (_closed || _committed) {
+      return Future<void>.error(
+        const PlatformProtectorFailure(
+          PlatformProtectorFailureCode.operationFailed,
+        ),
+      );
+    }
+    _committed = true;
+    return _owner._commitDeviceAccessChange(_expectedState, _targetAccess);
+  }
+
+  @override
+  Future<void> abort() async {}
+
+  @override
+  Future<void> close() async {
+    _closed = true;
   }
 }

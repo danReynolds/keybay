@@ -4,6 +4,7 @@ library;
 import 'dart:typed_data';
 
 import '../errors.dart';
+import 'device_access.dart';
 import 'entropy_source.dart';
 import 'exportable_root_protector_core.dart';
 import 'host_binding.dart';
@@ -58,6 +59,7 @@ final class LinuxSecretServiceProtector implements PlatformProtector {
   @override
   Future<PlatformRootCreation> createOnly({
     required PlatformInteraction interaction,
+    KeybayDeviceAccess deviceAccess = KeybayDeviceAccess.whenUnlocked,
   }) => _atSecretServiceBoundary(
     interaction,
     () => _roots.withCreationLock(_account, () async {
@@ -99,6 +101,13 @@ final class LinuxSecretServiceProtector implements PlatformProtector {
       }
     }),
   );
+
+  @override
+  Future<PreparedPlatformDeviceAccessChange?> prepareDeviceAccessChange(
+    ProviderState state, {
+    required KeybayDeviceAccess deviceAccess,
+    required PlatformInteraction interaction,
+  }) async => null;
 
   @override
   Future<PreparedPlatformReset> prepareReset({

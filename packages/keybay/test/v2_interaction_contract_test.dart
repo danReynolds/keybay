@@ -266,9 +266,13 @@ final class _ObservedProtector implements PlatformProtector {
   @override
   Future<PlatformRootCreation> createOnly({
     required PlatformInteraction interaction,
+    KeybayDeviceAccess deviceAccess = KeybayDeviceAccess.whenUnlocked,
   }) async {
     _acquire('create', interaction);
-    final creation = await delegate.createOnly(interaction: interaction);
+    final creation = await delegate.createOnly(
+      interaction: interaction,
+      deviceAccess: deviceAccess,
+    );
     return reusableRoot
         ? PlatformRootCreation(
             lease: creation.lease,
@@ -276,6 +280,13 @@ final class _ObservedProtector implements PlatformProtector {
           )
         : creation;
   }
+
+  @override
+  Future<PreparedPlatformDeviceAccessChange?> prepareDeviceAccessChange(
+    ProviderState state, {
+    required KeybayDeviceAccess deviceAccess,
+    required PlatformInteraction interaction,
+  }) async => null;
 
   @override
   Future<PreparedPlatformReset> prepareReset({

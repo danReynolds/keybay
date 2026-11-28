@@ -41,7 +41,12 @@ Keybay derives the application identifier from the code signature and checks
 it against the bundle identifier. The encrypted file lives in the app container
 when App Sandbox is enabled, otherwise in a derived Application Support
 directory. One stable random root is stored in the exact signed Data Protection
-Keychain group, non-synchronizing and `WhenUnlockedThisDeviceOnly`.
+Keychain group, non-synchronizing and defaulting to
+`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`
+(`KeybayDeviceAccess.whenUnlocked`, with explicit opt-in to
+`KeybayDeviceAccess.afterFirstUnlock` via `KeybayOptions` or
+`session.setDeviceAccess(...)`). Unentitled macOS apps and the CLI use the
+login Keychain and treat `KeybayDeviceAccess` as a verified no-op.
 
 The entitlement protects root access from processes outside the signed group.
 It does not by itself sandbox the file; App Sandbox is a separate protection.

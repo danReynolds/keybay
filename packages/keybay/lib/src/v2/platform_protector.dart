@@ -3,6 +3,7 @@ library;
 
 import 'dart:typed_data';
 
+import 'device_access.dart';
 import 'format/store_format.dart';
 import 'host_binding.dart';
 
@@ -181,6 +182,45 @@ abstract interface class PreparedPlatformReset {
   Future<void> close();
 }
 
+/// A prepared update to a platform protector's [KeybayDeviceAccess] policy.
+///
+/// Two execution shapes exist across platforms:
+/// - **In-place update / cleanup** (Apple Data Protection Keychain attribute
+///   update, or Android retired-alias cleanup): [replacementLease] is `null`.
+///   [commit] applies and verifies the update without rewriting the vault file.
+/// - **Key rotation** (Android 12+ Keystore, where key parameters are
+///   immutable): [replacementLease] holds a freshly generated inactive-slot
+///   key lease with the target policy. The common engine re-seals the vault's
+///   key package under [replacementLease], atomically commits and verifies the
+///   updated vault file, and then calls [commit] to remove the retired prior
+///   key. If the transaction fails before replacing live (or live is
+///   affirmatively verified to still hold the old provider state), the caller
+///   invokes [abort] to remove the unused replacement key. [close] only
+///   releases lease resources and never deletes a platform key.
+abstract interface class PreparedPlatformDeviceAccessChange {
+  /// Non-null when the platform requires rotating to a new root key and
+  /// rewriting the vault's bootstrap and sealed key package.
+  PlatformRootLease? get replacementLease;
+
+  /// Finalizes the change.
+  ///
+  /// For in-place updates, applies and verifies the updated OS attribute (or
+  /// deletes a leftover retired alias). For key rotations, called only after
+  /// the replacement vault file has atomically replaced live and been verified,
+  /// removing the retired key.
+  Future<void> commit();
+
+  /// Removes an unused replacement key after the caller has affirmatively
+  /// confirmed the live store still references the original provider state.
+  ///
+  /// Idempotent; a no-op for in-place changes or once [commit] has run.
+  Future<void> abort();
+
+  /// Releases preparation and lease resources without deleting any platform
+  /// key. Idempotent.
+  Future<void> close();
+}
+
 /// The mandatory platform protection for one resolved storage domain.
 ///
 /// The implementation is fixed when the host binding is resolved. It has no
@@ -203,13 +243,24 @@ abstract interface class PlatformProtector {
     required PlatformInteraction interaction,
   });
 
-  /// Acquires a root for initialization under [interaction].
+  /// Acquires a root for initialization under [interaction] and [deviceAccess].
   ///
   /// Managed roots use create-only/adopt-winner semantics. Ambient provider
   /// roots return [RootCreationDisposition.reused] without claiming ownership.
   /// The returned lease exposes its final immutable provider state before the
   /// common engine constructs bootstrap AAD.
   Future<PlatformRootCreation> createOnly({
+    required PlatformInteraction interaction,
+    KeybayDeviceAccess deviceAccess = KeybayDeviceAccess.whenUnlocked,
+  });
+
+  /// Prepares an update to [deviceAccess] for an authenticated live store
+  /// holding [state], or returns `null` when no change is applicable or
+  /// required (for example, desktop login keyrings or an already-matching
+  /// policy).
+  Future<PreparedPlatformDeviceAccessChange?> prepareDeviceAccessChange(
+    ProviderState state, {
+    required KeybayDeviceAccess deviceAccess,
     required PlatformInteraction interaction,
   });
 

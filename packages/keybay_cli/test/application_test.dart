@@ -890,6 +890,10 @@ final class _TrackingSession implements KeybaySession {
   Future<void> clearAll() => delegate.clearAll();
 
   @override
+  Future<void> setDeviceAccess(KeybayDeviceAccess deviceAccess) =>
+      delegate.setDeviceAccess(deviceAccess);
+
+  @override
   Future<void> close() => delegate.close();
 
   @override

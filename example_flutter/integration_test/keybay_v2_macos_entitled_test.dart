@@ -104,6 +104,56 @@ void main() {
     expect(await roots.exists(resolved.binding.providerAddress), isFalse);
     expect(store.existsSync(), isFalse);
   });
+
+  testWidgets(
+    'entitled macOS V2 deviceAccess defaults and in-place SecItemUpdate',
+    (WidgetTester _) async {
+      if (!Platform.isMacOS) {
+        markTestSkipped('macOS-only');
+        return;
+      }
+
+      final api = AppleHostApi.macOS();
+      final applicationIdentifier = api.macOSSignedApplicationIdentifier();
+      final resolved = await MacOSHostPlatform().resolve();
+      final address = resolved.binding.providerAddress;
+      final roots = AppleDataProtectionKeychainRootStore(
+        exactApplicationIdentifierAccessGroup: applicationIdentifier,
+      );
+
+      await Keybay.reset();
+      KeybaySession? session;
+      try {
+        session = await Keybay.open();
+        expect(session.wasInitialized, isTrue);
+        expect(
+          await roots.readDeviceAccess(address),
+          KeybayDeviceAccess.whenUnlocked,
+        );
+        await session.set('bg/marker', 'macos-entitled');
+        final rootBefore = await roots.read(address);
+        expect(rootBefore, isNotNull);
+
+        await session.setDeviceAccess(KeybayDeviceAccess.afterFirstUnlock);
+        expect(
+          await roots.readDeviceAccess(address),
+          KeybayDeviceAccess.afterFirstUnlock,
+        );
+        expect(await roots.read(address), rootBefore);
+        expect(await session.get('bg/marker'), 'macos-entitled');
+
+        await session.setDeviceAccess(KeybayDeviceAccess.whenUnlocked);
+        expect(
+          await roots.readDeviceAccess(address),
+          KeybayDeviceAccess.whenUnlocked,
+        );
+        expect(await roots.read(address), rootBefore);
+      } finally {
+        await session?.close();
+        await Keybay.reset();
+      }
+    },
+  );
 }
 
 Matcher _failure(KeybayErrorCode code) =>

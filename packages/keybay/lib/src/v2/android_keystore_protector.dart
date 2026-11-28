@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import '../errors.dart';
 import '../ffi/jni.dart';
+import 'device_access.dart';
 import 'format/store_format.dart';
 import 'host_binding.dart';
 import 'platform_protector.dart';
@@ -17,9 +18,18 @@ const int _decryptMode = 2;
 const int _gcmTagBits = 128;
 const int _gcmNonceBytes = 12;
 const int _gcmTagBytes = 16;
-const int _continuityStateBytes =
+const int _legacyContinuityStateBytes =
     _gcmNonceBytes + V2StoreLimits.digestBytes + _gcmTagBytes;
+const int _continuityTagBytes = 2;
+const int _taggedContinuityStateBytes =
+    _continuityTagBytes + _legacyContinuityStateBytes;
+const int _continuityVersion2 = 0x02;
+const int _continuitySlotMask = 0x01;
+const int _continuityAfterFirstUnlockBit = 0x02;
+const int _continuityValidFlagsMask =
+    _continuitySlotMask | _continuityAfterFirstUnlockBit;
 const String _aliasPrefix = 'keybay.v2.';
+const String _alternateAliasSuffix = '.alt';
 const String _strongBoxUnavailable =
     'android/security/keystore/StrongBoxUnavailableException';
 
@@ -56,7 +66,15 @@ abstract interface class AndroidKeystoreAead {
   /// check-and-generate operation. Returns `true` for generation and `false`
   /// when the already-present key was adopted. The caller then performs a
   /// cryptographic read-back before trusting either result.
-  Future<bool> createUnderExclusiveLock(String alias);
+  ///
+  /// When [conflictAlias] is supplied, generation is refused with
+  /// [PlatformProtectorFailureCode.stateConflict] if [conflictAlias] already
+  /// exists in Keystore.
+  Future<bool> createUnderExclusiveLock(
+    String alias, {
+    bool unlockedDeviceRequired = true,
+    String? conflictAlias,
+  });
 
   Future<AndroidKeystoreBox> seal({
     required String alias,
@@ -85,6 +103,7 @@ abstract interface class AndroidKeystoreAead {
 bool createAndroidKeystoreKeyUnderExclusiveLock({
   required bool Function() hasKey,
   required bool Function() containsAlias,
+  bool Function()? hasConflictAlias,
   required void Function() generateAndVerify,
 }) {
   if (hasKey()) return false;
@@ -93,8 +112,27 @@ bool createAndroidKeystoreKeyUnderExclusiveLock({
       PlatformProtectorFailureCode.stateConflict,
     );
   }
+  if (hasConflictAlias != null && hasConflictAlias()) {
+    throw const PlatformProtectorFailure(
+      PlatformProtectorFailureCode.stateConflict,
+    );
+  }
   generateAndVerify();
   return true;
+}
+
+final class _ParsedAndroidContinuity {
+  const _ParsedAndroidContinuity({
+    required this.slot,
+    required this.deviceAccess,
+    required this.boxBytes,
+    required this.isLegacy,
+  });
+
+  final int slot;
+  final KeybayDeviceAccess? deviceAccess;
+  final Uint8List boxBytes;
+  final bool isLegacy;
 }
 
 /// Android's V2 platform protector.
@@ -103,6 +141,11 @@ bool createAndroidKeystoreKeyUnderExclusiveLock({
 /// state is a GCM-sealed copy of the resolved storage-domain commitment. It
 /// proves both key continuity and file-domain binding before the key may seal
 /// or open the independent V2 key package.
+///
+/// Two fixed, identity-derived aliases (`slot 0` and `slot 1`) allow atomic,
+/// crash-safe [KeybayDeviceAccess] rotation without untrusted persisted alias
+/// names: `reset` always owns both fixed aliases. Legacy 60-byte 0.3.2
+/// continuity states continue opening on `slot 0`.
 final class AndroidKeystoreProtector implements PlatformProtector {
   AndroidKeystoreProtector({
     required this.binding,
@@ -114,42 +157,58 @@ final class AndroidKeystoreProtector implements PlatformProtector {
 
   final AndroidKeystoreAead _keystore;
 
-  String get _alias => '$_aliasPrefix${binding.providerAddress}';
+  String get _primaryAlias => '$_aliasPrefix${binding.providerAddress}';
+
+  String get _alternateAlias => '$_primaryAlias$_alternateAliasSuffix';
+
+  String _aliasForSlot(int slot) => slot == 0 ? _primaryAlias : _alternateAlias;
 
   @override
   Future<PlatformRootLease?> openExisting(
     ProviderState state, {
     required PlatformInteraction interaction,
   }) => _atAndroidBoundary(() async {
-    if (state.length != _continuityStateBytes) {
-      throw const PlatformProtectorFailure(
-        PlatformProtectorFailureCode.invalidated,
+    final parsed = _parseContinuityState(state);
+    try {
+      final alias = _aliasForSlot(parsed.slot);
+      if (!await _keystore.contains(alias)) return null;
+      await _verifyContinuity(parsed, alias: alias);
+      return _AndroidKeystoreLease(
+        alias: alias,
+        state: state,
+        keystore: _keystore,
       );
+    } finally {
+      _clear(parsed.boxBytes);
     }
-    if (!await _keystore.contains(_alias)) return null;
-    await _verifyContinuity(state);
-    return _AndroidKeystoreLease(
-      alias: _alias,
-      state: state,
-      keystore: _keystore,
-    );
   });
 
   @override
   Future<PlatformRootCreation> createOnly({
     required PlatformInteraction interaction,
+    KeybayDeviceAccess deviceAccess = KeybayDeviceAccess.whenUnlocked,
   }) => _atAndroidBoundary(() async {
     // The common engine holds this application's fixed StoreFiles lock
     // while calling createOnly. Android Keystore itself does not provide
     // atomic compare-and-create for symmetric-key aliases.
-    final created = await _keystore.createUnderExclusiveLock(_alias);
+    final created = await _keystore.createUnderExclusiveLock(
+      _primaryAlias,
+      unlockedDeviceRequired: deviceAccess == KeybayDeviceAccess.whenUnlocked,
+      conflictAlias: _alternateAlias,
+    );
     ProviderState? state;
     try {
-      state = await _newContinuityState();
-      await _verifyContinuity(state);
+      state = await _newTaggedContinuityState(
+        slot: 0,
+        deviceAccess: deviceAccess,
+      );
+      await _verifyContinuity(
+        _parseContinuityState(state),
+        alias: _primaryAlias,
+      );
       return PlatformRootCreation(
         lease: _AndroidKeystoreLease(
-          alias: _alias,
+          alias: _primaryAlias,
           state: state,
           keystore: _keystore,
         ),
@@ -177,6 +236,94 @@ final class AndroidKeystoreProtector implements PlatformProtector {
   });
 
   @override
+  Future<PreparedPlatformDeviceAccessChange?> prepareDeviceAccessChange(
+    ProviderState state, {
+    required KeybayDeviceAccess deviceAccess,
+    required PlatformInteraction interaction,
+  }) => _atAndroidBoundary(() async {
+    final parsed = _parseContinuityState(state);
+    try {
+      final currentAlias = _aliasForSlot(parsed.slot);
+      if (!await _keystore.contains(currentAlias)) {
+        throw const PlatformProtectorFailure(
+          PlatformProtectorFailureCode.invalidated,
+        );
+      }
+      await _verifyContinuity(parsed, alias: currentAlias);
+      final nextSlot = parsed.slot == 0 ? 1 : 0;
+      final nextAlias = _aliasForSlot(nextSlot);
+      if (!parsed.isLegacy && parsed.deviceAccess == deviceAccess) {
+        // If a prior rotation installed the live store on `currentAlias` but
+        // failed before removing the retired key on `nextAlias`, finish
+        // cleaning up that leftover weaker/old alias now.
+        if (await _keystore.contains(nextAlias)) {
+          return _AndroidRetiredAliasCleanupChange(
+            owner: this,
+            retiredAlias: nextAlias,
+          );
+        }
+        return null;
+      }
+
+      // The common engine holds the exclusive store lock and has just
+      // authenticated the live store on `currentAlias`. Any leftover key on
+      // the inactive slot came from an interrupted prior rotation and may be
+      // cleared.
+      if (await _keystore.contains(nextAlias)) {
+        await _keystore.delete(nextAlias);
+        if (await _keystore.contains(nextAlias)) {
+          throw const PlatformProtectorFailure(
+            PlatformProtectorFailureCode.operationFailed,
+          );
+        }
+      }
+
+      final created = await _keystore.createUnderExclusiveLock(
+        nextAlias,
+        unlockedDeviceRequired: deviceAccess == KeybayDeviceAccess.whenUnlocked,
+      );
+      if (!created) {
+        throw const PlatformProtectorFailure(
+          PlatformProtectorFailureCode.stateConflict,
+        );
+      }
+
+      try {
+        final nextState = await _newTaggedContinuityState(
+          slot: nextSlot,
+          deviceAccess: deviceAccess,
+        );
+        final nextParsed = _parseContinuityState(nextState);
+        try {
+          await _verifyContinuity(nextParsed, alias: nextAlias);
+        } finally {
+          _clear(nextParsed.boxBytes);
+        }
+        final replacementLease = _AndroidKeystoreLease(
+          alias: nextAlias,
+          state: nextState,
+          keystore: _keystore,
+        );
+        return _AndroidPreparedDeviceAccessChange(
+          owner: this,
+          replacementLease: replacementLease,
+          oldAlias: currentAlias,
+          newAlias: nextAlias,
+        );
+      } on Object {
+        try {
+          await _keystore.delete(nextAlias);
+        } on Object {
+          // Best-effort cleanup of the unused replacement alias.
+        }
+        rethrow;
+      }
+    } finally {
+      _clear(parsed.boxBytes);
+    }
+  });
+
+  @override
   Future<PreparedPlatformReset> prepareReset({
     required PlatformInteraction interaction,
   }) => _atAndroidBoundary(() async {
@@ -184,45 +331,119 @@ final class AndroidKeystoreProtector implements PlatformProtector {
     // Cryptographically challenging the alias would only make an
     // invalidated key impossible to reset, without preventing a same-UID
     // process from replacing it after the challenge. Preparation therefore
-    // establishes only whether this fixed app-private alias existed.
+    // establishes only which fixed app-private aliases existed.
+    final primaryWasPresent = await _keystore.contains(_primaryAlias);
+    final alternateWasPresent = await _keystore.contains(_alternateAlias);
     return _AndroidPreparedReset(
       owner: this,
-      wasPresent: await _keystore.contains(_alias),
+      primaryWasPresent: primaryWasPresent,
+      alternateWasPresent: alternateWasPresent,
     );
   });
 
-  Future<ProviderState> _newContinuityState() async {
+  Future<ProviderState> _newTaggedContinuityState({
+    required int slot,
+    required KeybayDeviceAccess deviceAccess,
+  }) async {
+    final alias = _aliasForSlot(slot);
     final domain = binding.domain.copyBytes();
-    final aad = _continuityAad(binding.providerAddress);
+    final aad = _taggedContinuityAad(
+      binding.providerAddress,
+      slot: slot,
+      deviceAccess: deviceAccess,
+    );
     AndroidKeystoreBox? box;
-    Uint8List? encoded;
+    Uint8List? encodedBox;
+    Uint8List? tagged;
     try {
-      box = await _keystore.seal(alias: _alias, plaintext: domain, aad: aad);
-      encoded = _encodeBox(box, maximumBytes: _continuityStateBytes);
-      if (encoded.length != _continuityStateBytes) {
+      box = await _keystore.seal(alias: alias, plaintext: domain, aad: aad);
+      encodedBox = _encodeBox(box, maximumBytes: _legacyContinuityStateBytes);
+      if (encodedBox.length != _legacyContinuityStateBytes) {
         throw const PlatformProtectorFailure(
           PlatformProtectorFailureCode.operationFailed,
         );
       }
-      return ProviderState(encoded);
+      final flags =
+          (slot & _continuitySlotMask) |
+          (deviceAccess == KeybayDeviceAccess.afterFirstUnlock
+              ? _continuityAfterFirstUnlockBit
+              : 0);
+      tagged = Uint8List(_taggedContinuityStateBytes)
+        ..[0] = _continuityVersion2
+        ..[1] = flags
+        ..setRange(
+          _continuityTagBytes,
+          _taggedContinuityStateBytes,
+          encodedBox,
+        );
+      return ProviderState(tagged);
     } finally {
       _clear(domain);
       _clear(aad);
       box?.clear();
-      if (encoded != null) _clear(encoded);
+      if (encodedBox != null) _clear(encodedBox);
+      if (tagged != null) _clear(tagged);
     }
   }
 
-  Future<void> _verifyContinuity(ProviderState state) async {
-    final encoded = state.copyBytes();
-    final aad = _continuityAad(binding.providerAddress);
+  _ParsedAndroidContinuity _parseContinuityState(ProviderState state) {
+    final raw = state.copyBytes();
+    if (raw.length == _legacyContinuityStateBytes) {
+      return _ParsedAndroidContinuity(
+        slot: 0,
+        deviceAccess: null,
+        boxBytes: raw,
+        isLegacy: true,
+      );
+    }
+    if (raw.length == _taggedContinuityStateBytes) {
+      final version = raw[0];
+      final flags = raw[1];
+      if (version == _continuityVersion2 &&
+          (flags & ~_continuityValidFlagsMask) == 0) {
+        final slot = flags & _continuitySlotMask;
+        final access = (flags & _continuityAfterFirstUnlockBit) != 0
+            ? KeybayDeviceAccess.afterFirstUnlock
+            : KeybayDeviceAccess.whenUnlocked;
+        final boxBytes = Uint8List.fromList(
+          Uint8List.sublistView(raw, _continuityTagBytes),
+        );
+        _clear(raw);
+        return _ParsedAndroidContinuity(
+          slot: slot,
+          deviceAccess: access,
+          boxBytes: boxBytes,
+          isLegacy: false,
+        );
+      }
+    }
+    _clear(raw);
+    throw const PlatformProtectorFailure(
+      PlatformProtectorFailureCode.invalidated,
+    );
+  }
+
+  Future<void> _verifyContinuity(
+    _ParsedAndroidContinuity parsed, {
+    required String alias,
+  }) async {
+    final aad = parsed.isLegacy
+        ? _legacyContinuityAad(binding.providerAddress)
+        : _taggedContinuityAad(
+            binding.providerAddress,
+            slot: parsed.slot,
+            deviceAccess: parsed.deviceAccess!,
+          );
     final expected = binding.domain.copyBytes();
     AndroidKeystoreBox? box;
     Uint8List? actual;
     try {
-      box = _decodeBox(encoded, maximumBytes: _continuityStateBytes);
+      box = _decodeBox(
+        parsed.boxBytes,
+        maximumBytes: _legacyContinuityStateBytes,
+      );
       try {
-        actual = await _keystore.open(alias: _alias, box: box, aad: aad);
+        actual = await _keystore.open(alias: alias, box: box, aad: aad);
       } on PlatformProtectorFailure catch (failure) {
         if (failure.code == PlatformProtectorFailureCode.authenticationFailed) {
           throw const PlatformProtectorFailure(
@@ -237,7 +458,7 @@ final class AndroidKeystoreProtector implements PlatformProtector {
         );
       }
     } finally {
-      _clear(encoded);
+      _clear(parsed.boxBytes);
       _clear(aad);
       _clear(expected);
       box?.clear();
@@ -245,27 +466,52 @@ final class AndroidKeystoreProtector implements PlatformProtector {
     }
   }
 
-  Future<void> _commitReset(bool wasPresent) async {
+  Future<void> _commitReset({
+    required bool primaryWasPresent,
+    required bool alternateWasPresent,
+  }) async {
     try {
-      final exists = await _keystore.contains(_alias);
-      if (!exists) return;
-      if (!wasPresent) {
-        throw const PlatformProtectorFailure(
-          PlatformProtectorFailureCode.resetIncomplete,
-        );
-      }
-      await _keystore.delete(_alias);
-      if (await _keystore.contains(_alias)) {
-        throw const PlatformProtectorFailure(
-          PlatformProtectorFailureCode.resetIncomplete,
-        );
-      }
+      await _deleteSlotOnReset(_primaryAlias, wasPresent: primaryWasPresent);
+      await _deleteSlotOnReset(
+        _alternateAlias,
+        wasPresent: alternateWasPresent,
+      );
     } on Object {
       throw const PlatformProtectorFailure(
         PlatformProtectorFailureCode.resetIncomplete,
       );
     }
   }
+
+  Future<void> _deleteSlotOnReset(
+    String alias, {
+    required bool wasPresent,
+  }) async {
+    final exists = await _keystore.contains(alias);
+    if (!exists) return;
+    if (!wasPresent) {
+      throw const PlatformProtectorFailure(
+        PlatformProtectorFailureCode.resetIncomplete,
+      );
+    }
+    await _keystore.delete(alias);
+    if (await _keystore.contains(alias)) {
+      throw const PlatformProtectorFailure(
+        PlatformProtectorFailureCode.resetIncomplete,
+      );
+    }
+  }
+
+  Future<void> _deleteRetiredAlias(String alias) =>
+      _atAndroidBoundary(() async {
+        if (!await _keystore.contains(alias)) return;
+        await _keystore.delete(alias);
+        if (await _keystore.contains(alias)) {
+          throw const PlatformProtectorFailure(
+            PlatformProtectorFailureCode.operationFailed,
+          );
+        }
+      });
 }
 
 final class _AndroidKeystoreLease implements PlatformRootLease {
@@ -370,12 +616,15 @@ final class _AndroidKeystoreLease implements PlatformRootLease {
 final class _AndroidPreparedReset implements PreparedPlatformReset {
   _AndroidPreparedReset({
     required AndroidKeystoreProtector owner,
-    required bool wasPresent,
+    required bool primaryWasPresent,
+    required bool alternateWasPresent,
   }) : _owner = owner,
-       _wasPresent = wasPresent;
+       _primaryWasPresent = primaryWasPresent,
+       _alternateWasPresent = alternateWasPresent;
 
   final AndroidKeystoreProtector _owner;
-  final bool _wasPresent;
+  final bool _primaryWasPresent;
+  final bool _alternateWasPresent;
   bool _commitAttempted = false;
   bool _closed = false;
 
@@ -387,12 +636,100 @@ final class _AndroidPreparedReset implements PreparedPlatformReset {
       );
     }
     _commitAttempted = true;
-    return _owner._commitReset(_wasPresent);
+    return _owner._commitReset(
+      primaryWasPresent: _primaryWasPresent,
+      alternateWasPresent: _alternateWasPresent,
+    );
   }
 
   @override
   Future<void> close() async {
     if (_closed) return;
+    _closed = true;
+  }
+}
+
+final class _AndroidPreparedDeviceAccessChange
+    implements PreparedPlatformDeviceAccessChange {
+  _AndroidPreparedDeviceAccessChange({
+    required AndroidKeystoreProtector owner,
+    required PlatformRootLease replacementLease,
+    required String oldAlias,
+    required String newAlias,
+  }) : _owner = owner,
+       _replacementLease = replacementLease,
+       _oldAlias = oldAlias,
+       _newAlias = newAlias;
+
+  final AndroidKeystoreProtector _owner;
+  final PlatformRootLease _replacementLease;
+  final String _oldAlias;
+  final String _newAlias;
+  bool _committed = false;
+  bool _aborted = false;
+  bool _closed = false;
+
+  @override
+  PlatformRootLease get replacementLease => _replacementLease;
+
+  @override
+  Future<void> commit() async {
+    if (_closed || _committed || _aborted) {
+      throw const PlatformProtectorFailure(
+        PlatformProtectorFailureCode.operationFailed,
+      );
+    }
+    _committed = true;
+    await _owner._deleteRetiredAlias(_oldAlias);
+  }
+
+  @override
+  Future<void> abort() async {
+    if (_committed || _aborted) return;
+    _aborted = true;
+    await _owner._deleteRetiredAlias(_newAlias);
+  }
+
+  @override
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    await _replacementLease.close();
+  }
+}
+
+final class _AndroidRetiredAliasCleanupChange
+    implements PreparedPlatformDeviceAccessChange {
+  _AndroidRetiredAliasCleanupChange({
+    required AndroidKeystoreProtector owner,
+    required String retiredAlias,
+  }) : _owner = owner,
+       _retiredAlias = retiredAlias;
+
+  final AndroidKeystoreProtector _owner;
+  final String _retiredAlias;
+  bool _committed = false;
+  bool _closed = false;
+
+  @override
+  PlatformRootLease? get replacementLease => null;
+
+  @override
+  Future<void> commit() async {
+    if (_closed || _committed) {
+      throw const PlatformProtectorFailure(
+        PlatformProtectorFailureCode.operationFailed,
+      );
+    }
+    _committed = true;
+    await _owner._deleteRetiredAlias(_retiredAlias);
+  }
+
+  @override
+  Future<void> abort() async {}
+
+  @override
+  Future<void> close() async {
     _closed = true;
   }
 }
@@ -411,27 +748,35 @@ final class JniAndroidKeystoreAead implements AndroidKeystoreAead {
   });
 
   @override
-  Future<bool> createUnderExclusiveLock(String alias) async =>
-      Jni.instance().withFrame((f) {
-        final keystore = _loadKeystore(f);
-        return createAndroidKeystoreKeyUnderExclusiveLock(
-          // AOSP AndroidKeyStoreProvider maps KEY_NOT_FOUND to null and
-          // propagates other key metadata failures through getKey. It also
-          // returns null for pure certificate entries; this is intentionally
-          // an AES-root-specific check, not a raw KEY_NOT_FOUND result.
-          hasKey: () => _key(f, keystore, alias) != nullptr,
-          containsAlias: () => _contains(f, keystore, alias),
-          generateAndVerify: () {
-            _generate(f, alias);
-            final reloaded = _loadKeystore(f);
-            if (_key(f, reloaded, alias) == nullptr) {
-              throw const PlatformProtectorFailure(
-                PlatformProtectorFailureCode.operationFailed,
-              );
-            }
-          },
-        );
-      }, capacity: 256);
+  Future<bool> createUnderExclusiveLock(
+    String alias, {
+    bool unlockedDeviceRequired = true,
+    String? conflictAlias,
+  }) async => Jni.instance().withFrame((f) {
+    final keystore = _loadKeystore(f);
+    return createAndroidKeystoreKeyUnderExclusiveLock(
+      // AOSP AndroidKeyStoreProvider maps KEY_NOT_FOUND to null and
+      // propagates other key metadata failures through getKey. It also
+      // returns null for pure certificate entries; this is intentionally
+      // an AES-root-specific check, not a raw KEY_NOT_FOUND result.
+      hasKey: () => _key(f, keystore, alias) != nullptr,
+      containsAlias: () => _contains(f, keystore, alias),
+      hasConflictAlias: conflictAlias == null
+          ? null
+          : () =>
+                _key(f, keystore, conflictAlias) != nullptr ||
+                _contains(f, keystore, conflictAlias),
+      generateAndVerify: () {
+        _generate(f, alias, unlockedDeviceRequired: unlockedDeviceRequired);
+        final reloaded = _loadKeystore(f);
+        if (_key(f, reloaded, alias) == nullptr) {
+          throw const PlatformProtectorFailure(
+            PlatformProtectorFailureCode.operationFailed,
+          );
+        }
+      },
+    );
+  }, capacity: 256);
 
   @override
   Future<AndroidKeystoreBox> seal({
@@ -605,18 +950,40 @@ Pointer<Void> _requiredKey(JniFrame f, Pointer<Void> keystore, String alias) {
   return key;
 }
 
-void _generate(JniFrame f, String alias) {
+void _generate(
+  JniFrame f,
+  String alias, {
+  required bool unlockedDeviceRequired,
+}) {
   try {
-    _generateOnce(f, alias, strongBox: true);
+    _generateOnce(
+      f,
+      alias,
+      strongBox: true,
+      unlockedDeviceRequired: unlockedDeviceRequired,
+    );
   } on JavaThrown catch (failure) {
     if (!f.isThrowableA(failure, _strongBoxUnavailable)) {
       _mapJavaFailures<void>(f, () => throw failure);
     }
-    _mapJavaFailures<void>(f, () => _generateOnce(f, alias, strongBox: false));
+    _mapJavaFailures<void>(
+      f,
+      () => _generateOnce(
+        f,
+        alias,
+        strongBox: false,
+        unlockedDeviceRequired: unlockedDeviceRequired,
+      ),
+    );
   }
 }
 
-void _generateOnce(JniFrame f, String alias, {required bool strongBox}) {
+void _generateOnce(
+  JniFrame f,
+  String alias, {
+  required bool strongBox,
+  required bool unlockedDeviceRequired,
+}) {
   final builderClass = f.findClass(
     r'android/security/keystore/KeyGenParameterSpec$Builder',
   );
@@ -648,6 +1015,9 @@ void _generateOnce(JniFrame f, String alias, {required bool strongBox}) {
   ]);
   builder = chain('setKeySize', 'I', const <Object?>[256]);
   builder = chain('setUserAuthenticationRequired', 'Z', const <Object?>[false]);
+  builder = chain('setUnlockedDeviceRequired', 'Z', <Object?>[
+    unlockedDeviceRequired,
+  ]);
   if (strongBox) {
     builder = chain('setIsStrongBoxBacked', 'Z', const <Object?>[true]);
   }
@@ -749,9 +1119,7 @@ T _mapJavaFailures<T>(JniFrame f, T Function() operation) {
       failure,
       'android/security/keystore/UserNotAuthenticatedException',
     )) {
-      throw const PlatformProtectorFailure(
-        PlatformProtectorFailureCode.interactionRequired,
-      );
+      throw const PlatformProtectorFailure(PlatformProtectorFailureCode.locked);
     }
     throw const PlatformProtectorFailure(
       PlatformProtectorFailureCode.operationFailed,
@@ -781,8 +1149,25 @@ Future<T> _atAndroidBoundary<T>(Future<T> Function() operation) async {
   }
 }
 
-Uint8List _continuityAad(String providerAddress) => Uint8List.fromList(
+Uint8List _legacyContinuityAad(String providerAddress) => Uint8List.fromList(
   utf8.encode('keybay:v2:android-keystore:continuity\u0000$providerAddress'),
+);
+
+String _deviceAccessWireToken(KeybayDeviceAccess deviceAccess) =>
+    switch (deviceAccess) {
+      KeybayDeviceAccess.whenUnlocked => 'whenUnlocked',
+      KeybayDeviceAccess.afterFirstUnlock => 'afterFirstUnlock',
+    };
+
+Uint8List _taggedContinuityAad(
+  String providerAddress, {
+  required int slot,
+  required KeybayDeviceAccess deviceAccess,
+}) => Uint8List.fromList(
+  utf8.encode(
+    'keybay:v2:android-keystore:continuity:v2\u0000'
+    '$providerAddress\u0000$slot\u0000${_deviceAccessWireToken(deviceAccess)}',
+  ),
 );
 
 Uint8List _encodeBox(AndroidKeystoreBox box, {required int maximumBytes}) {

@@ -45,224 +45,231 @@ final class V2StoreEngine {
     KeybayCredential? credential,
     String? methodId,
     PasskeyCancellation? cancellation,
+    KeybayOptions options = const KeybayOptions(),
   }) => _withCredential(
     credential,
-    _open,
+    (snapshot) => _open(snapshot, options: options),
     methodId: methodId,
     cancellation: cancellation,
   );
 
-  Future<V2StoreSession> _open(_CredentialSnapshot? credential) =>
-      _future(() async {
-        PinnedStoreFile? pin;
-        PlatformRootLease? lease;
-        Uint8List? storeKey;
-        Uint8List? storeId;
-        Object? primaryFailure;
-        StackTrace? primaryStack;
-        V2StoreSession? session;
-        var wasInitialized = false;
-        var hadStaging = false;
-        var openingGeneration = 0;
-        try {
-          if (credential != null) {
-            _testProbe?.onOperationInput?.call(credential.bytes);
-          }
-          _checkPasskeyCancelled(credential);
-          final host = await _resolveHost();
-          await host.files.withExclusiveTransaction((transaction) async {
-            openingGeneration = _runtimeGeneration;
-            final artifacts = await transaction.observeArtifacts();
-            if (artifacts.hasTransactionArtifacts && !artifacts.hasLiveFile) {
-              throw _error(
-                KeybayErrorCode.storeStateConflict,
-                'The store has incomplete transaction state.',
-              );
-            }
-            if (artifacts.hasLiveFile) {
-              pin = await _openPin(transaction.openPinnedLive);
-              hadStaging = artifacts.hasTransactionArtifacts;
-              return;
-            }
-            if (credential != null) {
-              throw _error(
-                KeybayErrorCode.storeNotFound,
-                'No encrypted store is available to authenticate.',
-              );
-            }
-            final initialized = await _initializeStore(host, transaction);
-            storeKey = initialized.storeKey;
-            storeId = initialized.storeId;
-            session = V2StoreSession._(
-              engine: this,
-              host: host,
-              storeKey: storeKey!,
-              storeId: storeId!,
-              epoch: initialized.epoch,
-              authMethods: const [],
-              wasInitialized: true,
-              runtimeGeneration: openingGeneration,
-              entropy: _entropy,
-              testProbe: _testProbe,
-            );
-            wasInitialized = true;
-          });
-          if (!wasInitialized) {
-            final openedPin = pin!;
-            final prefix = await _readPrefix(openedPin);
-            final state = ProviderState(prefix.bootstrap.core.providerState);
-            _checkPasskeyCancelled(credential);
-            final openedLease = await host.protector.openExisting(
-              state,
-              interaction: PlatformInteraction.allowed,
-            );
-            if (openedLease == null ||
-                !openedLease.providerState.hasSameBytes(state)) {
-              if (openedLease != null) lease = openedLease;
-              throw _error(
-                KeybayErrorCode.platformKeyInvalidated,
-                'The platform protection key is unavailable.',
-              );
-            }
-            lease = openedLease;
-            Uint8List? plaintext;
-            V2KeyPackage? package;
-            V2MethodsPackage? replacement;
-            try {
-              plaintext = await openedLease.openPackage(
-                sealedPackage: prefix.sealedPackage,
-                aad: encodePlatformPackageAad(
-                  storageDomain: host.binding.domain.copyBytes(),
-                  bootstrapCore: prefix.bootstrap.core,
-                ),
-              );
-              package = decodeKeyPackage(plaintext);
-              if (package is V2MethodsPackage &&
-                  prefix.bootstrap.core.suite != v2MethodsSuite) {
-                throw _error(
-                  KeybayErrorCode.storeAuthenticationFailed,
-                  'The package suite is inconsistent.',
-                );
-              }
-              storeId = package.storeId;
-              switch (package) {
-                case V2PlatformOnlyPackage():
-                  if (credential != null) {
-                    throw _error(
-                      KeybayErrorCode.protectionMismatch,
-                      'The store does not use the supplied credential.',
-                    );
-                  }
-                  storeKey = package.takeStoreKey();
-                case V2MethodsPackage():
-                  if (credential == null) {
-                    throw _error(
-                      KeybayErrorCode.authRequired,
-                      'This store requires an additional credential.',
-                      authMethods: _describePackage(package),
-                    );
-                  }
-                  final selected = _selectMethod(package, credential);
-                  final opened = await _unlockMethod(
-                    engine: this,
-                    package: package,
-                    method: selected,
-                    credential: credential,
-                  );
-                  storeKey = opened.storeKey;
-                  final source = await _openAuthenticatedGeneration(
-                    host: host,
-                    pin: openedPin,
-                    storeKey: storeKey!,
-                    storeId: storeId!,
-                  );
-                  source.clear();
-                  if (!_constantTimeEquals(
-                    selected.passkeyRecord,
-                    opened.method.passkeyRecord,
-                  )) {
-                    replacement = V2MethodsPackage(
-                      storeId: storeId!,
-                      epoch: package.epoch,
-                      sealedVaultSecret: package.sealedVaultSecret,
-                      methods: [
-                        for (final method in package.methods)
-                          identical(method, selected) ? opened.method : method,
-                      ],
-                    );
-                  }
-              }
-              if (package is V2MethodsPackage || hadStaging) {
-                await _commitOpenedMetadata(
-                  engine: this,
-                  host: host,
-                  lease: openedLease,
-                  storeKey: storeKey!,
-                  storeId: storeId!,
-                  expectedPrefix: prefix,
-                  replacement: replacement,
-                  openingGeneration: openingGeneration,
-                  credential: credential,
-                );
-              }
-              _checkPasskeyCancelled(credential);
-              session = V2StoreSession._(
-                engine: this,
-                host: host,
-                storeKey: storeKey!,
-                storeId: storeId!,
-                epoch: package.epoch,
-                authMethods: _describePackage(replacement ?? package),
-                wasInitialized: false,
-                runtimeGeneration: openingGeneration,
-                entropy: _entropy,
-                testProbe: _testProbe,
-              );
-            } finally {
-              replacement?.clear();
-              package?.clear();
-              if (plaintext != null) _clear(plaintext);
-            }
-          }
-        } on Object catch (error, stackTrace) {
-          primaryFailure = _mapReaderFailure(error);
-          primaryStack = stackTrace;
-        }
-
-        final acquiredPin = pin;
-        final cleanupFailure = acquiredPin == null
-            ? null
-            : await _closeOpenResources(lease, acquiredPin);
-        Object? cancellationFailure;
-        try {
-          _checkPasskeyCancelled(credential);
-        } on Object catch (error) {
-          cancellationFailure = error;
-        }
-        final failure = primaryFailure ?? cleanupFailure ?? cancellationFailure;
-        if (failure != null || openingGeneration != _runtimeGeneration) {
-          final failedSession = session;
-          failedSession?._clearKeyMaterial();
-          if (failedSession != null) {
-            _testProbe?._recordFailedOpen(failedSession);
-          } else {
-            final failedStoreKey = storeKey;
-            final failedStoreId = storeId;
-            if (failedStoreKey != null) _clear(failedStoreKey);
-            if (failedStoreId != null) _clear(failedStoreId);
-          }
-          Error.throwWithStackTrace(
-            failure ??
-                _error(
-                  KeybayErrorCode.staleSession,
-                  'The store was reset while it was being opened.',
-                ),
-            primaryStack ?? StackTrace.current,
+  Future<V2StoreSession> _open(
+    _CredentialSnapshot? credential, {
+    KeybayOptions options = const KeybayOptions(),
+  }) => _future(() async {
+    PinnedStoreFile? pin;
+    PlatformRootLease? lease;
+    Uint8List? storeKey;
+    Uint8List? storeId;
+    Object? primaryFailure;
+    StackTrace? primaryStack;
+    V2StoreSession? session;
+    var wasInitialized = false;
+    var hadStaging = false;
+    var openingGeneration = 0;
+    try {
+      if (credential != null) {
+        _testProbe?.onOperationInput?.call(credential.bytes);
+      }
+      _checkPasskeyCancelled(credential);
+      final host = await _resolveHost();
+      await host.files.withExclusiveTransaction((transaction) async {
+        openingGeneration = _runtimeGeneration;
+        final artifacts = await transaction.observeArtifacts();
+        if (artifacts.hasTransactionArtifacts && !artifacts.hasLiveFile) {
+          throw _error(
+            KeybayErrorCode.storeStateConflict,
+            'The store has incomplete transaction state.',
           );
         }
-        _register(session!);
-        return session!;
+        if (artifacts.hasLiveFile) {
+          pin = await _openPin(transaction.openPinnedLive);
+          hadStaging = artifacts.hasTransactionArtifacts;
+          return;
+        }
+        if (credential != null) {
+          throw _error(
+            KeybayErrorCode.storeNotFound,
+            'No encrypted store is available to authenticate.',
+          );
+        }
+        final initialized = await _initializeStore(
+          host,
+          transaction,
+          options: options,
+        );
+        storeKey = initialized.storeKey;
+        storeId = initialized.storeId;
+        session = V2StoreSession._(
+          engine: this,
+          host: host,
+          storeKey: storeKey!,
+          storeId: storeId!,
+          epoch: initialized.epoch,
+          authMethods: const [],
+          wasInitialized: true,
+          runtimeGeneration: openingGeneration,
+          entropy: _entropy,
+          testProbe: _testProbe,
+        );
+        wasInitialized = true;
       });
+      if (!wasInitialized) {
+        final openedPin = pin!;
+        final prefix = await _readPrefix(openedPin);
+        final state = ProviderState(prefix.bootstrap.core.providerState);
+        _checkPasskeyCancelled(credential);
+        final openedLease = await host.protector.openExisting(
+          state,
+          interaction: PlatformInteraction.allowed,
+        );
+        if (openedLease == null ||
+            !openedLease.providerState.hasSameBytes(state)) {
+          if (openedLease != null) lease = openedLease;
+          throw _error(
+            KeybayErrorCode.platformKeyInvalidated,
+            'The platform protection key is unavailable.',
+          );
+        }
+        lease = openedLease;
+        Uint8List? plaintext;
+        V2KeyPackage? package;
+        V2MethodsPackage? replacement;
+        try {
+          plaintext = await openedLease.openPackage(
+            sealedPackage: prefix.sealedPackage,
+            aad: encodePlatformPackageAad(
+              storageDomain: host.binding.domain.copyBytes(),
+              bootstrapCore: prefix.bootstrap.core,
+            ),
+          );
+          package = decodeKeyPackage(plaintext);
+          if (package is V2MethodsPackage &&
+              prefix.bootstrap.core.suite != v2MethodsSuite) {
+            throw _error(
+              KeybayErrorCode.storeAuthenticationFailed,
+              'The package suite is inconsistent.',
+            );
+          }
+          storeId = package.storeId;
+          switch (package) {
+            case V2PlatformOnlyPackage():
+              if (credential != null) {
+                throw _error(
+                  KeybayErrorCode.protectionMismatch,
+                  'The store does not use the supplied credential.',
+                );
+              }
+              storeKey = package.takeStoreKey();
+            case V2MethodsPackage():
+              if (credential == null) {
+                throw _error(
+                  KeybayErrorCode.authRequired,
+                  'This store requires an additional credential.',
+                  authMethods: _describePackage(package),
+                );
+              }
+              final selected = _selectMethod(package, credential);
+              final opened = await _unlockMethod(
+                engine: this,
+                package: package,
+                method: selected,
+                credential: credential,
+              );
+              storeKey = opened.storeKey;
+              final source = await _openAuthenticatedGeneration(
+                host: host,
+                pin: openedPin,
+                storeKey: storeKey!,
+                storeId: storeId!,
+              );
+              source.clear();
+              if (!_constantTimeEquals(
+                selected.passkeyRecord,
+                opened.method.passkeyRecord,
+              )) {
+                replacement = V2MethodsPackage(
+                  storeId: storeId!,
+                  epoch: package.epoch,
+                  sealedVaultSecret: package.sealedVaultSecret,
+                  methods: [
+                    for (final method in package.methods)
+                      identical(method, selected) ? opened.method : method,
+                  ],
+                );
+              }
+          }
+          if (package is V2MethodsPackage || hadStaging) {
+            await _commitOpenedMetadata(
+              engine: this,
+              host: host,
+              lease: openedLease,
+              storeKey: storeKey!,
+              storeId: storeId!,
+              expectedPrefix: prefix,
+              replacement: replacement,
+              openingGeneration: openingGeneration,
+              credential: credential,
+            );
+          }
+          _checkPasskeyCancelled(credential);
+          session = V2StoreSession._(
+            engine: this,
+            host: host,
+            storeKey: storeKey!,
+            storeId: storeId!,
+            epoch: package.epoch,
+            authMethods: _describePackage(replacement ?? package),
+            wasInitialized: false,
+            runtimeGeneration: openingGeneration,
+            entropy: _entropy,
+            testProbe: _testProbe,
+          );
+        } finally {
+          replacement?.clear();
+          package?.clear();
+          if (plaintext != null) _clear(plaintext);
+        }
+      }
+    } on Object catch (error, stackTrace) {
+      primaryFailure = _mapReaderFailure(error);
+      primaryStack = stackTrace;
+    }
+
+    final acquiredPin = pin;
+    final cleanupFailure = acquiredPin == null
+        ? null
+        : await _closeOpenResources(lease, acquiredPin);
+    Object? cancellationFailure;
+    try {
+      _checkPasskeyCancelled(credential);
+    } on Object catch (error) {
+      cancellationFailure = error;
+    }
+    final failure = primaryFailure ?? cleanupFailure ?? cancellationFailure;
+    if (failure != null || openingGeneration != _runtimeGeneration) {
+      final failedSession = session;
+      failedSession?._clearKeyMaterial();
+      if (failedSession != null) {
+        _testProbe?._recordFailedOpen(failedSession);
+      } else {
+        final failedStoreKey = storeKey;
+        final failedStoreId = storeId;
+        if (failedStoreKey != null) _clear(failedStoreKey);
+        if (failedStoreId != null) _clear(failedStoreId);
+      }
+      Error.throwWithStackTrace(
+        failure ??
+            _error(
+              KeybayErrorCode.staleSession,
+              'The store was reset while it was being opened.',
+            ),
+        primaryStack ?? StackTrace.current,
+      );
+    }
+    _register(session!);
+    return session!;
+  });
 
   /// Removes this resolved application's qualified V2 state.
   Future<void> reset() => _future(_resetPlatformState);
@@ -481,6 +488,11 @@ final class V2StoreSession implements KeybaySession {
     () => _start(() async {
       await _commitRecordChange(this, const _RecordChange.clear());
     }),
+  );
+
+  @override
+  Future<void> setDeviceAccess(KeybayDeviceAccess deviceAccess) => _prepare(
+    () => _start(() => _commitDeviceAccessChange(this, deviceAccess)),
   );
 
   Future<List<AuthMethod>> _listAuth() => _prepare(

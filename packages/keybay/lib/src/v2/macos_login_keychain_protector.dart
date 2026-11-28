@@ -4,6 +4,7 @@ library;
 import 'dart:typed_data';
 
 import 'apple_keychain_protector_boundary.dart';
+import 'device_access.dart';
 import 'entropy_source.dart';
 import 'exportable_root_protector_core.dart';
 import 'host_binding.dart';
@@ -66,6 +67,7 @@ final class MacOSLoginKeychainProtector implements PlatformProtector {
   @override
   Future<PlatformRootCreation> createOnly({
     required PlatformInteraction interaction,
+    KeybayDeviceAccess deviceAccess = KeybayDeviceAccess.whenUnlocked,
   }) => atAppleKeychainProtectorBoundary(() async {
     _requireInteractionAllowed(interaction);
     Uint8List? candidateRoot;
@@ -97,6 +99,13 @@ final class MacOSLoginKeychainProtector implements PlatformProtector {
       if (winnerRecord != null) _core.clear(winnerRecord);
     }
   });
+
+  @override
+  Future<PreparedPlatformDeviceAccessChange?> prepareDeviceAccessChange(
+    ProviderState state, {
+    required KeybayDeviceAccess deviceAccess,
+    required PlatformInteraction interaction,
+  }) async => null;
 
   @override
   Future<PreparedPlatformReset> prepareReset({
