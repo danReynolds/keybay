@@ -58,9 +58,31 @@ one enrolled method. These methods are alternatives; the platform key remains
 mandatory. See [passkey setup](../sdk.md#cancellation-and-native-setup) and its
 separate Keypass provider/device qualification limits.
 
-Keybay sets user authentication for Keystore operations to not required. Device
-lock does not establish a Keybay per-use authentication barrier. The shared
-[threat model](../design.md#threat-model) also excludes a compromised process,
+Keybay sets user authentication for Keystore operations to not required, and
+sets `setUnlockedDeviceRequired(true)` by default (`KeybayDeviceAccess.whenUnlocked`)
+to match iOS's strict lock-screen protection on newly created vaults.
+Applications that need background access while the screen is locked (for
+example, `WorkManager`) can explicitly opt into
+`KeybayDeviceAccess.afterFirstUnlock` (`setUnlockedDeviceRequired(false)`) via
+`KeybayOptions` on initialization or `session.setDeviceAccess(...)` on an open
+session (which atomically rotates the Keystore key and re-seals the key package
+before retiring the prior alias). Legacy pre-0.4 Android vaults (60-byte
+continuity state) continue opening untouched and can migrate cleanly via
+`session.setDeviceAccess(...)`.
+
+Android Keystore notes for `KeybayDeviceAccess.whenUnlocked`:
+- `setUnlockedDeviceRequired(true)` relies on Android's lock-screen key
+  protection (LSKF). On devices without a configured screen lock, Android
+  12–14 Keystore may reject key creation or decryption; removing the device
+  screen lock after vault creation invalidates the Keystore key
+  (`KeybayErrorCode.platformKeyInvalidated`).
+- On Android 12–14, an OS Keystore2 quirk can cause `setUnlockedDeviceRequired(true)`
+  keys to report `KeybayErrorCode.platformProtectorLocked` after unlocking with
+  Class 1/2 (non-strong) biometrics until unlocked with PIN, pattern, password,
+  or strong biometrics.
+
+The shared
+[threat model](../design.md#threat-model) still excludes a compromised process,
 plaintext after a read, deletion and rollback.
 
 ## Recovery

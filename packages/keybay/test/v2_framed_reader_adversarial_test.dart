@@ -791,13 +791,28 @@ final class _CloseFailingProtector implements PlatformProtector {
   @override
   Future<PlatformRootCreation> createOnly({
     required PlatformInteraction interaction,
+    KeybayDeviceAccess deviceAccess = KeybayDeviceAccess.whenUnlocked,
   }) async {
-    final creation = await _delegate.createOnly(interaction: interaction);
+    final creation = await _delegate.createOnly(
+      interaction: interaction,
+      deviceAccess: deviceAccess,
+    );
     return PlatformRootCreation(
       lease: _CloseFailingLease(creation.lease, this),
       disposition: creation.disposition,
     );
   }
+
+  @override
+  Future<PreparedPlatformDeviceAccessChange?> prepareDeviceAccessChange(
+    ProviderState state, {
+    required KeybayDeviceAccess deviceAccess,
+    required PlatformInteraction interaction,
+  }) => _delegate.prepareDeviceAccessChange(
+    state,
+    deviceAccess: deviceAccess,
+    interaction: interaction,
+  );
 
   @override
   Future<PreparedPlatformReset> prepareReset({

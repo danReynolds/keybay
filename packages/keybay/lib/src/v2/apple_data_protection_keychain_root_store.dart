@@ -4,6 +4,7 @@ library;
 import 'dart:typed_data';
 
 import '../ffi/keychain.dart';
+import 'device_access.dart';
 
 /// Frozen service for V2 roots in an exact signed application-identifier group.
 const String v2AppleDataProtectionRootService =
@@ -18,7 +19,7 @@ const int v2AppleDataProtectionRootRecordBytes = 72;
 /// Bounded read ceiling for malformed state at the exact V2 address.
 const int v2AppleDataProtectionMaxRootRecordBytes = 4096;
 
-/// The four operations required for one fixed V2 root item.
+/// The operations required for one fixed V2 root item.
 ///
 /// The service and signed access group belong to the implementation. The
 /// protector supplies only its already-derived provider address and never
@@ -26,7 +27,18 @@ const int v2AppleDataProtectionMaxRootRecordBytes = 4096;
 abstract interface class DataProtectionKeychainRootStore {
   Future<Uint8List?> read(String providerAddress);
 
-  Future<bool> createIfAbsent(String providerAddress, Uint8List value);
+  Future<bool> createIfAbsent(
+    String providerAddress,
+    Uint8List value, {
+    KeybayDeviceAccess deviceAccess = KeybayDeviceAccess.whenUnlocked,
+  });
+
+  Future<KeybayDeviceAccess?> readDeviceAccess(String providerAddress);
+
+  Future<bool> updateDeviceAccess(
+    String providerAddress,
+    KeybayDeviceAccess deviceAccess,
+  );
 
   Future<bool> exists(String providerAddress);
 
@@ -53,13 +65,34 @@ final class AppleDataProtectionKeychainRootStore
   );
 
   @override
-  Future<bool> createIfAbsent(String providerAddress, Uint8List value) =>
-      _keychain.addIfAbsent(
+  Future<bool> createIfAbsent(
+    String providerAddress,
+    Uint8List value, {
+    KeybayDeviceAccess deviceAccess = KeybayDeviceAccess.whenUnlocked,
+  }) => _keychain.addIfAbsent(
+    v2AppleDataProtectionRootService,
+    providerAddress,
+    value,
+    label: v2AppleDataProtectionRootLabel,
+    deviceAccess: deviceAccess,
+  );
+
+  @override
+  Future<KeybayDeviceAccess?> readDeviceAccess(String providerAddress) =>
+      _keychain.readDeviceAccess(
         v2AppleDataProtectionRootService,
         providerAddress,
-        value,
-        label: v2AppleDataProtectionRootLabel,
       );
+
+  @override
+  Future<bool> updateDeviceAccess(
+    String providerAddress,
+    KeybayDeviceAccess deviceAccess,
+  ) => _keychain.updateDeviceAccess(
+    v2AppleDataProtectionRootService,
+    providerAddress,
+    deviceAccess,
+  );
 
   @override
   Future<bool> exists(String providerAddress) =>

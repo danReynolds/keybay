@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:keybay/src/v2/device_access.dart';
 import 'package:keybay/src/v2/host_platform.dart';
 import 'package:keybay/src/v2/platform_protector.dart';
 import 'package:keybay/src/v2/store_files.dart';
@@ -151,6 +152,7 @@ final class SoftwareTestProtector implements PlatformProtector {
   @override
   Future<PlatformRootCreation> createOnly({
     required PlatformInteraction interaction,
+    KeybayDeviceAccess deviceAccess = KeybayDeviceAccess.whenUnlocked,
   }) async {
     _requireNoPreparedReset();
     final existing = _registry._roots[binding.providerAddress];
@@ -179,6 +181,13 @@ final class SoftwareTestProtector implements PlatformProtector {
       disposition: RootCreationDisposition.created,
     );
   }
+
+  @override
+  Future<PreparedPlatformDeviceAccessChange?> prepareDeviceAccessChange(
+    ProviderState state, {
+    required KeybayDeviceAccess deviceAccess,
+    required PlatformInteraction interaction,
+  }) async => null;
 
   @override
   Future<PreparedPlatformReset> prepareReset({

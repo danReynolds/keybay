@@ -142,7 +142,11 @@ final class _UnusedAndroidKeystore implements AndroidKeystoreAead {
   Future<bool> contains(String alias) async => _unused();
 
   @override
-  Future<bool> createUnderExclusiveLock(String alias) async => _unused();
+  Future<bool> createUnderExclusiveLock(
+    String alias, {
+    bool unlockedDeviceRequired = true,
+    String? conflictAlias,
+  }) async => _unused();
 
   @override
   Future<void> delete(String alias) async => _unused();

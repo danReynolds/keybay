@@ -32,7 +32,10 @@ try {
 }
 ```
 
-- `open()` initializes fully absent state with platform protection.
+- `open({KeybayOptions options = const KeybayOptions()})` initializes fully
+  absent state with platform protection. `options.deviceAccess` defaults to
+  `KeybayDeviceAccess.whenUnlocked` and applies only when creating a new store;
+  it never silently alters an existing vault.
 - `open(credential: ...)` authenticates an existing store; it never enrolls.
   With no live file or staging state, it returns `storeNotFound` before platform
   or credential access. Enroll through `session.auth.add` before writing values
@@ -42,8 +45,9 @@ try {
 - `close()` rejects new work, drains accepted operations and clears the owned
   store-key buffer. Keep sessions open only as long as needed.
 
-Open, auth changes and reset may invoke trusted provider UI. Record operations
-and `auth.list()` never prompt or acquire a provider, even on failure.
+Open, auth changes, `setDeviceAccess`, and reset acquire the platform provider
+(and open/auth/reset may invoke trusted provider UI). Record operations and
+`auth.list()` never prompt or acquire a provider, even on failure.
 
 | Operation | Behavior |
 | --- | --- |
@@ -52,7 +56,29 @@ and `auth.list()` never prompt or acquire a provider, even on failure.
 | `getManyBytes` | Exact requested records from one authenticated generation. |
 | `listKeys` | Authenticated names without decrypting record values. |
 | `clearAll` | Remove records, keep protection. |
+| `setDeviceAccess` | Update locked-device availability (`KeybayDeviceAccess.whenUnlocked` default vs `KeybayDeviceAccess.afterFirstUnlock` opt-in for background tasks) on iOS, entitled macOS, and Android 12+; verified no-op on desktop login keyrings. |
 | `Keybay.reset()` | Delete current store, staging and deletable provider state; retain coordination locks. |
+
+### Locked-device access (`KeybayDeviceAccess`)
+
+New stores default to `KeybayDeviceAccess.whenUnlocked` so the OS key store
+refuses to unseal the platform root while the device is locked (reporting
+`KeybayErrorCode.platformProtectorLocked`). Applications that need background
+tasks to open the vault while locked (for example, iOS `BGAppRefreshTask` or
+Android `WorkManager`) can opt into `KeybayDeviceAccess.afterFirstUnlock`:
+
+```dart
+// On initialization (new vault only; never silently alters an existing vault):
+final session = await Keybay.open(
+  options: const KeybayOptions(
+    deviceAccess: KeybayDeviceAccess.afterFirstUnlock,
+  ),
+);
+
+// Or explicitly on an already-open session (for example, when toggling a setting):
+await session.setDeviceAccess(KeybayDeviceAccess.afterFirstUnlock);
+await session.setDeviceAccess(KeybayDeviceAccess.whenUnlocked);
+```
 
 Reset does not initialize a replacement. The next open creates a fresh store key.
 Flatpak retains its portal secret; restoring an old complete snapshot can restore
@@ -442,9 +468,9 @@ Slashes organize names, not security domains.
 
 | Host | Application boundary | File | Platform root |
 |---|---|---|---|
-| iOS | signed application group | app-private Application Support, excluded from backup | Data Protection Keychain, `WhenUnlockedThisDeviceOnly`, non-syncing |
-| Android 12+ | package/UID sandbox | app-private `noBackupFilesDir` | one non-exportable Android Keystore AES-GCM key |
-| entitled macOS | signed application group; file isolation depends on App Sandbox | app container or derived Application Support | Data Protection Keychain, exact signed group |
+| iOS | signed application group | app-private Application Support, excluded from backup | Data Protection Keychain, `WhenUnlockedThisDeviceOnly` default (`AfterFirstUnlockThisDeviceOnly` opt-in), non-syncing |
+| Android 12+ | package/UID sandbox | app-private `noBackupFilesDir` | one non-exportable Android Keystore AES-GCM key (`setUnlockedDeviceRequired(true)` default; `false` opt-in) |
+| entitled macOS | signed application group; file isolation depends on App Sandbox | app container or derived Application Support | Data Protection Keychain, exact signed group, `WhenUnlockedThisDeviceOnly` default (`AfterFirstUnlockThisDeviceOnly` opt-in) |
 | unentitled macOS / CLI | declared namespace only | derived Application Support directory | one item in the explicit login Keychain |
 | ordinary Linux desktop | declared namespace only | derived XDG data directory | one item in unlocked Secret Service |
 

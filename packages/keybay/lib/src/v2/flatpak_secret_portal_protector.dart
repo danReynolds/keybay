@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
 import 'package:cryptography/dart.dart';
 
+import 'device_access.dart';
 import 'entropy_source.dart';
 import 'exportable_root_lease.dart';
 import 'host_binding.dart';
@@ -47,10 +48,18 @@ final class FlatpakSecretPortalProtector implements PlatformProtector {
   @override
   Future<PlatformRootCreation> createOnly({
     required PlatformInteraction interaction,
+    KeybayDeviceAccess deviceAccess = KeybayDeviceAccess.whenUnlocked,
   }) async => PlatformRootCreation(
     lease: await _acquire(interaction),
     disposition: RootCreationDisposition.reused,
   );
+
+  @override
+  Future<PreparedPlatformDeviceAccessChange?> prepareDeviceAccessChange(
+    ProviderState state, {
+    required KeybayDeviceAccess deviceAccess,
+    required PlatformInteraction interaction,
+  }) async => null;
 
   Future<PlatformRootLease> _acquire(PlatformInteraction interaction) async {
     if (interaction != PlatformInteraction.allowed) {

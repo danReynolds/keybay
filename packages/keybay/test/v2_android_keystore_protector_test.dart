@@ -29,7 +29,12 @@ void main() {
       expect(created.disposition, RootCreationDisposition.created);
       expect(keystore.keyLookupCount, 1);
       expect(keystore.containsCount, 1);
-      expect(created.lease.providerState.length, 60);
+      expect(created.lease.providerState.length, 62);
+      expect(
+        keystore
+            .unlockedDeviceRequiredByAlias['keybay.v2.${binding.providerAddress}'],
+        isTrue,
+      );
       expect(keystore.aliases, <String>{
         'keybay.v2.${binding.providerAddress}',
       });
@@ -560,6 +565,7 @@ final class _MemoryAndroidKeystore implements AndroidKeystoreAead {
   static final DartAesGcm _aead = DartAesGcm.with256bits();
 
   final Map<String, Uint8List> _keys = <String, Uint8List>{};
+  final Map<String, bool> unlockedDeviceRequiredByAlias = <String, bool>{};
   final List<String> createdAliases = <String>[];
   final List<String> deletedAliases = <String>[];
   final List<Uint8List> observedPlaintexts = <Uint8List>[];
@@ -589,7 +595,11 @@ final class _MemoryAndroidKeystore implements AndroidKeystoreAead {
   }
 
   @override
-  Future<bool> createUnderExclusiveLock(String alias) async {
+  Future<bool> createUnderExclusiveLock(
+    String alias, {
+    bool unlockedDeviceRequired = true,
+    String? conflictAlias,
+  }) async {
     _throwFailure();
     // Exercise the production guard, with deterministic stand-ins for the JNI
     // getKey/containsAlias calls. Native lookup semantics need device evidence.
@@ -604,9 +614,13 @@ final class _MemoryAndroidKeystore implements AndroidKeystoreAead {
         containsCount++;
         return containsResult ?? _keys.containsKey(alias);
       },
+      hasConflictAlias: conflictAlias == null
+          ? null
+          : () => _keys.containsKey(conflictAlias),
       generateAndVerify: () {
         keyGeneration++;
         createdAliases.add(alias);
+        unlockedDeviceRequiredByAlias[alias] = unlockedDeviceRequired;
         _keys[alias] = Uint8List.fromList(
           List<int>.generate(32, (index) => (keyGeneration + index) & 0xff),
         );

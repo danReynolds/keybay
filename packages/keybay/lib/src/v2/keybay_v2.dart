@@ -13,6 +13,7 @@ import '../process_hardening.dart';
 import 'android_host_platform.dart';
 import 'apple_data_protection_host_platform.dart';
 import 'application_identity.dart';
+import 'device_access.dart';
 import 'entropy_source.dart';
 import 'format/method_crypto.dart';
 import 'format/store_crypto.dart';
@@ -23,6 +24,8 @@ import 'macos_host_platform.dart';
 import 'platform_protector.dart';
 import 'store_files.dart';
 
+export 'device_access.dart' show KeybayDeviceAccess, KeybayOptions;
+
 part 'framed_store_reader.dart';
 part 'framed_store_rotation.dart';
 part 'framed_store_writer.dart';
@@ -30,6 +33,7 @@ part 'passphrase_kdf.dart';
 part 'passkey_credential.dart';
 part 'auth_methods.dart';
 part 'auth_metadata_commit.dart';
+part 'device_access_commit.dart';
 
 /// Opens the one Keybay store belonging to the current host application.
 ///
@@ -47,6 +51,11 @@ abstract final class Keybay {
   /// Trusted operating-system/provider UI may participate in unlocking it.
   /// [methodId] selects an enrollment when several match the credential.
   /// [cancellation] cancels a passkey attempt; await the operation to settle.
+  /// [options] configures initial protection (such as
+  /// [KeybayOptions.deviceAccess]) when creating a brand-new vault; opening an
+  /// existing vault never silently changes its protection policy. Call
+  /// [KeybaySession.setDeviceAccess] on an open session to update an existing
+  /// vault.
   ///
   /// Before anything else, it applies Keybay's process hardening; see
   /// [processHardening].
@@ -54,11 +63,12 @@ abstract final class Keybay {
     KeybayCredential? credential,
     String? methodId,
     PasskeyCancellation? cancellation,
+    KeybayOptions options = const KeybayOptions(),
   }) {
     hardenAndRecord();
     return _withCredential(
       credential,
-      _productionRuntime._open,
+      (snapshot) => _productionRuntime._open(snapshot, options: options),
       methodId: methodId,
       cancellation: cancellation,
     );
@@ -138,7 +148,8 @@ enum KeybayErrorCode {
   /// fall back to weaker storage.
   platformProtectorUnavailable,
 
-  /// The platform key store is locked, such as a locked Linux keyring.
+  /// The platform key store is locked, such as a locked Linux keyring or a
+  /// locked mobile device when [KeybayDeviceAccess.whenUnlocked] is active.
   /// Unlock it and retry.
   platformProtectorLocked,
 
@@ -299,7 +310,8 @@ final class PassphraseMethod extends AuthMethod {
 /// Record operations never acquire a provider, including on failure. A peer
 /// process's protection change may report [KeybayErrorCode.storeAuthenticationFailed]
 /// rather than [KeybayErrorCode.staleSession]; close and authenticate again.
-/// Only unlock-method changes may request provider UI.
+/// Only unlock-method changes and device-access updates may acquire the
+/// platform provider after open.
 abstract interface class KeybaySession {
   /// Whether this open call initialized previously absent state.
   bool get wasInitialized;
@@ -309,6 +321,18 @@ abstract interface class KeybaySession {
 
   /// Additional unlock-method management for this authenticated session.
   KeybayAuthManager get auth;
+
+  /// Updates when the operating system's key store may unseal this vault's
+  /// platform root.
+  ///
+  /// Requires an open, authenticated session. On iOS and entitled macOS, this
+  /// atomically updates the Data Protection Keychain root's accessibility
+  /// attribute in place. On Android 12+, where Keystore key parameters are
+  /// immutable, this rotates to a new Keystore key under the exclusive store
+  /// lock, atomically re-seals the key package, and removes the prior key
+  /// after commit. On desktop login keyrings (unentitled macOS and Linux),
+  /// this completes as a verified no-op.
+  Future<void> setDeviceAccess(KeybayDeviceAccess deviceAccess);
 
   /// Returns the value stored under [key] as a string, or null if absent.
   ///

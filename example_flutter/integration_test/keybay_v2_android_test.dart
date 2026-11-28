@@ -340,6 +340,81 @@ void main() {
       await Keybay.reset();
     }
   });
+
+  testWidgets(
+    'Android V2 deviceAccess rotates Keystore alias while preserving secrets',
+    (WidgetTester _) async {
+      if (!Platform.isAndroid) {
+        markTestSkipped('Android-only');
+        return;
+      }
+
+      await Keybay.reset();
+      KeybaySession? session;
+      try {
+        session = await Keybay.open();
+        expect(session.wasInitialized, isTrue);
+        await session.set('bg/marker', 'android-device-access');
+        final primaryAlias = await _alias();
+        final altAlias = '$primaryAlias.alt';
+        expect(
+          await _channel.invokeMethod<Map<Object?, Object?>>(
+            'keyInfo',
+            <String, Object?>{'alias': primaryAlias},
+          ),
+          containsPair('present', true),
+        );
+        expect(
+          await _channel.invokeMethod<Map<Object?, Object?>>(
+            'keyInfo',
+            <String, Object?>{'alias': altAlias},
+          ),
+          containsPair('present', false),
+        );
+
+        await session.setDeviceAccess(KeybayDeviceAccess.afterFirstUnlock);
+        expect(
+          await _channel.invokeMethod<Map<Object?, Object?>>(
+            'keyInfo',
+            <String, Object?>{'alias': primaryAlias},
+          ),
+          containsPair('present', false),
+        );
+        expect(
+          await _channel.invokeMethod<Map<Object?, Object?>>(
+            'keyInfo',
+            <String, Object?>{'alias': altAlias},
+          ),
+          containsPair('present', true),
+        );
+        await session.close();
+        session = null;
+
+        session = await V2StoreEngine(AndroidHostPlatform()).open();
+        expect(session.wasInitialized, isFalse);
+        expect(await session.get('bg/marker'), 'android-device-access');
+
+        await session.setDeviceAccess(KeybayDeviceAccess.whenUnlocked);
+        expect(
+          await _channel.invokeMethod<Map<Object?, Object?>>(
+            'keyInfo',
+            <String, Object?>{'alias': primaryAlias},
+          ),
+          containsPair('present', true),
+        );
+        expect(
+          await _channel.invokeMethod<Map<Object?, Object?>>(
+            'keyInfo',
+            <String, Object?>{'alias': altAlias},
+          ),
+          containsPair('present', false),
+        );
+      } finally {
+        await session?.close();
+        await Keybay.reset();
+      }
+    },
+  );
 }
 
 Future<File> _storeFile() async {

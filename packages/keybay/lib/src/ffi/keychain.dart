@@ -8,12 +8,15 @@
 /// - [AppleKeychainApi.fileKeychainAt] pins every operation to the effective
 ///   account's explicit login-Keychain file.
 /// - [AppleKeychainApi.v2DataProtection] pins every operation to one exact,
-///   already-qualified signed application-identifier group and fixes new items
-///   to `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`.
+///   already-qualified signed application-identifier group and sets new items
+///   to `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` by default (or
+///   `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` when explicitly opted
+///   in via [KeybayDeviceAccess.afterFirstUnlock]).
 ///
 /// Both modes create non-synchronizing items. Reads are bounded before any Dart
-/// allocation; mutation is limited to atomic add-if-absent and exact delete.
-/// This binding never enumerates or clears a service and never upserts a root.
+/// allocation; mutation is limited to atomic add-if-absent, in-place Data
+/// Protection accessibility updates, and exact delete. This binding never
+/// enumerates or clears a service and never upserts a root.
 ///
 /// Symbol loading: macOS `dlopen`s the frameworks by absolute path (a plain
 /// Dart VM links neither); on iOS every app process already has
@@ -28,6 +31,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import '../errors.dart';
+import '../v2/device_access.dart';
 
 // --- OSStatus values we branch on -------------------------------------------
 const int _errSecSuccess = 0;
@@ -155,12 +159,16 @@ final class AppleKeychainApi {
     Pointer<Void>,
   )?
   _cfArrayCreate;
+  late final Pointer<Void> Function(Pointer<Void>, Pointer<Void>)
+  _cfDictionaryGetValue;
+  late final int Function(Pointer<Void>, Pointer<Void>) _cfEqual;
   late final void Function(Pointer<Void>) _cfRelease;
 
   // Security
   late final int Function(Pointer<Void>, Pointer<Pointer<Void>>) _secItemAdd;
   late final int Function(Pointer<Void>, Pointer<Pointer<Void>>)
   _secItemCopyMatching;
+  late final int Function(Pointer<Void>, Pointer<Void>) _secItemUpdate;
   late final int Function(Pointer<Void>) _secItemDelete;
   int Function(Pointer<Utf8>, Pointer<Pointer<Void>>)? _secKeychainOpen;
   int Function(Pointer<Void>, Pointer<Uint32>)? _secKeychainGetStatus;
@@ -183,6 +191,7 @@ final class AppleKeychainApi {
       _kSecAttrSynchronizable,
       _kSecAttrAccessible,
       _kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+      _kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
       _kSecUseDataProtectionKeychain,
       _kSecUseAuthenticationUI,
       _kSecUseAuthenticationUIFail,
@@ -253,6 +262,16 @@ final class AppleKeychainApi {
             )
           >('CFArrayCreate');
     }
+    _cfDictionaryGetValue = _cf
+        .lookupFunction<
+          Pointer<Void> Function(Pointer<Void>, Pointer<Void>),
+          Pointer<Void> Function(Pointer<Void>, Pointer<Void>)
+        >('CFDictionaryGetValue');
+    _cfEqual = _cf
+        .lookupFunction<
+          Uint8 Function(Pointer<Void>, Pointer<Void>),
+          int Function(Pointer<Void>, Pointer<Void>)
+        >('CFEqual');
     _cfRelease = _cf
         .lookupFunction<
           Void Function(Pointer<Void>),
@@ -268,6 +287,11 @@ final class AppleKeychainApi {
           Int32 Function(Pointer<Void>, Pointer<Pointer<Void>>),
           int Function(Pointer<Void>, Pointer<Pointer<Void>>)
         >('SecItemCopyMatching');
+    _secItemUpdate = _sec
+        .lookupFunction<
+          Int32 Function(Pointer<Void>, Pointer<Void>),
+          int Function(Pointer<Void>, Pointer<Void>)
+        >('SecItemUpdate');
     _secItemDelete = _sec
         .lookupFunction<
           Int32 Function(Pointer<Void>),
@@ -309,6 +333,10 @@ final class AppleKeychainApi {
       _sec,
       'kSecAttrAccessibleWhenUnlockedThisDeviceOnly',
     );
+    _kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly = _cfConst(
+      _sec,
+      'kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly',
+    );
     _kSecUseDataProtectionKeychain = _cfConst(
       _sec,
       'kSecUseDataProtectionKeychain',
@@ -349,11 +377,20 @@ final class AppleKeychainApi {
     }
   }
 
-  /// V2 DP roots are device-bound and available only while the device is
-  /// unlocked. File-Keychain roots use the Keychain file's own ACL policy.
-  List<(Pointer<Void>, Pointer<Void>)> get _accessibilityPairs =>
-      _dataProtection
-      ? [(_kSecAttrAccessible, _kSecAttrAccessibleWhenUnlockedThisDeviceOnly)]
+  _CFTypeRef _accessibilityConst(KeybayDeviceAccess deviceAccess) =>
+      switch (deviceAccess) {
+        KeybayDeviceAccess.whenUnlocked =>
+          _kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+        KeybayDeviceAccess.afterFirstUnlock =>
+          _kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+      };
+
+  /// V2 DP roots are device-bound and honor [deviceAccess]. File-Keychain
+  /// roots use the Keychain file's own ACL policy.
+  List<(Pointer<Void>, Pointer<Void>)> _accessibilityPairs(
+    KeybayDeviceAccess deviceAccess,
+  ) => _dataProtection
+      ? [(_kSecAttrAccessible, _accessibilityConst(deviceAccess))]
       : const [];
 
   List<(Pointer<Void>, Pointer<Void>)> _accessGroupPairs(
@@ -582,7 +619,7 @@ final class AppleKeychainApi {
         ..._uiPairs,
       ]);
       refs.addAll(q.owned);
-      final out = malloc<Pointer<Void>>();
+      final out = malloc<Pointer<Void>>()..value = nullptr;
       try {
         final status = _secItemCopyMatching(q.dict, out);
         if (status == _errSecItemNotFound) {
@@ -628,7 +665,7 @@ final class AppleKeychainApi {
         ..._uiPairs,
       ]);
       refs.addAll(q.owned);
-      final out = malloc<Pointer<Void>>();
+      final out = malloc<Pointer<Void>>()..value = nullptr;
       try {
         final status = _secItemCopyMatching(q.dict, out);
         if (status == _errSecItemNotFound) {
@@ -656,6 +693,7 @@ final class AppleKeychainApi {
     String account,
     Uint8List value, {
     required String label,
+    KeybayDeviceAccess deviceAccess = KeybayDeviceAccess.whenUnlocked,
   }) async {
     final refs = <Pointer<Void>>[];
     try {
@@ -673,7 +711,7 @@ final class AppleKeychainApi {
         ..._keychainFamilyPairs,
         (_kSecAttrSynchronizable, _kCFBooleanFalse),
         (_kSecAttrLabel, labelRef),
-        ..._accessibilityPairs,
+        ..._accessibilityPairs(deviceAccess),
         ..._uiPairs,
       ]);
       refs.addAll(add.owned);
@@ -681,6 +719,104 @@ final class AppleKeychainApi {
       if (status == _errSecSuccess) return true;
       if (status == _errSecDuplicateItem) return false;
       _fail(status, 'addIfAbsent');
+    } finally {
+      _releaseAll(refs);
+    }
+  }
+
+  /// Reads the Data Protection accessibility attribute of an existing item
+  /// without decrypting or returning its secret bytes.
+  Future<KeybayDeviceAccess?> readDeviceAccess(
+    String service,
+    String account,
+  ) async {
+    if (!_dataProtection) {
+      throw StateError('readDeviceAccess applies only to Data Protection mode');
+    }
+    final refs = <Pointer<Void>>[];
+    try {
+      final svc = _cfString(service)..let(refs.add);
+      final acct = _cfString(account)..let(refs.add);
+      final q = _dict([
+        (_kSecClass, _kSecClassGenericPassword),
+        (_kSecAttrService, svc),
+        (_kSecAttrAccount, acct),
+        ..._accessGroupPairs(refs),
+        ..._keychainFamilyPairs,
+        (_kSecReturnAttributes, _kCFBooleanTrue),
+        (_kSecMatchLimit, _kSecMatchLimitOne),
+        ..._uiPairs,
+      ]);
+      refs.addAll(q.owned);
+      final out = malloc<Pointer<Void>>()..value = nullptr;
+      try {
+        final status = _secItemCopyMatching(q.dict, out);
+        if (status == _errSecItemNotFound) return null;
+        if (status != _errSecSuccess) {
+          _fail(status, 'readDeviceAccess');
+        }
+        final dict = out.value;
+        if (dict == nullptr) return null;
+        refs.add(dict);
+        // CFDictionaryGetValue returns a borrowed ref (Get rule): never release.
+        final value = _cfDictionaryGetValue(dict, _kSecAttrAccessible);
+        if (value == nullptr) return null;
+        if (_cfEqual(value, _kSecAttrAccessibleWhenUnlockedThisDeviceOnly) !=
+            0) {
+          return KeybayDeviceAccess.whenUnlocked;
+        }
+        if (_cfEqual(
+              value,
+              _kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            ) !=
+            0) {
+          return KeybayDeviceAccess.afterFirstUnlock;
+        }
+        return null;
+      } finally {
+        malloc.free(out);
+      }
+    } finally {
+      _releaseAll(refs);
+    }
+  }
+
+  /// Updates the Data Protection accessibility attribute of an existing item
+  /// in place without altering its secret payload. Returns `false` if the
+  /// item does not exist.
+  Future<bool> updateDeviceAccess(
+    String service,
+    String account,
+    KeybayDeviceAccess deviceAccess,
+  ) async {
+    if (!_dataProtection) {
+      throw StateError(
+        'updateDeviceAccess applies only to Data Protection mode',
+      );
+    }
+    final refs = <Pointer<Void>>[];
+    try {
+      final svc = _cfString(service)..let(refs.add);
+      final acct = _cfString(account)..let(refs.add);
+      final q = _dict([
+        (_kSecClass, _kSecClassGenericPassword),
+        (_kSecAttrService, svc),
+        (_kSecAttrAccount, acct),
+        ..._accessGroupPairs(refs),
+        ..._keychainFamilyPairs,
+        ..._uiPairs,
+      ]);
+      refs.addAll(q.owned);
+      final attrs = _dict([
+        (_kSecAttrAccessible, _accessibilityConst(deviceAccess)),
+      ]);
+      refs.addAll(attrs.owned);
+      final status = _secItemUpdate(q.dict, attrs.dict);
+      if (status == _errSecItemNotFound) return false;
+      if (status != _errSecSuccess) {
+        _fail(status, 'updateDeviceAccess');
+      }
+      return true;
     } finally {
       _releaseAll(refs);
     }

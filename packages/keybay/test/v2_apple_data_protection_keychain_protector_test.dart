@@ -8,6 +8,7 @@ import 'package:keybay/src/ffi/keychain.dart';
 import 'package:keybay/src/v2/apple_data_protection_keychain_protector.dart';
 import 'package:keybay/src/v2/apple_data_protection_keychain_root_store.dart';
 import 'package:keybay/src/v2/application_identity.dart';
+import 'package:keybay/src/v2/device_access.dart';
 import 'package:keybay/src/v2/host_binding.dart';
 import 'package:keybay/src/v2/platform_protector.dart';
 import 'package:test/test.dart';
@@ -297,6 +298,8 @@ Matcher _failure(PlatformProtectorFailureCode code) =>
 
 final class _MemoryRootStore implements DataProtectionKeychainRootStore {
   final Map<String, Uint8List> _items = <String, Uint8List>{};
+  final Map<String, KeybayDeviceAccess> _access =
+      <String, KeybayDeviceAccess>{};
   final List<String> reads = <String>[];
   final List<String> creates = <String>[];
 
@@ -306,12 +309,31 @@ final class _MemoryRootStore implements DataProtectionKeychainRootStore {
   int get itemCount => _items.length;
 
   @override
-  Future<bool> createIfAbsent(String providerAddress, Uint8List value) async {
+  Future<bool> createIfAbsent(
+    String providerAddress,
+    Uint8List value, {
+    KeybayDeviceAccess deviceAccess = KeybayDeviceAccess.whenUnlocked,
+  }) async {
     creates.add(providerAddress);
     if (_items.containsKey(providerAddress)) return false;
     final stored = Uint8List.fromList(value);
     if (alterSuccessfulCreate) stored[stored.length - 1] ^= 0xff;
     _items[providerAddress] = stored;
+    _access[providerAddress] = deviceAccess;
+    return true;
+  }
+
+  @override
+  Future<KeybayDeviceAccess?> readDeviceAccess(String providerAddress) async =>
+      _access[providerAddress];
+
+  @override
+  Future<bool> updateDeviceAccess(
+    String providerAddress,
+    KeybayDeviceAccess deviceAccess,
+  ) async {
+    if (!_items.containsKey(providerAddress)) return false;
+    _access[providerAddress] = deviceAccess;
     return true;
   }
 
@@ -332,6 +354,7 @@ final class _MemoryRootStore implements DataProtectionKeychainRootStore {
   @override
   Future<void> delete(String providerAddress) async {
     final removed = _items.remove(providerAddress);
+    _access.remove(providerAddress);
     if (removed != null) _clear(removed);
   }
 

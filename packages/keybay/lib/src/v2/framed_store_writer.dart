@@ -37,8 +37,9 @@ final class _InitializedStore {
 extension _V2PlatformInitialization on V2StoreEngine {
   Future<_InitializedStore> _initializeStore(
     ResolvedHost host,
-    StoreTransaction transaction,
-  ) async {
+    StoreTransaction transaction, {
+    KeybayOptions options = const KeybayOptions(),
+  }) async {
     Uint8List? storeId;
     Uint8List? storeKey;
     Uint8List? packagePlaintext;
@@ -64,6 +65,7 @@ extension _V2PlatformInitialization on V2StoreEngine {
       // Obtain the initialization entropy before creating provider state.
       final creation = await host.protector.createOnly(
         interaction: PlatformInteraction.allowed,
+        deviceAccess: options.deviceAccess,
       );
       lease = creation.lease;
       switch (creation.disposition) {
