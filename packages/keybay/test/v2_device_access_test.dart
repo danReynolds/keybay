@@ -33,7 +33,9 @@ void main() {
 
     setUp(() {
       root = Directory.systemTemp.createTempSync('keybay-dp-access-');
-      final canonicalRoot = Uri.directory(root.resolveSymbolicLinksSync());
+      final canonicalRoot = Uri.directory(
+        '${root.resolveSymbolicLinksSync()}/keybay-v2',
+      );
       binding = ResolvedApplicationBinding.derive(
         identity: ApplicationIdentity(
           stableValue: 'TEAMID1234.dev.keybay.testapp',
@@ -45,10 +47,7 @@ void main() {
       );
       roots = _TestAppleRootStore();
       files = _TrackingStoreFiles(
-        PosixStoreFiles.fromExistingPrivateRoot(
-          binding: binding,
-          canonicalFileRoot: canonicalRoot,
-        ),
+        PosixStoreFiles(binding: binding, canonicalFileRoot: canonicalRoot),
       );
       engine = V2StoreEngine(
         _StaticHostPlatform(
@@ -270,7 +269,7 @@ void main() {
         final session = await engine.open();
         await session.set('k', 'v');
         // Abandoned staging artifact alongside live store -> storeStateConflict.
-        final stagingFile = File('${root.path}/keybay.v2.stage');
+        final stagingFile = File('${root.path}/keybay-v2/keybay.v2.stage');
         stagingFile.writeAsBytesSync(const <int>[1, 2, 3]);
         await expectLater(
           session.setDeviceAccess(KeybayDeviceAccess.afterFirstUnlock),
@@ -317,7 +316,9 @@ void main() {
 
     setUp(() {
       root = Directory.systemTemp.createTempSync('keybay-android-access-');
-      final canonicalRoot = Uri.directory(root.resolveSymbolicLinksSync());
+      final canonicalRoot = Uri.directory(
+        '${root.resolveSymbolicLinksSync()}/keybay-v2',
+      );
       binding = ResolvedApplicationBinding.derive(
         identity: ApplicationIdentity(
           stableValue: 'dev.keybay.androidtest',
@@ -333,10 +334,7 @@ void main() {
         keystore: keystore,
       );
       files = _TrackingStoreFiles(
-        PosixStoreFiles.fromExistingPrivateRoot(
-          binding: binding,
-          canonicalFileRoot: canonicalRoot,
-        ),
+        PosixStoreFiles(binding: binding, canonicalFileRoot: canonicalRoot),
       );
       engine = V2StoreEngine(
         _StaticHostPlatform(
@@ -748,7 +746,9 @@ void main() {
         addTearDown(() {
           if (root.existsSync()) root.deleteSync(recursive: true);
         });
-        final canonicalRoot = Uri.directory(root.resolveSymbolicLinksSync());
+        final canonicalRoot = Uri.directory(
+          '${root.resolveSymbolicLinksSync()}/keybay-v2',
+        );
         final binding = ResolvedApplicationBinding.derive(
           identity: ApplicationIdentity(
             stableValue: 'dev.keybay.desktoptest',
@@ -759,10 +759,7 @@ void main() {
           canonicalFileRoot: canonicalRoot,
         );
         final files = _TrackingStoreFiles(
-          PosixStoreFiles.fromExistingPrivateRoot(
-            binding: binding,
-            canonicalFileRoot: canonicalRoot,
-          ),
+          PosixStoreFiles(binding: binding, canonicalFileRoot: canonicalRoot),
         );
         final engine = V2StoreEngine(
           _StaticHostPlatform(
